@@ -16,14 +16,14 @@ import pytest
 from snp2prot import schema
 from snp2prot.parsers import _uniprobe
 
-BODY = "AAAAAAAA\tTTTTTTTT\t0.49\t100.0\t3.0\nAAAAAAAC\tGTTTTTTT\t0.10\t50.0\t1.0\n"
+BODY = "AAAAAAAA\tTTTTTTTT\t0.49\t100.0\t3.0\nAAAAAAAC\tGTTTTTTT\t-0.10\t50.0\t1.0\n"
 HEADED = "8-mer\t8-mer\tE-score\tMedian\tZ-score\n" + BODY
 # Cell08 layout: seven columns, descriptive header.
 WIDE = (
     "8-mer\t8-mer reverse complement\tenrichment score\tmedian intensity\tzscore"
     "\tpvalue of the enrichment\tQvalue\n"
     "AAAAAAAA\tTTTTTTTT\t0.49\t100.0\t3.0\t0.001\t0.01\n"
-    "AAAAAAAC\tGTTTTTTT\t0.10\t50.0\t1.0\t0.5\t0.6\n"
+    "AAAAAAAC\tGTTTTTTT\t-0.10\t50.0\t1.0\t0.5\t0.6\n"
 )
 BARE = BODY
 
@@ -45,7 +45,7 @@ def test_header_is_detected_not_assumed(body):
     df = _uniprobe.read_8mer_table(z, "G/G_8mers.txt")
     assert len(df) == 2, "a headerless file must not lose its first data row"
     assert df["dna_seq"].tolist() == ["AAAAAAAA", "AAAAAAAC"]
-    assert df["escore"].tolist() == [0.49, 0.10]
+    assert df["escore"].tolist() == [0.49, -0.10]
 
 
 @pytest.mark.parametrize(
@@ -65,6 +65,36 @@ def test_contig_regex_matches_every_known_spelling(name):
 )
 def test_contig_regex_rejects_other_files(name):
     assert not _uniprobe.CONTIG_8MER_RE.search(name)
+
+
+# GR09/SCI09 layout: headerless, median intensity at index 2, E-score at index 3.
+GR09_LAYOUT = "AAAAAAAA\tTTTTTTTT\t6663.71\t0.49\nAAAAAAAC\tGTTTTTTT\t9881.06\t-0.10\n"
+# RAD13A layout: no E-score column at all.
+NO_ESCORE = "8-mer\t8-mer\tMedian\tZ-score\nAAAAAAAA\tTTTTTTTT\t20007.4\t1.27\n"
+
+
+def test_escore_column_found_by_range_not_position():
+    """GR09 puts median intensity where BAR15A puts the E-score."""
+    z = _zip({"G/G_8mers.txt": GR09_LAYOUT})
+    df = _uniprobe.read_8mer_table(z, "G/G_8mers.txt")
+    assert df["escore"].tolist() == [0.49, -0.10], "must not read the intensity column"
+
+
+def test_file_without_an_escore_is_rejected():
+    z = _zip({"G/G_8mers.txt": NO_ESCORE})
+    with pytest.raises(_uniprobe.EscoreColumnError, match="no E-score"):
+        _uniprobe.read_8mer_table(z, "G/G_8mers.txt")
+
+
+def test_concatenated_experiments_are_rejected_as_ambiguous():
+    """SCI09 ships 20-column files that pack several experiments side by side."""
+    body = (
+        "AAAAAAAA\tTTTTTTTT\t6663.71\t0.49\t3919.0\t0.26\n"
+        "AAAAAAAC\tGTTTTTTT\t2426.05\t-0.03\t1912.6\t-0.11\n"
+    )
+    z = _zip({"G/G_8mers.txt": body})
+    with pytest.raises(_uniprobe.EscoreColumnError, match="look like E-scores"):
+        _uniprobe.read_8mer_table(z, "G/G_8mers.txt")
 
 
 def test_binarize_bands():

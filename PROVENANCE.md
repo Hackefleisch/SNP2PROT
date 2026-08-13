@@ -49,6 +49,8 @@ reason. A short honest catalogue beats a padded one.
 
 | source | date | outcome | reason |
 |---|---|---|---|
+| UniPROBE `MIZ19A` (Mizeracka et al. 2019) | 2026-08-13 | unavailable | `downloads.php` advertises `MIZ19A_contig8mers.zip`, but the server returns `Could not find file MIZ19A/MIZ19A_contig8mers.zip for download` (87 bytes, text/plain). A broken link on UniPROBE's side. Not substituted with `MIZ19A_PBM_full.tgz`; 1 gene, negligible loss. |
+| UniPROBE `MMB08` (Pompeani et al. 2008) | 2026-08-13 | unavailable | Same: advertised but absent server-side. 1 gene. |
 | Persikov 2015 B1H + Najafabadi 2015 C2H2 (Phase 3) | 2026-08-13 | **dropped** | Every entry is a C2H2 zinc-finger array: 2-6 separate ~23-residue folds on flexible linkers, each needing its own Zn(2+). Fails condition 2 of the domain policy (one continuous region). Persikov additionally varies one finger inside a fixed three-finger context, so the subunit that varies and the subunit that binds differ, failing conditions 1 and 3. ~8,000 domains excluded. See `docs/DOMAIN_POLICY.md`. |
 | Noyes et al. 2008 (Drosophila homeodomains) | 2026-08-13 | not applicable to Phase 2 | Not in UniPROBE under any accession. Noyes used bacterial one-hybrid, not PBM, so it belongs to the Phase 3 B1H work rather than the UniPROBE panels. |
 | Barrera 2016 Table S4 (Science supplement) | 2026-08-13 | not needed | science.org returns HTTP 403 to non-browser clients, so the Excel supplements are a manual download. Turned out to be unnecessary: UniPROBE's own detail pages carry the clone insert sequence for every allele, which is the authoritative record of what was on the array. |

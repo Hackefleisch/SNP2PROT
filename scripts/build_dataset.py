@@ -39,8 +39,22 @@ def main() -> None:
     g.add_argument("--all", action="store_true", help="every registered parser")
     args = ap.parse_args()
 
-    for src in sorted(REGISTRY) if args.all else [args.source]:
-        build(src)
+    sources = sorted(REGISTRY) if args.all else [args.source]
+    failed: list[tuple[str, str]] = []
+    for src in sources:
+        # With --all, one source that yields nothing must not abort the rest: an accession
+        # whose every construct is rejected by the domain policy is a normal outcome.
+        try:
+            build(src)
+        except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+            failed.append((src, f"{type(exc).__name__}: {exc}"))
+            print(f"SKIPPED {src}: {exc}")
+        if not args.all:
+            raise SystemExit(0)
+
+    print(f"\n{len(sources) - len(failed)}/{len(sources)} sources built")
+    for src, why in failed:
+        print(f"  no output: {src}  ({why})")
 
 
 if __name__ == "__main__":

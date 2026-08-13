@@ -32,6 +32,10 @@ import pandas as pd
 
 from snp2prot import schema
 
+#: A universal PBM E-score is a rank statistic bounded to this interval by construction.
+#: The bound is what lets the E-score column be identified when a file has no header.
+ESCORE_MIN, ESCORE_MAX = -0.5, 0.5
+
 ASSAY = "PBM"
 SCORE_TYPE = "pbm_escore"
 #: A PBM 8-mer score aggregates over many flanking contexts, so no specific flank was observed.
@@ -43,6 +47,8 @@ CONTIG_8MER_RE = re.compile(r"(_8mers(_11111111)?|_contig8mers)\.txt$")
 
 
 #: `<dt>LABEL</dt> <dd> <kbd>SEQUENCE</kbd>` — `<dd>` and `<kbd>` sit on separate lines.
+ESCORE_HEADER_RE = re.compile(r"e[-_ ]?score|enrichment", re.I)
+
 SEQ_BLOCK_RE = re.compile(r"<dt>([^<]*?)</dt>\s*<dd>\s*<kbd>(.*?)</kbd>", re.S)
 FIELD_RE = re.compile(r"<dt>\s*(Domain|Swiss-Prot|Uniprot|Species)\s*</dt>\s*<dd>(.*?)</dd>", re.S)
 
@@ -105,24 +111,83 @@ def load_details(details_dir: Path) -> dict[str, DetailPage]:
     }
 
 
+class EscoreColumnError(ValueError):
+    """Raised when a file's E-score column cannot be identified unambiguously."""
+
+
 def read_8mer_table(z: zipfile.ZipFile, member: str) -> pd.DataFrame:
     """One experiment's 8-mer table as `dna_seq` + `escore`.
 
-    Neither the header nor the column count is assumed. EMBO10's files have no header row at
-    all; Cell08's have a seven-column descriptive one ("enrichment score", "pvalue", "Qvalue")
-    where the others have five terse ones. Columns 0 and 2 are the 8-mer and its E-score in
-    every layout seen, so they are selected positionally and renamed.
+    **The E-score column is identified by its value range, not by position.** Position is not
+    safe across UniPROBE: the column order and count both vary, and at least one accession
+    has no E-score column at all.
+
+    | accession | layout |
+    |---|---|
+    | `BAR15A`, `EMBO10`, `PNAS13` | 5 cols, E-score at index 2 |
+    | `Cell08` | 7 cols with a descriptive header, E-score ("enrichment score") at index 2 |
+    | `GR09`, `SCI09` | headerless, median intensity at index 2, **E-score at index 3** |
+    | `RAD13A` | 4 cols, `8-mer / 8-mer / Median / Z-score` — **no E-score at all** |
+
+    A universal PBM E-score is a rank statistic bounded to [-0.5, 0.5] that always takes
+    negative values across 32,896 8-mers, since most are unbound. Intensities run to
+    hundreds of thousands, z-scores past 1, and p/q-values are non-negative -- so those
+    two properties together single the E-score out. A header naming it wins outright.
+
+    Zero candidates means the file has no E-score; more than one means it concatenates
+    several experiments side by side
+    (SCI09 ships 20-column combined files alongside its 9-column per-replicate ones). Both
+    are errors here rather than a silent guess.
     """
     with z.open(member) as fh:
         first = fh.readline().decode("utf8", errors="ignore")
     has_header = first.lower().lstrip().startswith("8-mer")
 
     with z.open(member) as fh:
-        df = pd.read_csv(fh, sep="\t", header=0 if has_header else None, usecols=[0, 2])
-    df.columns = ["dna_seq", "escore"]
-    df["dna_seq"] = df["dna_seq"].astype(str).str.strip().str.upper()
-    df["escore"] = pd.to_numeric(df["escore"], errors="coerce")
-    return df.dropna(subset=["escore"])
+        df = pd.read_csv(fh, sep="\t", header=0 if has_header else None, dtype=str)
+    if df.shape[1] < 3:
+        raise EscoreColumnError(f"{member}: only {df.shape[1]} columns")
+
+    numeric = {}
+    for i in range(1, df.shape[1]):
+        vals = pd.to_numeric(df.iloc[:, i], errors="coerce")
+        if vals.notna().sum() >= len(df) * 0.9:
+            numeric[i] = vals
+
+    # A named column wins outright: Cell08 calls it "enrichment score".
+    if has_header:
+        named = [i for i in numeric if ESCORE_HEADER_RE.search(str(df.columns[i]))]
+        if len(named) == 1:
+            return _finish(df, numeric[named[0]])
+
+    # Otherwise: bounded to [-0.5, 0.5] AND actually taking negative values. The bound alone
+    # is not enough -- p-values and q-values sit in [0, 0.5] too -- but an E-score over 32,896
+    # 8-mers always runs negative, since most 8-mers are not bound, while a probability cannot.
+    candidates = [
+        (i, v)
+        for i, v in numeric.items()
+        if v.min() >= ESCORE_MIN and v.max() <= ESCORE_MAX and v.min() < 0
+    ]
+
+    if not candidates:
+        raise EscoreColumnError(
+            f"{member}: no column lies within [{ESCORE_MIN}, {ESCORE_MAX}] — this file "
+            f"carries no E-score (columns: {list(df.columns)[:6]})"
+        )
+    if len(candidates) > 1:
+        raise EscoreColumnError(
+            f"{member}: {len(candidates)} columns look like E-scores (indices "
+            f"{[i for i, _ in candidates]}); the file probably concatenates experiments"
+        )
+
+    return _finish(df, candidates[0][1])
+
+
+def _finish(df: pd.DataFrame, escore: pd.Series) -> pd.DataFrame:
+    out = pd.DataFrame(
+        {"dna_seq": df.iloc[:, 0].astype(str).str.strip().str.upper(), "escore": escore}
+    )
+    return out.dropna(subset=["escore"])
 
 
 def binarize(escores: np.ndarray, pos_cut: float, neg_cut: float) -> np.ndarray:
@@ -145,9 +210,16 @@ def reconcile_replicates(
     Returns `(dna_seq, label, mean_escore)`.
     """
     labels, scores, keys = [], [], None
+    skipped: list[str] = []
     for member in members:
-        exp = read_8mer_table(z, member).sort_values("dna_seq", kind="stable")
-        exp = exp.reset_index(drop=True)
+        try:
+            exp = read_8mer_table(z, member)
+        except EscoreColumnError as exc:
+            # A file we cannot read an E-score from is dropped with its reason, rather than
+            # silently contributing whatever column happened to sit in that position.
+            skipped.append(str(exc))
+            continue
+        exp = exp.sort_values("dna_seq", kind="stable").reset_index(drop=True)
         if keys is None:
             keys = exp["dna_seq"]
         elif not keys.equals(exp["dna_seq"]):
@@ -155,6 +227,9 @@ def reconcile_replicates(
         e = exp["escore"].to_numpy(dtype=float)
         labels.append(binarize(e, pos_cut, neg_cut))
         scores.append(e)
+
+    if not labels:
+        raise EscoreColumnError("; ".join(skipped) or "no readable replicate")
 
     stacked = np.vstack(labels)
     agreed = (stacked == stacked[0]).all(axis=0)

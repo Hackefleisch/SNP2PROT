@@ -333,6 +333,21 @@ def validate(
             f"but usually a sign of a copied column"
         )
 
+    # -- score sanity ------------------------------------------------------------------
+    # A universal PBM E-score is a rank statistic bounded to [-0.5, 0.5]. Anything outside
+    # means the wrong column was read -- median intensity and z-scores sit in the same files
+    # and, in some UniPROBE accessions, in the position an E-score occupies in others.
+    is_escore = df["score_type"] == "pbm_escore"
+    if is_escore.any():
+        out_of_range = is_escore & ((df["raw_score"] < -0.5) | (df["raw_score"] > 0.5))
+        if out_of_range.any():
+            bad = df.loc[out_of_range, "raw_score"]
+            rep.error(
+                f"raw_score: {int(out_of_range.sum()):,} pbm_escore rows outside [-0.5, 0.5] "
+                f"(min {bad.min():.3g}, max {bad.max():.3g}) — the E-score column was almost "
+                f"certainly misidentified"
+            )
+
     # -- thresholds --------------------------------------------------------------------
     bad_thresh = df["threshold_pos"] < df["threshold_neg"]
     if bad_thresh.any():

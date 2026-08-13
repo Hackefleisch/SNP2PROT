@@ -16,9 +16,11 @@ That is a real limitation, not a bookkeeping artefact, and the cluster inventory
 | `SHO18A`  | Shokri et al., Cell Reports 2019| mixed                  |
 | `ROG18A`  | Rogers et al., Mol Cell 2019    | forkhead, replicated   |
 
-The last five were added to rebuild family breadth after the domain policy left the corpus
-79.5% homeodomain. Every one is screened by the same policy, so a panel contributes only the
-constructs whose signal is attributable to a single continuous domain.
+Every UniPROBE accession that publishes a `<ACC>_contig8mers.zip` is registered here, so the
+corpus spans one uniform DNA space: all 32,896 non-redundant 8-mers, identical across every
+source. Each construct is screened by the domain policy, so a panel contributes only those
+whose signal is attributable to a single continuous domain — yields are typically well under
+half the gene count, and some accessions contribute nothing at all.
 
 `dbd_seq` is the detail page's Pfam-trimmed **DNA binding domain** field where present. That
 differs from BAR15A, which must use the clone insert because its variant sequences exist only
@@ -54,6 +56,10 @@ class Panel:
 
 PANELS: dict[str, Panel] = {
     p.accession: p
+    # Not registered: MIZ19A and MMB08 advertise a contig8mers.zip the server does not
+    # have; GB11, LAI20A and NAR10 publish detail pages with no sequence at all, so the
+    # assayed construct is unknown and nothing can be attributed to a domain. See
+    # PROVENANCE.md for all five.
     for p in (
         Panel("Cell08", "Berger et al., Cell 2008", "Cell08_contig8mers.zip"),
         Panel("EMBO10", "Wei et al., EMBO J 2010", "EMBO10_contig8mers.zip"),
@@ -63,6 +69,27 @@ PANELS: dict[str, Panel] = {
         Panel("MAR17A", "Mariani et al., Cell Systems 2017", "MAR17A_contig8mers.zip"),
         Panel("SHO18A", "Shokri et al., Cell Reports 2019", "SHO18A_contig8mers.zip"),
         Panel("ROG18A", "Rogers et al., Mol Cell 2019", "ROG18A_contig8mers.zip"),
+        Panel("CB11", "Helfer et al., Curr Biol 2011", "CB11_contig8mers.zip"),
+        Panel("CR09", "Scharer et al., Cancer Res 2009", "CR09_contig8mers.zip"),
+        Panel("Cell09", "Grove et al., Cell 2009", "Cell09_contig8mers.zip"),
+        Panel("DEV12", "Busser et al., Development 2012", "DEV12_contig8mers.zip"),
+        Panel("GD09", "Lesch et al., Genes Dev 2009", "GD09_contig8mers.zip"),
+        Panel("GD12", "Peterson et al., Genes Dev 2012", "GD12_contig8mers.zip"),
+        Panel("GD13", "Soruco et al., Genes Dev 2013", "GD13_contig8mers.zip"),
+        Panel("KUR17A", "Li et al., Nature 2017", "KUR17A_contig8mers.zip"),
+        Panel("LIN14B", "Lindemose et al, Nucleic Acids Res. 2014", "LIN14B_contig8mers.zip"),
+        Panel("LIU18A", "Liu et al., Cell 2018", "LIU18A_contig8mers.zip"),
+        Panel("LIU18B", "Liu et al., eLife 2018", "LIU18B_contig8mers.zip"),
+        Panel("MBE14", "Cheatle Jarvela et al., Mol Biol Evol 2014", "MBE14_contig8mers.zip"),
+        Panel("NAR11", "De Masi et al., NAR 2011", "NAR11_contig8mers.zip"),
+        Panel("NBT06", "Berger et al., Nat Biotech 2006", "NBT06_contig8mers.zip"),
+        Panel("PNAS08", "De Silva et al., PNAS 2008", "PNAS08_contig8mers.zip"),
+        Panel("PNAS12", "Busser et al., PNAS 2012", "PNAS12_contig8mers.zip"),
+        Panel("PO10", "Del Bianco et al., PLoS ONE 2010", "PO10_contig8mers.zip"),
+        Panel("PP15", "Lehti-Shiu et al., PP 2015", "PP15_contig8mers.zip"),
+        Panel("Path10", "Campbell et al., PLoS Pathog 2010", "Path10_contig8mers.zip"),
+        Panel("RAD13A", "Radke et al., PNAS 2013", "RAD13A_contig8mers.zip"),
+        Panel("STI21B", "Stielow et al., Science Advances 2021", "STI21B_contig8mers.zip"),
     )
 }
 

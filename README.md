@@ -25,6 +25,7 @@ uv pip install --python .venv -e ".[dev]"
 | Path | Purpose |
 | --- | --- |
 | [docs/](docs/) | The owner's brief (verbatim) and [REFERENCES.md](docs/REFERENCES.md), the verified DOI list |
+| [docs/papers_inbox/](docs/papers_inbox/) | Drop new papers here; they get identified, renamed and filed into `docs/papers/` |
 | [PROVENANCE.md](PROVENANCE.md) | One row per raw file: URL, accession, timestamp, size, sha256 |
 | [configs/thresholds.yaml](configs/thresholds.yaml) | The project's only config file — every binarization cutoff |
 | [src/snp2prot/schema.py](src/snp2prot/schema.py) | The 22-column row schema and its validator |

@@ -16,6 +16,7 @@ import re
 from snp2prot.config import DOCS_DIR
 
 PAPERS_DIR = DOCS_DIR / "papers"
+INBOX_DIR = DOCS_DIR / "papers_inbox"
 MANIFEST = PAPERS_DIR / "README.md"
 
 #: `| `name.pdf` | ! P1 | Paper cite | [doi](url) |` — the DOI cell may be empty, and the
@@ -26,9 +27,9 @@ ROW = re.compile(
 )
 
 
-def is_supplement(filename: str) -> bool:
-    """Supplements are optional context; a missing one never blocks a phase."""
-    return "_supp" in filename
+def is_ancillary(filename: str) -> bool:
+    """Supplements and standalone figures are optional context; missing ones never block."""
+    return "_supp" in filename or "_fig" in filename
 
 
 def expected() -> list[dict[str, str]]:
@@ -58,7 +59,7 @@ def main() -> None:
     for r in rows:
         ok = r["file"] in present
         mark = "ok     " if ok else "MISSING"
-        flag = "!" if r["prio"] and not is_supplement(r["file"]) else " "
+        flag = "!" if r["prio"] and not is_ancillary(r["file"]) else " "
         print(f"{mark} {flag} P{r['phase']}  {r['file']:<56} {r['cite']}")
         if not ok:
             missing.append(r)
@@ -67,16 +68,23 @@ def main() -> None:
     for name in unlisted:
         print(f"UNLISTED  --  {name:<56} not in the manifest — rename it or add a row")
 
-    blocking = [r for r in missing if r["prio"] and not is_supplement(r["file"])]
-    n_supp = sum(1 for r in rows if is_supplement(r["file"]))
+    blocking = [r for r in missing if r["prio"] and not is_ancillary(r["file"])]
+    n_anc = sum(1 for r in rows if is_ancillary(r["file"]))
     print(
         f"\n{len(rows) - len(missing)}/{len(rows)} present "
-        f"({len(rows) - n_supp} main, {n_supp} supplementary), "
+        f"({len(rows) - n_anc} main, {n_anc} supplementary), "
         f"{len(unlisted)} unlisted, {len(blocking)} blocking"
     )
     if blocking:
         print("blocking the next phase: " + ", ".join(r["file"] for r in blocking))
-    print("known gaps are documented at the end of docs/papers/README.md")
+
+    waiting = sorted(f.name for f in INBOX_DIR.glob("*") if f.name != "README.md")
+    if waiting:
+        print(f"\n{len(waiting)} file(s) waiting in {INBOX_DIR.name}/ to be identified and filed:")
+        for name in waiting:
+            print(f"  {name}")
+
+    print("\nknown gaps are documented at the end of docs/papers/README.md")
 
 
 if __name__ == "__main__":

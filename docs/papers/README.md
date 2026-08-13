@@ -4,12 +4,17 @@ PDFs of the source papers. **Git-ignored** — publisher PDFs are copyrighted an
 the repo. This README and [../REFERENCES.md](../REFERENCES.md) are tracked, so the manifest
 travels with the project even though the files do not.
 
+**To add a paper: drop it in [../papers_inbox/](../papers_inbox/) under whatever name it
+downloaded with, and ask Claude to file it.** Identification, renaming, moving here, and the
+manifest row are Claude's job. Nothing is filed into this directory by hand.
+
 ## Naming
 
 ```
 <firstauthor><year>_<slug>.pdf              main article
 <firstauthor><year>_<slug>_supp.pdf         its supplement, when there is one
 <firstauthor><year>_<slug>_supp-<what>.pdf  when a paper has several supplement documents
+<firstauthor><year>_<slug>_fig<N>.pdf       a standalone high-res main-text figure
 ```
 
 All lowercase, hyphens inside the slug, underscore only before `supp`. The extension follows
@@ -45,6 +50,9 @@ Phase = when it is needed. `!` = blocking that phase. Supplement rows carry `↳
 | `noyes2008_homeodomain-specificities.pdf` | P2 | Noyes et al. 2008, *Cell* 133:1277 | [10.1016/j.cell.2008.05.023](https://doi.org/10.1016/j.cell.2008.05.023) |
 | `noyes2008_homeodomain-specificities_supp.pdf` | P2 | ↳ supplemental data (64 pp) | |
 | `persikov2015_c2h2-zf-landscape.pdf` | ! P3 | Persikov et al. 2015, *NAR* 43:1965 | [10.1093/nar/gku1395](https://doi.org/10.1093/nar/gku1395) |
+| `persikov2015_c2h2-zf-landscape_supp-methods.pdf` | P3 | ↳ supplemental methods (12 pp) — where open item #4 should be settled | |
+| `persikov2015_c2h2-zf-landscape_supp-figures.pdf` | P3 | ↳ supplemental figures (33 pp) | |
+| `persikov2015_c2h2-zf-landscape_fig3.pdf` | P3 | ↳ main-text Figure 3 standalone, hi-res; redundant with the article PDF but readable | |
 | `najafabadi2015_c2h2-regulatory-lexicon.pdf` | P3 | Najafabadi et al. 2015, *Nat Biotechnol* 33:555 | [10.1038/nbt.3128](https://doi.org/10.1038/nbt.3128) |
 | `najafabadi2015_c2h2-regulatory-lexicon_supp.pdf` | P3 | ↳ supplementary information (14 pp) | |
 | `yan2021_snp-selex.pdf` | ! P4 | Yan et al. 2021, *Nature* 591:147 | [10.1038/s41586-021-03211-0](https://doi.org/10.1038/s41586-021-03211-0) |
@@ -64,17 +72,18 @@ Phase = when it is needed. `!` = blocking that phase. Supplement rows carry `↳
 
 ## Known gaps
 
-Not asserted to exist — verify on the publisher's page before hunting.
-
-- **Persikov 2015 supplement.** No supplementary document present, and this is the one that
-  matters most: open item #4 (the provisional 2 mM / 10 mM 3-AT binarization rule) is likely
-  settled in the supplementary methods rather than the 20-page main text. Worth checking the
-  NAR page before Phase 3.
-- **Yan 2021 supplementary information.** Only the 679-page HOMER motif-enrichment dump
-  (`MOESM12`) is here. The narrative Supplementary Information — where the OBS/PBS definitions
-  and cutoffs live — is a different MOESM and would settle open item #5.
+- ~~**Persikov 2015 supplement**~~ — **closed 2026-08-13.** Supplemental methods and figures
+  are now filed. The methods document has a section on processing and filtering the protein
+  selection data, which is where open item #4 should be settled.
+- **Yan 2021 narrative supplementary information — does not exist.** Checked: `MOESM12`, the
+  679-page HOMER motif-enrichment dump, is the only PDF supplement; everything else Nature
+  hosts for this paper is `.xlsx`. So the OBS/PBS definitions must come from the main text and
+  the supplementary tables, not from a methods narrative. Open item #5 is affected: the Phase 4
+  cutoff will have to be read off the score distribution and the tables rather than quoted.
 - **UniPROBE database papers** (Hume, Newburger) have no supplement; nothing missing.
 - **Jolma preprint** supplementary files are hosted separately on bioRxiv; low priority, since
   Codebook is the brief's lowest-priority source.
 
-Tables and pure figure sets were deliberately skipped — only documents were collected.
+Tables and pure figure sets were deliberately skipped — only documents were collected. The one
+exception is `persikov2015_..._fig3.pdf`, which arrived alongside that paper's supplements and
+was kept because the weighted-overlap heat map is unreadable at article resolution.

@@ -38,6 +38,7 @@ concrete consequences that shape the code:
 docs/TFDNA_MERGE_BRIEF.md   the owner's spec, verbatim — source of record
 docs/REFERENCES.md          dataset -> paper -> Crossref-verified DOI, plus reading order
 docs/papers/                paper PDFs (git-ignored); README.md there is the manifest
+docs/papers_inbox/          the owner drops papers here; Claude identifies and files them
 PROVENANCE.md               one row per raw file: URL, accession, timestamp, size, sha256
 configs/thresholds.yaml     the ONLY config file; all binarization cutoffs live here
 reports/                    generated markdown, committed; the phase-boundary deliverables
@@ -108,8 +109,15 @@ names — **do not create the left-hand paths**, that would fork the structure i
   file — deliberately not merged into this one, because changing a threshold invalidates the
   dataset, every report and every provenance row, while changing a learning rate does not.
   Two things with different blast radii do not belong in one file.
-- **Paper PDFs go in `docs/papers/`**, git-ignored, named `<firstauthor><year>_<slug>.pdf`.
-  The manifest is `docs/papers/README.md`; `scripts/check_papers.py` reports what is missing.
+- **Paper PDFs go in `docs/papers/`**, git-ignored, named `<firstauthor><year>_<slug>.pdf`
+  (`_supp`, `_supp-<what>`, `_fig<N>` for the rest). The manifest is `docs/papers/README.md`;
+  `scripts/check_papers.py` reports what is missing, unlisted, or waiting in the inbox.
+- **The owner adds papers by dropping them in `docs/papers_inbox/`** under whatever name they
+  downloaded with. Filing them is Claude's job, and it is done by **reading each file's
+  embedded metadata and first page — never by trusting the download name.** Elsevier `mmc`
+  numbers have twice turned out to be main articles rather than supplements, and the two 2008
+  Cell homeodomain papers have PIIs that run opposite to their DOI order. After filing, add a
+  manifest row and leave the inbox empty.
 - **Parquet, not CSV**, for anything over ~10⁵ rows. Checkpoint often.
 - Parser output goes through `schema.coerce(df)`, then `schema.validate(df, source)`, and the
   report's `raise_if_failed()` before any write to `data/interim/`.

@@ -58,6 +58,7 @@ unpadded envelope offsets.
 | `repeat_array` | 2 | Repeated hits of one family — a C2H2 zinc-finger array is 2–6 separate ~23-residue folds on flexible linkers, each requiring its own Zn²⁺. Not one continuous unit. |
 | `no_domain` | — | No Pfam hit above the family's gathering threshold. We cannot say what is doing the binding. |
 | mutation outside the padded domain | 3 | The variant would be sequence-identical to its wild type. |
+| protein complex | 1 | Two or three *different chains* forming one binding unit — `Myc_Max`, `Kay_Jra` (Fos/Jun), `Da_Twi`, the C. elegans `HLH-2_*` heterodimers, the `MAML1-CSL-GST-NOTCH*` ternary complexes. No single `dbd_seq` is responsible for the measurement. This is the same principle as the mixed-family rejection, one level up: there the two domains sat in one chain, here they sit in two. UniPROBE publishes no sequence for any of them, so they are excluded either way, but the reason is now recorded rather than incidental. |
 
 ## 4. Consequences for the phase plan
 
@@ -75,7 +76,26 @@ sets (Phase 6) are bHLH proteins (Pho4, Cbf1, MAX), which bind as dimers; MAX's 
 are described as being "in and around" the DBD, so condition 3 has to be checked per variant.
 Each is screened by the same policy when its phase is built.
 
-## 5. Changing the policy
+## 5. Cluster membership and indels
+
+Members of a `wt_id` cluster need **not** be the same length. Distance comes from a pairwise
+alignment (`snp2prot.align`), so a variant may carry insertions or deletions.
+
+Terminal gaps are free, and that is not a convenience — it is required for correctness here.
+`dbd_seq` is the padded envelope clipped where the assayed construct ends, so the amount of
+padding that survives depends on the construct, not on the protein:
+
+| ROG18A construct | bare Pfam domain | padded `dbd_seq` | N-terminal padding kept |
+|---|---:|---:|---:|
+| `FoxJ3` | 83 aa | 103 aa | 10 |
+| `FoxJ3_N3_6aa` | 83 aa | 95 aa | 2 |
+
+Those two differ by 8 residues at the terminus and by **zero** residues of biology. Charging
+for the terminal gap would report 8 phantom indels between a protein and its own chimera.
+The validator now *warns* rather than errors on a length-heterogeneous cluster, and the
+warning says to check whether the difference is a real indel or clipped padding.
+
+## 6. Changing the policy
 
 Every knob is in the `domain:` block of `configs/thresholds.yaml`. Setting
 `allow_repeat_arrays: true` readmits the C2H2 arrays as a single spanned region;

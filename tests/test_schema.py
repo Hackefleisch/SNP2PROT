@@ -113,13 +113,35 @@ def test_duplicate_pairs_are_caught(good_frame):
     assert any("duplicate" in e for e in rep.errors)
 
 
-def test_ragged_cluster_is_caught(good_frame):
-    """Hamming distance is undefined across DBDs of differing length."""
+def test_ragged_cluster_is_allowed_but_warned(good_frame):
+    """Distance is alignment-based now, so differing lengths are legal — but they are also
+    how padding clipped by a short construct shows up, so they are surfaced."""
     df = good_frame.copy()
     df.loc[2, "dbd_seq"] = df.loc[2, "dbd_seq"][:-5]
     df = schema.add_pair_ids(df)
     rep = schema.validate(df, source="TESTSRC")
-    assert any("differing length" in e for e in rep.errors)
+    assert rep.ok, str(rep)
+    assert any("differing length" in w for w in rep.warnings)
+
+
+def test_mut_positions_are_bounded_by_the_reference_not_the_variant(good_frame):
+    """A variant with a deletion is shorter than its reference, yet names reference positions."""
+    df = good_frame.copy()
+    ref_len = len(df.loc[0, "dbd_seq"])
+    df.loc[2, "dbd_seq"] = df.loc[2, "dbd_seq"][:-5]  # variant 5 residues shorter
+    df.loc[2, "mut_positions"] = str(ref_len)  # legal in the reference frame
+    df.loc[2, "n_mut_from_wt"] = 1
+    df.loc[3, "dbd_seq"] = df.loc[3, "dbd_seq"][:-5]
+    df = schema.add_pair_ids(df)
+    rep = schema.validate(df, source="TESTSRC")
+    assert rep.ok, str(rep)
+
+
+def test_variants_without_a_reference_row_are_rejected(good_frame):
+    """mut_positions is meaningless without the reference that defines the frame."""
+    df = good_frame[good_frame["n_mut_from_wt"] > 0].copy()
+    rep = schema.validate(df, source="TESTSRC")
+    assert any("no reference row" in e for e in rep.errors)
 
 
 def test_lowercase_dbd_is_rejected(good_frame):

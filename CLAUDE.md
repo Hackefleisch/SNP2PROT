@@ -131,7 +131,11 @@ names — **do not create the left-hand paths**, that would fork the structure i
    `data/raw/<source>/HOWTO.md` with exact manual steps, a row in the PROVENANCE manual queue,
    and then you move to the next source. Do not burn effort brute-forcing a download.
 9. **Stop at each phase boundary** and hand back the reports. Do not run ahead to modeling.
-10. **Never `git commit` unsolicited.** The owner reviews work as an uncommitted diff;
+10. **Never run a command that takes more than a few minutes.** Hand over the exact command
+    instead, with how long it takes and what to check in the output. `scripts/build_dataset.py
+    --all` is ~25 min and is always the owner's to run; single small sources and test subsets
+    are fine to execute here.
+11. **Never `git commit` unsolicited.** The owner reviews work as an uncommitted diff;
     committing removes the review surface. Finish, run tests and lint, leave the tree dirty.
 
 ## Conventions
@@ -155,10 +159,19 @@ names — **do not create the left-hand paths**, that would fork the structure i
 - Parser output goes through `schema.coerce(df)`, then `schema.validate(df, source)`, and the
   report's `raise_if_failed()` before any write to `data/interim/`.
 - `pair_id` and `dna_len` are **derived** — `coerce()` computes them. Never hand-set them.
-- Cluster invariants the validator checks: every `wt_id` group is length-homogeneous (Hamming
-  distance is undefined otherwise), and `mut_positions` is 1-based **within the DBD**, not the
-  full protein. Isoform-offset off-by-ones are the most likely silent bug in the project —
-  every variant must be verified to land on the residue the paper claims.
+- **Cluster distance is alignment-based, so variants may carry insertions and deletions.**
+  `snp2prot.align.edit_profile` aligns a variant to its reference (BLOSUM62, affine gaps) and
+  counts every edited residue. **Terminal gaps are free**: `dbd_seq` is the padded envelope
+  *clipped* where the construct ends, so two versions of one domain differ at the termini for
+  reasons that have nothing to do with the protein — in ROG18A every bare domain is 83-85 aa
+  while the padded ones run 95-105 aa. Internal indels still count. Settings live in the
+  `cluster:` block of `configs/thresholds.yaml`.
+- `mut_positions` is 1-based **in the reference's frame**, not the variant's, so every member
+  of a cluster shares one coordinate system and maps onto one predicted structure. A variant
+  with a deletion can therefore name a position past its own length. One entry is emitted per
+  edited residue, so `len(mut_positions) == n_mut_from_wt` always holds. Isoform-offset
+  off-by-ones remain the most likely silent bug — every variant must land on the residue the
+  paper claims.
 - Type hints on public functions; `from __future__ import annotations` at module top.
 - Line length 100; `ruff check` + `ruff format` clean before a commit.
 
@@ -169,6 +182,7 @@ uv venv --python 3.11 .venv && uv pip install --python .venv -e ".[dev]"
 .venv/bin/python -m pytest -q
 .venv/bin/python scripts/build_dataset.py --all            # parse -> validate -> interim
 .venv/bin/python scripts/make_reports.py --source BAR15A    # regenerate reports/
+.venv/bin/python scripts/audit_sources.py                  # invariant sweep, ~4 min
 .venv/bin/python scripts/build_protein_table.py            # protein-side companion table
 .venv/bin/python -m ruff check . && .venv/bin/python -m ruff format .
 .venv/bin/python scripts/record_provenance.py data/raw/<source>/<file> --url ... --desc ...

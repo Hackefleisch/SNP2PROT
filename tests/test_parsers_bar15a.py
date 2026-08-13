@@ -65,9 +65,11 @@ def test_mutation_bookkeeping_is_one_based():
     assert bar15a._mutation_bookkeeping("ACDEF", "AGDEY") == (2, "2,5")
 
 
-def test_mutation_bookkeeping_rejects_length_change():
-    with pytest.raises(ValueError, match="length differs"):
-        bar15a._mutation_bookkeeping("ACDEF", "ACDE")
+def test_mutation_bookkeeping_refuses_to_rebase_across_an_indel():
+    """Construct positions are rebased onto dbd_seq by a constant offset, which an indel
+    invalidates. Better to reject the allele than to place the mutation on the wrong residue."""
+    with pytest.raises(ValueError, match="cannot be rebased"):
+        bar15a._mutation_bookkeeping("ACDEFGHIKLMNPQ", "ACDEFGHKLMNPQ")
 
 
 def test_anomalous_alleles_are_documented_and_only_one_is_dropped():

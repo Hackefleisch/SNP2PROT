@@ -68,3 +68,29 @@ superseded by later work were closed rather than left to rot.
 
 | 42 | **A bare `Insert sequence` label collapsed 88 GR09 genes into one cluster.** Keying inserts by their full construct name (needed for #39) assumed the label always carries a construct name. GR09's does not — it reads simply "Insert sequence" — so the key came out empty and every GR09 gene shared it, producing a single `GR09:` cluster of 45 distinct Zn_clus domains. Caught by the cluster-size distribution, not by any failure: the validator passed. Fixed by falling back to the gene name for bare and plasmid-named labels, with a regression test. | fixed |
 | 43 | **Format assumptions UniPROBE has broken so far**, each caught by a distribution looking wrong rather than by an error: no header row (EMBO10); seven columns (Cell08); E-score in a different column, or absent (GR09/SCI09/RAD13A); a gene folder holding several proteins (ROG18A/NAR11/LIN14B/GD13); a bare sequence label (GR09). Per-source sanity summaries after every rebuild are the reason these were found; a green validator alone would not have caught any of them. | informational |
+
+## Phase 2e — alignment-based cluster distance (2026-08-13)
+
+| # | item | status |
+|---|---|---|
+| 44 | **Cluster members no longer have to be the same length.** Distance was Hamming, which excluded any variant with an indel and any variant whose padding had been clipped differently. It is now a pairwise alignment (BLOSUM62, affine gaps) with **free terminal gaps**, because `dbd_seq` is the padded envelope clipped by the construct: ROG18A's bare domains are all 83-85 aa while its padded ones run 95-105 aa purely from how much padding fitted. Charging for terminal gaps would report 8 phantom indels between FoxJ3 and its own chimera. | done, owner-requested |
+| 45 | **`mut_positions` is now in the reference's coordinate frame**, so every member of a cluster shares one coordinate system and maps onto one predicted structure. A variant with a deletion may name a position past its own length; the validator bounds positions by the cluster's reference and rejects a cluster carrying variants but no reference row. | done |
+| 46 | **ROG18A gains 9 more variants**: its 15 domains now form 3 clusters (FoxJ3 with 7 variants, FoxN3 with 4, FoxN2 with 1) instead of mostly singletons. The edit positions are compositionally exact — `_6aa` gives 6 consecutive positions, `_loop` gives 8, and `_6aa+loop` gives precisely their union — which is independent evidence the alignment places gaps correctly. | informational |
+| 47 | **BAR15A refuses to rebase an allele across an indel.** Its construct-frame positions are shifted onto the padded domain by a constant offset, which an indel invalidates. No current allele triggers this; a future one would be rejected with a reason rather than silently mis-positioned. | done |
+
+## Phase 2f — systematic audit of every source (2026-08-13)
+
+Rather than reread each accession by hand, the invariants that past bugs violated were turned
+into `scripts/audit_sources.py`, which sweeps all 30 registered accessions in ~4 minutes
+without re-scanning Pfam. It checks archive coverage both ways, detail-page key collisions,
+E-score readability, score shape, rows-per-domain, the shared 8-mer set, and cluster-size
+outliers. Findings:
+
+| # | item | status |
+|---|---|---|
+| 48 | **No construct-name mismatches anywhere.** The construct-splitting change of #39 drops no data in any source — the check that would have caught it is now part of the audit. | verified clean |
+| 49 | **SCI09 loses nothing to the rejected combined files.** All 104 genes keep at least one readable per-replicate file; the 105 rejected 20-column files are redundant. | verified clean |
+| 50 | **22 archive entries are protein complexes** — `Myc_Max`, `Kay_Jra`, `Da_Twi`, ten `HLH-2_*` heterodimers (Cell09), nine `CSL/NOTCH/MAML` complexes (PO10). Two or three chains form one binding unit, so none can satisfy admission condition 1. UniPROBE publishes no sequence for them, so they were already excluded — but by accident. Now an explicit rejection category in `docs/DOMAIN_POLICY.md`. | recorded |
+| 51 | **PNAS08's archive is flat** — files sit at the top level with no gene folder, so the gene came out as a filename and nothing matched. Fixed by deriving the gene from the filename stem when there is no directory. **PNAS08 goes from 0 to 2 domains (65,792 rows).** | fixed |
+| 52 | **PP15 must stay unmatched.** Its archive has both *Arabidopsis thaliana* and *A. lyrata* experiments, but its detail pages carry only the *thaliana* sequence. A prefix match would have assigned the thaliana sequence to the lyrata ortholog — a mis-attribution of exactly the kind the policy exists to prevent. Left unparsed deliberately. | closed, deliberate |
+| 53 | **10 genes have a detail page with no sequence** (Cell08 4, MAR17A 5, GR09 1) — Hoxa3, Nkx3-1, Six6, Arid5b, Cebpa, E4f1, Xbp1 among them. UniPROBE simply does not publish those. Already reported per source by the parser. | informational |

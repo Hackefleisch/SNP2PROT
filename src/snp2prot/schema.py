@@ -270,6 +270,16 @@ def validate(
             f"disagrees with n_mut_from_wt"
         )
 
+    # `mut_positions` is in the REFERENCE's coordinate frame, not the variant's, so a
+    # variant carrying a deletion can legitimately name a position past its own length. The
+    # bound is the cluster's reference sequence.
+    ref_len = (
+        df.loc[df["n_mut_from_wt"] == 0]
+        .drop_duplicates("wt_id")
+        .set_index("wt_id")["dbd_seq"]
+        .str.len()
+    )
+
     def _positions_in_range(row: pd.Series) -> bool:
         v = row["mut_positions"]
         if pd.isna(v) or str(v).strip() == "":
@@ -278,13 +288,25 @@ def validate(
             pos = [int(p) for p in str(v).split(",") if p.strip()]
         except ValueError:
             return False
-        return all(1 <= p <= len(row["dbd_seq"]) for p in pos)
+        limit = ref_len.get(row["wt_id"], len(row["dbd_seq"]))
+        return all(1 <= p <= limit for p in pos)
 
     out_of_range = ~df.apply(_positions_in_range, axis=1)
     if out_of_range.any():
         rep.error(
             f"mut_positions: {int(out_of_range.sum()):,} rows with positions outside "
-            f"1..len(dbd_seq) or unparseable (1-based, DBD-relative — check isoform offsets)"
+            f"1..len(reference) or unparseable (1-based in the REFERENCE frame — check "
+            f"isoform offsets)"
+        )
+
+    orphan_variants = df.loc[df["n_mut_from_wt"] > 0, "wt_id"][
+        lambda s: ~s.isin(ref_len.index)
+    ].unique()
+    if len(orphan_variants):
+        rep.error(
+            f"wt_id: {len(orphan_variants)} clusters carry variants but no reference row "
+            f"(n_mut_from_wt == 0), so mut_positions cannot be interpreted: "
+            f"{sorted(orphan_variants)[:3]}"
         )
 
     # -- DNA axis ----------------------------------------------------------------------
@@ -377,12 +399,14 @@ def validate(
                 f"wt_id: {len(orphan)} clusters with no n_mut_from_wt == 0 reference row "
                 f"(e.g. {orphan[:3]}) — fine if the WT was not assayed, but check"
             )
-        lens = df.assign(_l=dbd.str.len()).groupby("wt_id")["_l"].nunique()
-        ragged = lens[lens > 1].index.tolist()
-        if ragged:
-            rep.error(
+        ragged = (
+            df.assign(_l=dbd.str.len()).groupby("wt_id")["_l"].nunique().pipe(lambda x: x[x > 1])
+        )
+        if len(ragged):
+            rep.warn(
                 f"wt_id: {len(ragged)} clusters contain DBDs of differing length "
-                f"(e.g. {ragged[:3]}); Hamming distance is undefined across lengths"
+                f"(e.g. {list(ragged.index[:3])}). Allowed since distance is alignment-based; "
+                f"check they are real indels and not padding clipped by a short construct"
             )
 
     # -- summary stats -----------------------------------------------------------------

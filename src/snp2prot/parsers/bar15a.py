@@ -33,7 +33,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from snp2prot import domains, schema, thresholds
+from snp2prot import align, domains, schema, thresholds
 from snp2prot.config import raw_dir
 from snp2prot.parsers import _uniprobe
 
@@ -102,11 +102,20 @@ def find_experiments(archive: Path | None = None) -> dict[str, list[str]]:
 
 
 def _mutation_bookkeeping(ref: str, variant: str) -> tuple[int, str]:
-    """`(n_mut_from_wt, mut_positions)` from the sequences themselves, 1-based in the DBD."""
-    if len(ref) != len(variant):
-        raise ValueError(f"insert length differs from REF: {len(variant)} vs {len(ref)}")
-    positions = [i for i, (r, v) in enumerate(zip(ref, variant, strict=True), 1) if r != v]
-    return len(positions), ",".join(str(p) for p in positions)
+    """`(n_mut_from_wt, mut_positions)` from the sequences, 1-based in the CONSTRUCT.
+
+    Alignment-based, so an allele carrying an indel is described rather than crashing. The
+    caller rebases these onto `dbd_seq` by a constant offset, which is only valid for
+    substitutions, so an indel is refused here instead of being silently mis-positioned.
+    """
+    profile = align.edit_profile(ref, variant)
+    if profile.n_insertions or profile.n_deletions:
+        raise ValueError(
+            f"allele carries {profile.n_insertions} insertion(s) and "
+            f"{profile.n_deletions} deletion(s); construct positions cannot be rebased "
+            f"onto the padded domain by a constant offset"
+        )
+    return profile.n_edits, profile.positions_str
 
 
 def parse(genes: list[str] | None = None, threshold_path: str | Path | None = None) -> pd.DataFrame:
@@ -148,7 +157,11 @@ def parse(genes: list[str] | None = None, threshold_path: str | Path | None = No
                 continue
             page = meta[gene]
             insert = page.inserts[allele]
-            n_mut, construct_positions = _mutation_bookkeeping(page.inserts["REF"], insert)
+            try:
+                n_mut, construct_positions = _mutation_bookkeeping(page.inserts["REF"], insert)
+            except ValueError as exc:
+                rejected[allele_full] = str(exc)
+                continue
             positions = [int(x) for x in construct_positions.split(",") if x]
 
             # Condition 3: a mutation outside the stored region would make this variant

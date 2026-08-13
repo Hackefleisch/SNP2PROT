@@ -33,6 +33,20 @@ version: 2
 #  docs/DOMAIN_POLICY.md for the full rule and the audit of what it excludes.
 # =====================================================================================
 
+# Cluster membership. A variant no longer has to be the same length as its reference:
+# distance comes from a pairwise alignment, so insertions and deletions are allowed.
+cluster:
+  # alignment -> Bio.Align global alignment, BLOSUM62, affine gaps (indels allowed)
+  # hamming   -> substitutions only, equal lengths required (the old behaviour)
+  distance: alignment
+
+  # Terminal gaps cost nothing. dbd_seq is the Pfam envelope plus padding, CLIPPED where the
+  # assayed construct ends -- in ROG18A every bare domain is 83-85 aa but the padded ones run
+  # 95-105 aa purely because some constructs allowed the full 10 residues of padding and
+  # others only 2. Charging for that would report phantom indels between a protein and its
+  # own chimera. Internal indels still count.
+  free_end_gaps: true
+
 domain:
   # Padding applied to each side of the Pfam envelope. 10 covers every observed
   # out-of-envelope mutation (max 9) with margin, and is set from the biology of the

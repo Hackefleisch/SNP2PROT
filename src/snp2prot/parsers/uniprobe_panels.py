@@ -36,7 +36,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from snp2prot import domains, schema, thresholds
+from snp2prot import align, domains, schema, thresholds
 from snp2prot.config import raw_dir
 from snp2prot.parsers import _uniprobe
 
@@ -106,7 +106,14 @@ def group_experiments(archive: Path) -> dict[str, list[str]]:
         members = [n for n in z.namelist() if _uniprobe.CONTIG_8MER_RE.search(n)]
     out: dict[str, list[str]] = {}
     for m in members:
-        out.setdefault(m.split("/")[0], []).append(m)
+        if "/" in m:
+            gene = m.split("/")[0]
+        else:
+            # PNAS08's archive is flat -- the file sits at the top level with no gene folder,
+            # so the gene has to come from the filename. Its detail pages are named for the
+            # stem exactly ("Cgd2_3490" for "Cgd2_3490_contig8mers.txt").
+            gene = _uniprobe.CONTIG_8MER_RE.sub("", m)
+        out.setdefault(gene, []).append(m)
     return {k: sorted(v) for k, v in sorted(out.items())}
 
 
@@ -180,7 +187,14 @@ def parse_panel(
             continue
         page = details.get(gene)
         if page is None:
-            skipped.append(SkippedProtein(gene, "no detail page downloaded"))
+            # Not a download gap: UniPROBE publishes no detail page for these at all.
+            # Most are protein complexes -- Myc_Max, Kay_Jra (Fos/Jun), Da_Twi, the C.
+            # elegans HLH-2 heterodimers, the CSL/NOTCH/MAML ternary complexes. Two or three
+            # different chains form one binding unit, so no single dbd_seq is responsible
+            # for the measurement and they fail the first admission condition anyway.
+            skipped.append(
+                SkippedProtein(gene, "UniPROBE publishes no sequence (often a protein complex)")
+            )
             continue
         if not page.inserts:
             skipped.append(SkippedProtein(gene, "detail page has no clone insert sequence"))
@@ -213,23 +227,20 @@ def parse_panel(
     # Cluster engineered variants with their reference. A gene folder holding several
     # constructs is a variant series: NAR11's HLH-1 carries L13R/L13T/L13V, ROG18A's FoxN3
     # carries chimeras. The construct named after the gene is the reference; the rest are
-    # variants of it, provided they are the same length (Hamming distance is undefined
-    # otherwise, and the validator rejects ragged clusters).
+    # variants of it. Lengths need not match: distance is alignment-based, with terminal
+    # gaps free so that padding clipped by a short construct is not counted as an indel.
     references = {g["gene"]: seq for seq, g in groups.items() if g["gene"] in g["genes"]}
 
     def find_reference(gene: str, seq: str) -> tuple[str, str] | None:
         """The reference this construct varies from, if there is an unambiguous one."""
         ref = references.get(gene)
-        if ref is not None and len(ref) == len(seq):
+        if ref is not None:
             return gene, ref
-        # Sibling folders: ROG18A puts FoxN3 and its chimeras FoxN3_J3_* side by side, so the
-        # parent is the longest reference whose name prefixes this one. Requiring equal length
-        # keeps the inference honest -- a name that merely looks related is not enough.
-        cands = [
-            (g, r)
-            for g, r in references.items()
-            if g != gene and gene.startswith(g + "_") and len(r) == len(seq)
-        ]
+        # Sibling folders: ROG18A puts FoxN3 and its chimeras FoxN3_J3_* side by side, so
+        # the parent is the longest reference whose name prefixes this one. Equal length is
+        # no longer required -- distance comes from an alignment, and the padded envelopes of
+        # a protein and its own chimera routinely differ by however much padding fitted.
+        cands = [(g, r) for g, r in references.items() if g != gene and gene.startswith(g + "_")]
         return max(cands, key=lambda c: len(c[0])) if cands else None
 
     with zipfile.ZipFile(archive) as z:
@@ -238,12 +249,10 @@ def parse_panel(
             found = find_reference(g["gene"], dbd_seq)
             if found is not None:
                 ref_gene, ref_seq = found
-                positions = [
-                    i for i, (a, b) in enumerate(zip(ref_seq, dbd_seq, strict=True), 1) if a != b
-                ]
+                profile = align.edit_profile(ref_seq, dbd_seq)
                 wt_id = f"{accession}:{ref_gene}"
-                n_mut = len(positions)
-                mut_positions = ",".join(str(i) for i in positions)
+                n_mut = profile.n_edits
+                mut_positions = profile.positions_str
             else:
                 # No same-length reference: this construct is its own reference.
                 wt_id = f"{accession}:{'/'.join(group_genes)}"

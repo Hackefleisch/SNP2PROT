@@ -29,31 +29,22 @@ from __future__ import annotations
 
 import re
 import zipfile
-from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from snp2prot import schema, thresholds
 from snp2prot.config import raw_dir
+from snp2prot.parsers import _uniprobe
 
 SOURCE = "BAR15A"
-ASSAY = "PBM"
-SCORE_TYPE = "pbm_escore"
 DBD_SOURCE = "uniprobe_clone_insert"
-DNA_CONTEXT = "core_only"  # a PBM 8-mer score aggregates over many flanking contexts
 
 ARCHIVE = "BAR15A_contig8mers.zip"
 DETAILS = "details"
 
-#: Matches both spellings of the contiguous-8-mer file. See note 1 in the module docstring.
-CONTIG_8MER_RE = re.compile(r"_8mers(_11111111)?\.txt$")
-
-#: `<dt>LABEL</dt> <dd> <kbd>SEQUENCE</kbd>` — the detail pages put `<dd>` and `<kbd>` on
-#: separate lines, so the whitespace between them is not optional.
-SEQ_BLOCK_RE = re.compile(r"<dt>([^<]*?)</dt>\s*<dd>\s*<kbd>(.*?)</kbd>", re.S)
-FIELD_RE = re.compile(r"<dt>\s*(Domain|Swiss-Prot|Species)\s*</dt>\s*<dd>(.*?)</dd>", re.S)
+#: Shared with the other UniPROBE accessions; see `_uniprobe.CONTIG_8MER_RE`.
+CONTIG_8MER_RE = _uniprobe.CONTIG_8MER_RE
 ALLELE_NAME_RE = re.compile(r"^([A-Z])(\d+)([A-Z])$")
 
 #: Alleles whose deposited insert contradicts their own name. Characterised in Phase 1 by
@@ -85,59 +76,13 @@ ANOMALIES: dict[str, str] = {
 UNUSABLE = {"PITX2_T114P"}
 
 
-@dataclass(frozen=True)
-class GeneMeta:
-    """Everything the detail page tells us about one gene."""
-
-    gene: str
-    family: str
-    protein_id: str
-    species: str
-    inserts: dict[str, str]  # allele -> clone insert sequence
-
-    @property
-    def ref(self) -> str:
-        return self.inserts["REF"]
-
-
-def _clean_sequence(html_fragment: str) -> str:
-    """Strip the numbered, space-broken sequence formatting down to residues."""
-    text = re.sub(r"<[^>]+>", " ", html_fragment).replace("&nbsp;", " ")
-    return "".join(re.findall(r"[A-Z]", text))
-
-
-def _clean_field(html_fragment: str) -> str:
-    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html_fragment)).strip()
-
-
-def load_metadata(details_dir: Path | None = None) -> dict[str, GeneMeta]:
-    """Parse every `details/<GENE>.html` page into a `GeneMeta`."""
-    details_dir = details_dir or (raw_dir(SOURCE) / DETAILS)
-    pages = sorted(details_dir.glob("*.html"))
-    if not pages:
-        raise FileNotFoundError(f"no detail pages under {details_dir}")
-
-    out: dict[str, GeneMeta] = {}
-    for page in pages:
-        html = page.read_text(encoding="utf8", errors="ignore")
-        fields = {m.group(1): _clean_field(m.group(2)) for m in FIELD_RE.finditer(html)}
-        inserts = {}
-        for m in SEQ_BLOCK_RE.finditer(html):
-            label = m.group(1).strip()
-            if label.endswith("Insert Sequence"):
-                allele_full = label[: -len(" Insert Sequence")].strip()
-                _, _, allele = allele_full.partition("_")
-                inserts[allele] = _clean_sequence(m.group(2))
-        if "REF" not in inserts:
-            raise ValueError(f"{page.name}: no REF insert sequence found")
-        out[page.stem] = GeneMeta(
-            gene=page.stem,
-            family=fields.get("Domain", ""),
-            protein_id=fields.get("Swiss-Prot", ""),
-            species=fields.get("Species", ""),
-            inserts=inserts,
-        )
-    return out
+def load_metadata(details_dir: Path | None = None) -> dict[str, _uniprobe.DetailPage]:
+    """Parse every `details/<GENE>.html` page. Every gene must expose a REF insert."""
+    pages = _uniprobe.load_details(details_dir or (raw_dir(SOURCE) / DETAILS))
+    for gene, page in pages.items():
+        if "REF" not in page.inserts:
+            raise ValueError(f"{gene}: no REF insert sequence found")
+    return pages
 
 
 def find_experiments(archive: Path | None = None) -> dict[str, list[str]]:
@@ -149,14 +94,6 @@ def find_experiments(archive: Path | None = None) -> dict[str, list[str]]:
     for m in members:
         out.setdefault(m.split("/")[1], []).append(m)
     return {k: sorted(v) for k, v in sorted(out.items())}
-
-
-def _read_experiment(z: zipfile.ZipFile, member: str) -> pd.DataFrame:
-    """One experiment's 8-mer table, as `dna_seq` + `escore`."""
-    with z.open(member) as fh:
-        df = pd.read_csv(fh, sep="\t", usecols=[0, 2], names=["dna_seq", "escore"], skiprows=1)
-    df["dna_seq"] = df["dna_seq"].str.strip().str.upper()
-    return df
 
 
 def _mutation_bookkeeping(ref: str, variant: str) -> tuple[int, str]:
@@ -191,59 +128,30 @@ def parse(genes: list[str] | None = None, threshold_path: str | Path | None = No
                 continue
             if allele_full in UNUSABLE:
                 continue
-            gm = meta[gene]
-            insert = gm.inserts[allele]
-            n_mut, mut_positions = _mutation_bookkeeping(gm.ref, insert)
+            page = meta[gene]
+            insert = page.inserts[allele]
+            n_mut, mut_positions = _mutation_bookkeeping(page.inserts["REF"], insert)
 
-            # Binarize each replicate independently, then reconcile. Pooling E-scores across
-            # replicates would cross array designs, whose scales differ (brief section 4).
-            labels, scores, keys = [], [], None
-            for member in members:
-                exp = _read_experiment(z, member)
-                exp = exp.sort_values("dna_seq", kind="stable").reset_index(drop=True)
-                if keys is None:
-                    keys = exp["dna_seq"]
-                elif not keys.equals(exp["dna_seq"]):
-                    raise ValueError(f"{member}: 8-mer set differs from the first replicate")
-                e = exp["escore"].to_numpy(dtype=float)
-                lab = np.full(len(e), schema.LABEL_GRAY, dtype=np.int8)
-                lab[e >= pos_cut] = schema.LABEL_BIND
-                lab[e <= neg_cut] = schema.LABEL_NONBIND
-                labels.append(lab)
-                scores.append(e)
-
-            stacked = np.vstack(labels)
-            agreed = (stacked == stacked[0]).all(axis=0)
-            label = np.where(agreed, stacked[0], schema.LABEL_GRAY).astype(np.int8)
-            raw_score = np.vstack(scores).mean(axis=0)
-
-            frame = pd.DataFrame(
-                {
-                    "dna_seq": keys.to_numpy(),
-                    "label": label,
-                    "raw_score": raw_score,
-                }
+            dna_seq, label, raw_score = _uniprobe.reconcile_replicates(z, members, pos_cut, neg_cut)
+            frames.append(
+                _uniprobe.build_frame(
+                    dna_seq=dna_seq,
+                    label=label,
+                    raw_score=raw_score,
+                    dbd_seq=insert,
+                    dbd_family=page.family,
+                    dbd_source=DBD_SOURCE,
+                    wt_id=f"{SOURCE}:{gene}",
+                    n_mut_from_wt=n_mut,
+                    mut_positions=mut_positions,
+                    protein_id=page.protein_id,
+                    species=page.species,
+                    pos_cut=pos_cut,
+                    neg_cut=neg_cut,
+                    source_dataset=SOURCE,
+                    source_file=source_file,
+                )
             )
-            frame["dbd_seq"] = insert
-            frame["dbd_family"] = gm.family
-            frame["dbd_source"] = DBD_SOURCE
-            frame["wt_id"] = f"{SOURCE}:{gene}"
-            frame["n_mut_from_wt"] = n_mut
-            frame["mut_positions"] = mut_positions
-            frame["protein_id"] = gm.protein_id
-            frame["species"] = gm.species
-            frame["dna_context"] = DNA_CONTEXT
-            frame["score_type"] = SCORE_TYPE
-            frame["threshold_pos"] = pos_cut
-            frame["threshold_neg"] = neg_cut
-            frame["assay"] = ASSAY
-            frame["stringency"] = ""
-            frame["neg_provenance"] = np.where(
-                label == schema.LABEL_NONBIND, "assayed_unbound", None
-            )
-            frame["source_dataset"] = SOURCE
-            frame["source_file"] = source_file
-            frames.append(frame)
 
     if not frames:
         raise ValueError("no experiments parsed")

@@ -9,10 +9,18 @@ Agent working notes and conventions: [CLAUDE.md](CLAUDE.md).
 
 ## Status
 
-**Phase 1 complete.** BAR15A (Barrera 2016 PBM 8-mer E-scores) is parsed end-to-end and
-passes the validator: 5,263,360 rows covering 160 DNA-binding domains in 41 point-mutant
-clusters, each scored over the same 32,896 8-mers. See [reports/](reports/) for the
-binarization summary, cluster inventory and validation output.
+**Phase 2 complete.** Four UniPROBE PBM sources are parsed and validator-clean, 11.8M rows:
+
+| source | citation | rows | clusters | DBDs | contributes |
+|---|---|---:|---:|---:|---|
+| `BAR15A` | Barrera 2016 | 5,263,360 | 41 | 160 | matched WT/point-mutant pairs |
+| `Cell08` | Berger 2008 | 5,164,672 | 157 | 157 | mouse homeodomains |
+| `EMBO10` | Wei 2010 | 723,712 | 22 | 22 | ETS family |
+| `PNAS13` | Nakagawa 2013 | 657,920 | 20 | 20 | forkhead, across four species |
+
+See [reports/](reports/) for per-source binarization summaries, cluster inventories and
+validation output, and [reports/OPEN_ITEMS.md](reports/OPEN_ITEMS.md) for decisions waiting
+on the project owner.
 
 ## Setup
 

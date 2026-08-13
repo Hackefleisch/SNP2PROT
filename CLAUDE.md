@@ -17,8 +17,8 @@ owner's brief, stored verbatim. **Read it before touching anything under `src/sn
 Where it and this file disagree about *paths*, this file wins (see the mapping below); where
 they disagree about *intent*, the brief wins.
 
-**Current phase: 1 complete. BAR15A parsed to `data/interim/BAR15A/BAR15A.parquet` —
-5,263,360 rows, 160 DBDs in 41 clusters, validator clean. Phase 2 is next.**
+**Current phase: 2 complete. Four UniPROBE sources parsed and validator-clean —
+BAR15A, Cell08, EMBO10, PNAS13, 11.8M rows total. Phase 3 (B1H) is next.**
 
 ## The failure this project exists to avoid
 
@@ -38,6 +38,7 @@ concrete consequences that shape the code:
 ```
 docs/TFDNA_MERGE_BRIEF.md   the owner's spec, verbatim — source of record
 docs/REFERENCES.md          dataset -> paper -> Crossref-verified DOI, plus reading order
+docs/UNIPROBE_ACCESSIONS.md all 36 UniPROBE accessions, citations, family survey
 docs/papers/                paper PDFs (git-ignored); README.md there is the manifest
 docs/papers_inbox/          the owner drops papers here; Claude identifies and files them
 PROVENANCE.md               one row per raw file: URL, accession, timestamp, size, sha256
@@ -49,6 +50,7 @@ src/snp2prot/
   thresholds.py   reads configs/thresholds.yaml
   config.py       every path in the project; nothing builds a path by hand
   parsers/        one module per source, each exposing parse() -> pd.DataFrame
+    _uniprobe.py  machinery shared by every UniPROBE accession (formats differ per accession)
   metadata/       CIS-BP / Pfam+HMMER / UniProt lookups shared by all parsers
   reports.py      binarization summary, cluster inventory, overlap report
   splits.py       leave-one-variant / -cluster / -family out
@@ -135,7 +137,7 @@ names — **do not create the left-hand paths**, that would fork the structure i
 ```bash
 uv venv --python 3.11 .venv && uv pip install --python .venv -e ".[dev]"
 .venv/bin/python -m pytest -q
-.venv/bin/python scripts/build_dataset.py --source BAR15A   # parse -> validate -> interim
+.venv/bin/python scripts/build_dataset.py --all            # parse -> validate -> interim
 .venv/bin/python scripts/make_reports.py --source BAR15A    # regenerate reports/
 .venv/bin/python -m ruff check . && .venv/bin/python -m ruff format .
 .venv/bin/python scripts/record_provenance.py data/raw/<source>/<file> --url ... --desc ...
@@ -150,8 +152,8 @@ Use `uv` (already installed at `~/.local/bin/uv`).
 |---|---|---|
 | 0 | scaffold, `PROVENANCE.md`, thresholds config, schema + validator | **done** |
 | 1 | UniPROBE / Barrera `BAR15A` end-to-end, cluster inventory for it alone | **done** |
-| 2 | remaining UniPROBE family panels (homeodomain, forkhead, ETS, bZIP) | next |
-| 3 | Persikov B1H + Najafabadi C2H2 | |
+| 2 | remaining UniPROBE family panels (homeodomain, forkhead, ETS, bZIP) | **done** — Cell08, EMBO10, PNAS13; further accessions surveyed in `docs/UNIPROBE_ACCESSIONS.md` |
+| 3 | Persikov B1H + Najafabadi C2H2 (plus Noyes 2008, which is B1H not PBM) | next |
 | 4 | SNP-SELEX, trimmed to a 19 bp window | |
 | 5 | merge, overlap report, splits, NN baseline | |
 | 6 | Tier 4 test sets, in `data/testsets/` | end of brief |

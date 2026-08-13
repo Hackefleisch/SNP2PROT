@@ -39,11 +39,6 @@ def test_contig_8mer_regex_rejects_other_kmer_files():
     assert not bar15a.CONTIG_8MER_RE.search("A/A_REF/A_REF_R1/A_REF_R1_8mers_11101111.txt")
 
 
-def test_clean_sequence_strips_numbering_and_markup():
-    got = bar15a._clean_sequence("1 &nbsp;&nbsp;AGSDSEEGLL KRKQ<br>51 &nbsp;RRAKWRK")
-    assert got == "AGSDSEEGLLKRKQRRAKWRK"
-
-
 def test_load_metadata_reads_inserts_and_fields(tmp_path):
     (tmp_path / "ARX.html").write_text(PAGE)
     meta = bar15a.load_metadata(tmp_path)["ARX"]
@@ -51,7 +46,9 @@ def test_load_metadata_reads_inserts_and_fields(tmp_path):
     assert meta.protein_id == "Q96QS3"
     assert meta.species == "Homo sapiens"
     assert set(meta.inserts) == {"REF", "L343Q"}
-    assert meta.ref.startswith("AGSDSEEGLL")
+    assert meta.inserts["REF"].startswith("AGSDSEEGLL")
+    # BAR15A takes dbd_seq from the insert, but the page's own DBD field is still read.
+    assert meta.dbd == "RRYRTTFTSY"
 
 
 def test_load_metadata_requires_a_reference_allele(tmp_path):

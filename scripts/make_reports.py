@@ -35,7 +35,9 @@ def main() -> None:
     path.write_text(reports.binarization_summary(df, source))
     written.append(path)
 
-    path = REPORTS_DIR / "cluster_inventory.md"
+    # Per-source, because four sources would otherwise overwrite one file. The unqualified
+    # cluster_inventory.md is reserved for the merged table in Phase 5.
+    path = REPORTS_DIR / f"cluster_inventory_{source}.md"
     path.write_text(reports.cluster_inventory(df, source))
     written.append(path)
 

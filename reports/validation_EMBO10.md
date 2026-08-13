@@ -20,5 +20,5 @@ No errors or warnings.
 | `n_dbd` | 22 |
 | `n_dna` | 32,896 |
 | `dna_len` | [8] |
-| `families` | ETS: 690,816, AT_hook, ETS: 32,896 |
+| `families` | Ets: 723,712 |
 | `neg_provenance` | assayed_unbound: 709,236 |

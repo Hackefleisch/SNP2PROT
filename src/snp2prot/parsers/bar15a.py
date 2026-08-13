@@ -33,12 +33,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from snp2prot import schema, thresholds
+from snp2prot import domains, schema, thresholds
 from snp2prot.config import raw_dir
 from snp2prot.parsers import _uniprobe
 
 SOURCE = "BAR15A"
-DBD_SOURCE = "uniprobe_clone_insert"
+DBD_SOURCE = "pfam_hmmer_padded"
 
 ARCHIVE = "BAR15A_contig8mers.zip"
 DETAILS = "details"
@@ -120,6 +120,15 @@ def parse(genes: list[str] | None = None, threshold_path: str | Path | None = No
     archive = raw_dir(SOURCE) / ARCHIVE
     source_file = f"{SOURCE}/{ARCHIVE}"
 
+    # Annotate each gene's REFERENCE construct once. Variants differ from it by a point
+    # substitution, so they share its domain boundaries -- and rebasing every allele onto the
+    # same coordinates is what keeps a cluster length-homogeneous.
+    domain_cfg = thresholds.load(threshold_path)["domain"]
+    refs = {g: p.inserts["REF"] for g, p in meta.items() if not genes or g in genes}
+    hits = domains.scan(refs)
+    calls = {g: domains.call_domain(seq, hits[g], domain_cfg) for g, seq in refs.items()}
+
+    rejected: dict[str, str] = {}
     frames: list[pd.DataFrame] = []
     with zipfile.ZipFile(archive) as z:
         for allele_full, members in experiments.items():
@@ -128,9 +137,26 @@ def parse(genes: list[str] | None = None, threshold_path: str | Path | None = No
                 continue
             if allele_full in UNUSABLE:
                 continue
+            call = calls[gene]
+            if not call.ok:
+                rejected[gene] = f"{call.rejection} ({call.family})"
+                continue
             page = meta[gene]
             insert = page.inserts[allele]
-            n_mut, mut_positions = _mutation_bookkeeping(page.inserts["REF"], insert)
+            n_mut, construct_positions = _mutation_bookkeeping(page.inserts["REF"], insert)
+            positions = [int(x) for x in construct_positions.split(",") if x]
+
+            # Condition 3: a mutation outside the stored region would make this variant
+            # sequence-identical to its own wild type while carrying a different label.
+            escaped = domains.audit_variant_positions(call, positions)
+            if escaped:
+                rejected[allele_full] = (
+                    f"mutation at construct position {escaped} lies outside the padded "
+                    f"domain [{call.start}-{call.end}]"
+                )
+                continue
+            dbd_seq = insert[call.start - 1 : call.end]
+            mut_positions = ",".join(str(p) for p in domains.rebase_positions(call, positions))
 
             dna_seq, label, raw_score = _uniprobe.reconcile_replicates(z, members, pos_cut, neg_cut)
             frames.append(
@@ -138,8 +164,8 @@ def parse(genes: list[str] | None = None, threshold_path: str | Path | None = No
                     dna_seq=dna_seq,
                     label=label,
                     raw_score=raw_score,
-                    dbd_seq=insert,
-                    dbd_family=page.family,
+                    dbd_seq=dbd_seq,
+                    dbd_family=call.family,
                     dbd_source=DBD_SOURCE,
                     wt_id=f"{SOURCE}:{gene}",
                     n_mut_from_wt=n_mut,
@@ -153,6 +179,10 @@ def parse(genes: list[str] | None = None, threshold_path: str | Path | None = No
                 )
             )
 
+    if rejected:
+        print(f"{SOURCE}: {len(rejected)} construct(s)/allele(s) rejected by the domain policy")
+        for k, why in sorted(rejected.items())[:10]:
+            print(f"    {k}: {why}")
     if not frames:
         raise ValueError("no experiments parsed")
     return schema.coerce(pd.concat(frames, ignore_index=True))

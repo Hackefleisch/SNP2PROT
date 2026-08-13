@@ -9,18 +9,24 @@ Agent working notes and conventions: [CLAUDE.md](CLAUDE.md).
 
 ## Status
 
-**Phase 2 complete.** Four UniPROBE PBM sources are parsed and validator-clean, 11.8M rows:
+**Phase 2 complete, rebuilt under the domain policy.** Four UniPROBE PBM sources, parsed and
+validator-clean:
 
-| source | citation | rows | clusters | DBDs | contributes |
-|---|---|---:|---:|---:|---|
-| `BAR15A` | Barrera 2016 | 5,263,360 | 41 | 160 | matched WT/point-mutant pairs |
-| `Cell08` | Berger 2008 | 5,164,672 | 157 | 157 | mouse homeodomains |
-| `EMBO10` | Wei 2010 | 723,712 | 22 | 22 | ETS family |
-| `PNAS13` | Nakagawa 2013 | 657,920 | 20 | 20 | forkhead, across four species |
+| source | citation | rows | clusters | domains | `dbd_seq` length | families |
+|---|---|---:|---:|---:|---|---|
+| `BAR15A` | Barrera 2016 | 2,960,640 | 24 | 90 | 72–146 | Homeodomain, Forkhead, PAX, zf-C4 |
+| `Cell08` | Berger 2008 | 4,835,712 | 147 | 147 | 58–91 | Homeodomain |
+| `EMBO10` | Wei 2010 | 723,712 | 22 | 22 | 94–105 | ETS |
+| `PNAS13` | Nakagawa 2013 | 625,024 | 19 | 19 | 95–110 | Forkhead |
+| | **total** | **9,145,088** | **212** | **278** | | |
 
-See [reports/](reports/) for per-source binarization summaries, cluster inventories and
-validation output, and [reports/OPEN_ITEMS.md](reports/OPEN_ITEMS.md) for decisions waiting
-on the project owner.
+> **`dbd_seq` is the Pfam domain padded by 10 residues each side** — not the bare envelope.
+> See [docs/DOMAIN_POLICY.md](docs/DOMAIN_POLICY.md), which also lists what is excluded and
+> why Phase 3 was dropped.
+
+A companion [protein table](src/snp2prot/proteins.py) carries each domain at four levels —
+bare Pfam envelope, padded domain, assayed construct and full-length UniProt sequence — so
+embeddings can be compared across representations from one build.
 
 ## Setup
 

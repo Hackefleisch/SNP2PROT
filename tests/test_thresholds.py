@@ -9,9 +9,19 @@ from snp2prot import thresholds
 
 def test_loads():
     cfg = thresholds.load()
-    assert cfg["version"] == 1
-    for block in ("pbm", "b1h", "snp_selex", "tier4"):
+    assert cfg["version"] >= 2
+    for block in ("pbm", "b1h", "snp_selex", "tier4", "domain"):
         assert block in cfg
+
+
+def test_domain_block_shape():
+    """dbd_seq is the PADDED Pfam envelope; see docs/DOMAIN_POLICY.md."""
+    d = thresholds.for_assay("domain")
+    assert d["padding_aa"] > 0, "unpadded envelopes drop variants onto their own wild type"
+    # The three admission conditions default to strict.
+    assert d["allow_mixed_families"] is False
+    assert d["allow_repeat_arrays"] is False
+    assert d["allow_no_domain"] is False
 
 
 def test_pbm_band_is_ordered_and_per_experiment():

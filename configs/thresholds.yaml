@@ -7,7 +7,53 @@
 #
 # Reference: docs/TFDNA_MERGE_BRIEF.md §4.
 
-version: 1
+version: 2
+
+# =====================================================================================
+#  DOMAIN BOUNDARIES  --  READ THIS BEFORE USING dbd_seq
+# =====================================================================================
+#
+#  dbd_seq is NOT the raw Pfam domain. It is the Pfam envelope PADDED by `padding_aa`
+#  residues on each side. This is deliberate and load-bearing.
+#
+#  WHY: Pfam's models start at the structural core. For homeodomains that is the
+#  helix-turn-helix, which clips the N-terminal arm -- and the N-terminal arm reaches
+#  into the DNA minor groove and makes real base contacts. Empirically, 3 of BAR15A's
+#  91 point mutations fall 2-9 residues N-terminal of the Pfam start
+#  (KLF11 R402Q, VSX1 G160D, SNAI2 D119E). Trimmed to the bare envelope, each of those
+#  variants becomes sequence-identical to its own wild type while carrying a different
+#  binding label -- invisible to any sequence or structure model.
+#
+#  So the stored subunit must satisfy three conditions:
+#    1. it is solely responsible for the measured DNA interaction;
+#    2. it is one continuous region, not fragments scattered through the protein;
+#    3. every change that alters binding behaviour lies inside it.
+#
+#  Constructs that cannot satisfy these are dropped, not repaired. See
+#  docs/DOMAIN_POLICY.md for the full rule and the audit of what it excludes.
+# =====================================================================================
+
+domain:
+  # Padding applied to each side of the Pfam envelope. 10 covers every observed
+  # out-of-envelope mutation (max 9) with margin, and is set from the biology of the
+  # homeodomain N-terminal arm rather than fitted to those three cases.
+  padding_aa: 10
+
+  # Reject a construct whose Pfam hits span more than one family: two domains means two
+  # spatial units and no way to attribute a signal to either (condition 1 and 2).
+  allow_mixed_families: false
+
+  # Reject a construct with repeated hits of one family -- a C2H2 zinc-finger array is
+  # 2-6 separate ~23-residue folds on flexible linkers, each with its own Zn(2+), not one
+  # continuous unit (condition 2). Set true to keep arrays as a single spanned region.
+  allow_repeat_arrays: false
+
+  # Reject a construct with no Pfam hit above the gathering threshold: we cannot say what
+  # is doing the binding.
+  allow_no_domain: false
+
+  # Pfam HMMs live here, one file per family; see PROVENANCE.md.
+  hmm_dir: data/external/pfam
 
 pbm:
   score_type: pbm_escore

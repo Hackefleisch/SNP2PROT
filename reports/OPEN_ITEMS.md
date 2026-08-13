@@ -7,9 +7,9 @@ Flag here; do not resolve unilaterally.
 
 | # | question | bearing evidence found so far | status |
 |---|---|---|---|
-| 1 | Keep the B1H data at all, given its selection-absence negatives? | — | open |
+| 1 | Keep the B1H data at all, given its selection-absence negatives? | Superseded: B1H is C2H2 throughout and fails condition 2 of the domain policy, so Phase 3 is dropped regardless of negative quality. | **closed 2026-08-13** |
 | 2 | Restrict the final set to DBDs with ≥5 variants (sharper clusters, much smaller set)? | — | open |
-| 3 | Does the padded-20 bp or the common-core variant become primary? | — | open |
+| 3 | Does the padded-20 bp or the common-core variant become primary? | Now moot for the DNA axis within UniPROBE: every admitted row is an 8-mer. Becomes live again only if Phase 4 (19 bp) is admitted. | open |
 
 ## Raised during the work
 
@@ -39,3 +39,17 @@ Flag here; do not resolve unilaterally.
 | 15 | **`EMBO10` and `PNAS13` detail pages carry no `DNA binding domain` field** (0/22 and 0/20), so `dbd_seq` falls back to the clone insert for those two panels while `Cell08` uses the Pfam-trimmed domain (168/168). `dbd_source` distinguishes them. Insert lengths are tight (EMBO10 103-143 aa, PNAS13 95-138 aa) with **one outlier: `Jumeau` at 719 aa**, effectively full-length. HMMER is not installed, so no HMM trimming was attempted. | 2 | open |
 | 16 | **Three DBD conventions are now in play**: `uniprobe_dbd_field` (Cell08, 57-60 aa), `uniprobe_clone_insert` (BAR15A 86-282 aa, EMBO10, PNAS13). Extends open item #11 — this has to be reconciled before the Phase 5 merge, or `dbd_seq` length alone will correlate with source. | 2 | open, decide by Phase 5 |
 | 17 | **The panels add breadth but no within-cluster depth.** Cell08 + EMBO10 + PNAS13 contribute ~199 clusters of exactly one DBD each, against BAR15A's 41 clusters averaging ~4 DBDs. Leave-one-variant-out can only ever be evaluated on BAR15A rows; leave-one-cluster-out is what the panels support. Worth deciding whether more point-mutant sources are needed. | 2 | open |
+
+## Domain policy (2026-08-13)
+
+Three conditions now gate admission — sole responsibility, one continuous region, variation
+inside the stored subunit. Full statement in `docs/DOMAIN_POLICY.md`. Consequences:
+
+| # | item | status |
+|---|---|---|
+| 18 | **`dbd_seq` is the Pfam envelope padded by 10 aa each side.** Prominently noted in `configs/thresholds.yaml`, `CLAUDE.md`, `README.md` and `docs/DOMAIN_POLICY.md`. Without it, `KLF11_R402Q`, `VSX1_G160D` and `SNAI2_D119E` each collapse onto their own wild type carrying a different label. | done |
+| 19 | **Phase 3 dropped** (Persikov B1H + Najafabadi C2H2, ~8,000 domains). C2H2 arrays are 2-6 separate folds on flexible linkers, failing condition 2; Persikov varies one finger inside a fixed three-finger context, failing conditions 1 and 3. Recorded in `PROVENANCE.md`. | done |
+| 20 | **Existing C2H2 arrays dropped too**, for consistency with #19 — 12 BAR15A genes. Reversible via `domain.allow_repeat_arrays`. | done |
+| 21 | **Corpus cost of the policy**: 11,809,664 -> 9,145,088 rows (-22.6%), 359 -> 278 domains, 240 -> 212 clusters. BAR15A took the heaviest loss (41 -> 24 clusters) because its C2H2, PAX and POU genes all fail. `dbd_seq` length range tightened from 55-719 aa to 58-146 aa, so length no longer leaks source identity — this also resolves most of open item #16. | done |
+| 22 | **The protein table maps only 176 of 272 domains onto a canonical UniProt sequence.** The rest are clone constructs that differ from the canonical isoform, or non-model species (PNAS13 spans fungi) whose accessions do not resolve. Full-length embeddings are therefore available for ~65% of domains. Decide whether that is enough or whether the unmapped ones need manual accession curation. | open |
+| 23 | **Phase 4 and 6 need per-construct screening, not wholesale acceptance.** SNP-SELEX varies DNA not protein, so condition 3 is vacuous there, but many of its 270 TFs are C2H2. The Tier 4 sets are bHLH dimers, and MAX's substitutions are "in and around" the DBD, so condition 3 must be checked per variant. | open |

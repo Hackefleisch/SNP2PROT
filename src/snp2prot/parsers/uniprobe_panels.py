@@ -25,12 +25,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from snp2prot import schema, thresholds
+from snp2prot import domains, schema, thresholds
 from snp2prot.config import raw_dir
 from snp2prot.parsers import _uniprobe
 
-DBD_FIELD = "uniprobe_dbd_field"
-CLONE_INSERT = "uniprobe_clone_insert"
+DBD_SOURCE = "pfam_hmmer_padded"
 
 
 @dataclass(frozen=True)
@@ -95,6 +94,14 @@ def parse_panel(
     # Pitx2/Pitx3, ...). Their measurements are independent experiments on the same protein
     # sequence, so they are reconciled exactly like replicates. Keeping only the first would
     # discard real data and, worse, hide whether the two agree.
+    domain_cfg = thresholds.load(threshold_path)["domain"]
+    constructs = {
+        g: next(iter(p.inserts.values()))
+        for g, p in details.items()
+        if p.inserts and (not genes or g in genes)
+    }
+    hits = domains.scan(constructs)
+
     groups: dict[str, dict] = {}
     for gene, members in experiments.items():
         if genes and gene not in genes:
@@ -103,15 +110,19 @@ def parse_panel(
         if page is None:
             skipped.append(SkippedProtein(gene, "no detail page downloaded"))
             continue
-        if page.dbd:
-            dbd_seq, dbd_source = page.dbd, DBD_FIELD
-        elif page.inserts:
-            dbd_seq, dbd_source = next(iter(page.inserts.values())), CLONE_INSERT
-        else:
-            skipped.append(SkippedProtein(gene, "detail page has no DBD or insert sequence"))
+        if not page.inserts:
+            skipped.append(SkippedProtein(gene, "detail page has no clone insert sequence"))
+            continue
+        # The construct that was on the array is what gets annotated -- never the protein's
+        # own domain annotation, which describes the full-length protein and would say
+        # "Homeobox, POU" for a construct that in fact carries both domains.
+        construct = next(iter(page.inserts.values()))
+        call = domains.call_domain(construct, hits[gene], domain_cfg)
+        if not call.ok:
+            skipped.append(SkippedProtein(gene, f"rejected: {call.rejection} ({call.family})"))
             continue
         g = groups.setdefault(
-            dbd_seq, {"genes": [], "members": [], "source": dbd_source, "page": page}
+            call.sequence, {"genes": [], "members": [], "call": call, "page": page}
         )
         g["genes"].append(gene)
         g["members"].extend(members)
@@ -137,8 +148,8 @@ def parse_panel(
                     label=label,
                     raw_score=raw_score,
                     dbd_seq=dbd_seq,
-                    dbd_family=page.family,
-                    dbd_source=g["source"],
+                    dbd_family=g["call"].family,
+                    dbd_source=DBD_SOURCE,
                     # No engineered variants: each distinct domain is its own reference.
                     wt_id=f"{accession}:{'/'.join(group_genes)}",
                     n_mut_from_wt=0,

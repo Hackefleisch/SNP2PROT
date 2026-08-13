@@ -30,32 +30,31 @@ A family above 40% of rows is flagged: it can be memorized instead of learned.
 
 | family | clusters | distinct DBDs | rows | share of rows | |
 |---|---:|---:|---:|---:|---|
-| `ETS` | 21 | 21 | 690,816 | 95.5% | **FLAG** |
-| `AT_hook, ETS` | 1 | 1 | 32,896 | 4.5% | |
+| `Ets` | 22 | 22 | 723,712 | 100.0% | **FLAG** |
 
 ## Clusters
 
 | wt_id | family | distinct DBDs | rows | reference present |
 |---|---|---:|---:|:-:|
-| `EMBO10:Ehf` | `ETS` | 1 | 32,896 | yes |
-| `EMBO10:Elf2` | `ETS` | 1 | 32,896 | yes |
-| `EMBO10:Elf3` | `AT_hook, ETS` | 1 | 32,896 | yes |
-| `EMBO10:Elf4` | `ETS` | 1 | 32,896 | yes |
-| `EMBO10:Elf5` | `ETS` | 1 | 32,896 | yes |
-| `EMBO10:Elk1` | `ETS` | 1 | 32,896 | yes |
-| `EMBO10:Elk3` | `ETS` | 1 | 32,896 | yes |
-| `EMBO10:Elk4` | `ETS` | 1 | 32,896 | yes |
-| `EMBO10:Erg` | `ETS` | 1 | 32,896 | yes |
-| `EMBO10:Ets1` | `ETS` | 1 | 32,896 | yes |
-| `EMBO10:Etv1` | `ETS` | 1 | 32,896 | yes |
-| `EMBO10:Etv3` | `ETS` | 1 | 32,896 | yes |
-| `EMBO10:Etv4` | `ETS` | 1 | 32,896 | yes |
-| `EMBO10:Etv5` | `ETS` | 1 | 32,896 | yes |
-| `EMBO10:Etv6` | `ETS` | 1 | 32,896 | yes |
-| `EMBO10:Fli1` | `ETS` | 1 | 32,896 | yes |
-| `EMBO10:Gabpa` | `ETS` | 1 | 32,896 | yes |
-| `EMBO10:Gm4881` | `ETS` | 1 | 32,896 | yes |
-| `EMBO10:Gm5454` | `ETS` | 1 | 32,896 | yes |
-| `EMBO10:Sfpi1` | `ETS` | 1 | 32,896 | yes |
-| `EMBO10:Spdef` | `ETS` | 1 | 32,896 | yes |
-| `EMBO10:Spic` | `ETS` | 1 | 32,896 | yes |
+| `EMBO10:Ehf` | `Ets` | 1 | 32,896 | yes |
+| `EMBO10:Elf2` | `Ets` | 1 | 32,896 | yes |
+| `EMBO10:Elf3` | `Ets` | 1 | 32,896 | yes |
+| `EMBO10:Elf4` | `Ets` | 1 | 32,896 | yes |
+| `EMBO10:Elf5` | `Ets` | 1 | 32,896 | yes |
+| `EMBO10:Elk1` | `Ets` | 1 | 32,896 | yes |
+| `EMBO10:Elk3` | `Ets` | 1 | 32,896 | yes |
+| `EMBO10:Elk4` | `Ets` | 1 | 32,896 | yes |
+| `EMBO10:Erg` | `Ets` | 1 | 32,896 | yes |
+| `EMBO10:Ets1` | `Ets` | 1 | 32,896 | yes |
+| `EMBO10:Etv1` | `Ets` | 1 | 32,896 | yes |
+| `EMBO10:Etv3` | `Ets` | 1 | 32,896 | yes |
+| `EMBO10:Etv4` | `Ets` | 1 | 32,896 | yes |
+| `EMBO10:Etv5` | `Ets` | 1 | 32,896 | yes |
+| `EMBO10:Etv6` | `Ets` | 1 | 32,896 | yes |
+| `EMBO10:Fli1` | `Ets` | 1 | 32,896 | yes |
+| `EMBO10:Gabpa` | `Ets` | 1 | 32,896 | yes |
+| `EMBO10:Gm4881` | `Ets` | 1 | 32,896 | yes |
+| `EMBO10:Gm5454` | `Ets` | 1 | 32,896 | yes |
+| `EMBO10:Sfpi1` | `Ets` | 1 | 32,896 | yes |
+| `EMBO10:Spdef` | `Ets` | 1 | 32,896 | yes |
+| `EMBO10:Spic` | `Ets` | 1 | 32,896 | yes |

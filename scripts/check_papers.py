@@ -18,11 +18,17 @@ from snp2prot.config import DOCS_DIR
 PAPERS_DIR = DOCS_DIR / "papers"
 MANIFEST = PAPERS_DIR / "README.md"
 
-#: `| `name.pdf` | ! P1 | Paper cite | [doi](url) |`
+#: `| `name.pdf` | ! P1 | Paper cite | [doi](url) |` — the DOI cell may be empty, and the
+#: extension is not assumed to be .pdf (one supplement is a .docx).
 ROW = re.compile(
-    r"^\|\s*`(?P<file>[^`]+\.pdf)`\s*\|\s*(?P<prio>!?)\s*P(?P<phase>\d)\+?\s*\|"
-    r"\s*(?P<cite>[^|]+?)\s*\|"
+    r"^\|\s*`(?P<file>[^`]+\.\w+)`\s*\|\s*(?P<prio>!?)\s*P(?P<phase>\d)\+?\s*\|"
+    r"\s*(?P<cite>[^|]*?)\s*\|"
 )
+
+
+def is_supplement(filename: str) -> bool:
+    """Supplements are optional context; a missing one never blocks a phase."""
+    return "_supp" in filename
 
 
 def expected() -> list[dict[str, str]]:
@@ -46,24 +52,31 @@ def main() -> None:
     if args.phase is not None:
         rows = [r for r in rows if int(r["phase"]) <= args.phase]
 
-    present = {p.name for p in PAPERS_DIR.glob("*.pdf")}
+    present = {p.name for p in PAPERS_DIR.iterdir() if p.name != "README.md"}
     missing = []
 
     for r in rows:
-        mark = "ok     " if r["file"] in present else "MISSING"
-        flag = "!" if r["prio"] else " "
-        print(f"{mark} {flag} P{r['phase']}  {r['file']:<44} {r['cite']}")
-        if r["file"] not in present:
+        ok = r["file"] in present
+        mark = "ok     " if ok else "MISSING"
+        flag = "!" if r["prio"] and not is_supplement(r["file"]) else " "
+        print(f"{mark} {flag} P{r['phase']}  {r['file']:<56} {r['cite']}")
+        if not ok:
             missing.append(r)
 
     unlisted = sorted(present - {r["file"] for r in expected()})
     for name in unlisted:
-        print(f"UNLISTED  --  {name:<44} not in the manifest — rename it or add a row")
+        print(f"UNLISTED  --  {name:<56} not in the manifest — rename it or add a row")
 
-    blocking = [r for r in missing if r["prio"]]
-    print(f"\n{len(rows) - len(missing)}/{len(rows)} present, {len(blocking)} blocking")
+    blocking = [r for r in missing if r["prio"] and not is_supplement(r["file"])]
+    n_supp = sum(1 for r in rows if is_supplement(r["file"]))
+    print(
+        f"\n{len(rows) - len(missing)}/{len(rows)} present "
+        f"({len(rows) - n_supp} main, {n_supp} supplementary), "
+        f"{len(unlisted)} unlisted, {len(blocking)} blocking"
+    )
     if blocking:
         print("blocking the next phase: " + ", ".join(r["file"] for r in blocking))
+    print("known gaps are documented at the end of docs/papers/README.md")
 
 
 if __name__ == "__main__":

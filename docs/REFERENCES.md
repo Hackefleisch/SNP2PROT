@@ -32,7 +32,8 @@ and the DBD boundary convention all come from the methods section, not from the 
 | dataset | paper | DOI | notes |
 |---|---|---|---|
 | SNP-SELEX / GVAT | Yan et al. 2021, *Nature* 591:147 — "Systematic analysis of binding of transcription factors to noncoding variants" | [`10.1038/s41586-021-03211-0`](https://doi.org/10.1038/s41586-021-03211-0) | Defines OBS and PBS. Needed before the Phase 4 OBS cutoff can be chosen (open item #5). |
-| Codebook (optional) | Jolma et al. 2024, preprint — "GHT-SELEX demonstrates unexpectedly high intrinsic sequence specificity and complex DNA binding of many human transcription factors" | [`10.1101/2024.11.11.618478`](https://doi.org/10.1101/2024.11.11.618478) | ⚠️ **Preprint DOI, journal version not resolved.** Codebook is a consortium with several companion papers; the brief marks it lowest priority, so this is deferred until it is actually needed. |
+| Codebook (optional) | Vorontsov et al. 2025, *Commun Biol* — "Cross-platform motif discovery and benchmarking to explore binding specificities of poorly studied human transcription factors" | [`10.1038/s42003-025-08909-9`](https://doi.org/10.1038/s42003-025-08909-9) | Peer-reviewed Codebook/GRECO-BIT consortium paper. Citation taken from the PDF's own metadata. |
+| Codebook (optional) | Jolma et al. 2024, bioRxiv **preprint** (v2 posted Oct 2025) — "GHT-SELEX demonstrates unexpectedly high intrinsic sequence specificity and complex DNA binding of many human transcription factors" | [`10.1101/2024.11.11.618478`](https://doi.org/10.1101/2024.11.11.618478) | ⚠️ **Not peer reviewed.** Codebook is a consortium with several companion papers; the brief marks it lowest priority. Do not cite this where the Vorontsov paper covers the same ground. |
 
 ## Tier 4 — held-out quantitative test sets (never trained on)
 
@@ -57,3 +58,6 @@ and the DBD boundary convention all come from the methods section, not from the 
 4. **Yan 2021** — settles open item #5 before Phase 4.
 5. Berger / Noyes 2008 — before Phase 2.
 6. Tier 4 papers — before Phase 6 only.
+
+Codebook (Vorontsov, Jolma) is read only if Tier 3 turns out to need extra motif-centered
+windows; the brief marks it lowest priority.

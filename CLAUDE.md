@@ -17,7 +17,8 @@ owner's brief, stored verbatim. **Read it before touching anything under `src/sn
 Where it and this file disagree about *paths*, this file wins (see the mapping below); where
 they disagree about *intent*, the brief wins.
 
-**Current phase: 0 complete (scaffold, schema, validator). No data downloaded yet.**
+**Current phase: 1 complete. BAR15A parsed to `data/interim/BAR15A/BAR15A.parquet` —
+5,263,360 rows, 160 DBDs in 41 clusters, validator clean. Phase 2 is next.**
 
 ## The failure this project exists to avoid
 
@@ -134,6 +135,8 @@ names — **do not create the left-hand paths**, that would fork the structure i
 ```bash
 uv venv --python 3.11 .venv && uv pip install --python .venv -e ".[dev]"
 .venv/bin/python -m pytest -q
+.venv/bin/python scripts/build_dataset.py --source BAR15A   # parse -> validate -> interim
+.venv/bin/python scripts/make_reports.py --source BAR15A    # regenerate reports/
 .venv/bin/python -m ruff check . && .venv/bin/python -m ruff format .
 .venv/bin/python scripts/record_provenance.py data/raw/<source>/<file> --url ... --desc ...
 ```
@@ -146,8 +149,8 @@ Use `uv` (already installed at `~/.local/bin/uv`).
 | phase | scope | status |
 |---|---|---|
 | 0 | scaffold, `PROVENANCE.md`, thresholds config, schema + validator | **done** |
-| 1 | UniPROBE / Barrera `BAR15A` end-to-end, cluster inventory for it alone | next |
-| 2 | remaining UniPROBE family panels (homeodomain, forkhead, ETS, bZIP) | |
+| 1 | UniPROBE / Barrera `BAR15A` end-to-end, cluster inventory for it alone | **done** |
+| 2 | remaining UniPROBE family panels (homeodomain, forkhead, ETS, bZIP) | next |
 | 3 | Persikov B1H + Najafabadi C2H2 | |
 | 4 | SNP-SELEX, trimmed to a 19 bp window | |
 | 5 | merge, overlap report, splits, NN baseline | |

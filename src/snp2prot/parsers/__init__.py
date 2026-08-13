@@ -10,7 +10,7 @@ returning a frame that passes `snp2prot.schema.validate()`. Rules:
 - A parser knows about exactly one source. No cross-source logic, no merging, no
   deduplication against other datasets — that all lives in `snp2prot.merge`.
 - Cutoffs come from `snp2prot.thresholds`, never from a literal in the parser body.
-- Finish with `schema.coerce(df)` then `schema.add_pair_ids(df)`.
+- Finish with `schema.coerce(df)`, which fills the derived columns (`pair_id`, `dna_len`).
 
 Registry below is filled in as each source lands, so `scripts/build_dataset.py` can
 iterate without importing modules that do not exist yet.
@@ -22,5 +22,9 @@ from collections.abc import Callable
 
 import pandas as pd
 
+from snp2prot.parsers import bar15a
+
 #: source_dataset -> zero-argument parse function. Populated in Phases 1-4.
-REGISTRY: dict[str, Callable[[], pd.DataFrame]] = {}
+REGISTRY: dict[str, Callable[[], pd.DataFrame]] = {
+    bar15a.SOURCE: bar15a.parse,
+}

@@ -9,8 +9,10 @@ Agent working notes and conventions: [CLAUDE.md](CLAUDE.md).
 
 ## Status
 
-**Phase 0 complete** — scaffold, unified schema, and validator are in place and tested.
-No data has been downloaded yet.
+**Phase 1 complete.** BAR15A (Barrera 2016 PBM 8-mer E-scores) is parsed end-to-end and
+passes the validator: 5,263,360 rows covering 160 DNA-binding domains in 41 point-mutant
+clusters, each scored over the same 32,896 8-mers. See [reports/](reports/) for the
+binarization summary, cluster inventory and validation output.
 
 ## Setup
 

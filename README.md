@@ -24,7 +24,7 @@ uv pip install --python .venv -e ".[dev]"
 
 | Path | Purpose |
 | --- | --- |
-| [docs/](docs/) | The owner's brief, stored verbatim as the source of record |
+| [docs/](docs/) | The owner's brief (verbatim) and [REFERENCES.md](docs/REFERENCES.md), the verified DOI list |
 | [PROVENANCE.md](PROVENANCE.md) | One row per raw file: URL, accession, timestamp, size, sha256 |
 | [configs/thresholds.yaml](configs/thresholds.yaml) | Every binarization cutoff in the project |
 | [src/snp2prot/schema.py](src/snp2prot/schema.py) | The 22-column row schema and its validator |

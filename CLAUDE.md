@@ -36,6 +36,7 @@ concrete consequences that shape the code:
 
 ```
 docs/TFDNA_MERGE_BRIEF.md   the owner's spec, verbatim — source of record
+docs/REFERENCES.md          dataset -> paper -> Crossref-verified DOI, plus reading order
 PROVENANCE.md               one row per raw file: URL, accession, timestamp, size, sha256
 configs/thresholds.yaml     ALL binarization cutoffs; the owner's control surface
 reports/                    generated markdown, committed; the phase-boundary deliverables
@@ -73,7 +74,8 @@ names — **do not create the left-hand paths**, that would fork the structure i
 
 ## Rules that are not negotiable
 
-1. **Never invent an accession, URL, or file name.** Several in the brief are unverified. If
+1. **Never invent an accession, URL, or file name — or a DOI.** Several in the brief are
+   unverified, and one plausible-looking DOI for Persikov 2015 is a different paper. If
    a download 404s or a file's layout differs from the description, **stop and report exactly
    what was found** — do not substitute a "similar" dataset, and do not guess a URL pattern.
 2. **Raw stays raw.** `data/raw/` is append-only. Parsers read from it and write to

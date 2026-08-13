@@ -1,0 +1,17 @@
+# Default experiment config. Copy this file per experiment; don't edit in place.
+name: default
+seed: 42
+
+data:
+  # TODO: source, splits, preprocessing
+  raw_path: null
+
+model:
+  # TODO: architecture / hyperparameters
+  type: null
+
+training:
+  # TODO
+  epochs: null
+  batch_size: null
+  lr: null

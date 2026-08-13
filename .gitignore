@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.python-version
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Data — tracked only via pointers/scripts, never contents
+data/raw/*
+data/interim/*
+data/processed/*
+data/external/*
+!data/**/.gitkeep
+!data/**/README.md
+
+# Results / artifacts
+results/checkpoints/*
+results/logs/*
+results/figures/*
+results/tables/*
+!results/**/.gitkeep
+
+# Experiment tracking
+wandb/
+mlruns/
+lightning_logs/
+outputs/
+
+# OS / editors
+.DS_Store
+*.swp
+.idea/
+.vscode/*
+!.vscode/settings.json

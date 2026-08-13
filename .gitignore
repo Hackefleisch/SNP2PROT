@@ -27,8 +27,13 @@ data/raw/*
 data/interim/*
 data/processed/*
 data/external/*
+data/testsets/*
 !data/**/.gitkeep
 !data/**/README.md
+!data/**/HOWTO.md
+
+# reports/ is deliberately NOT ignored — the generated markdown is committed so its
+# diffs record how the dataset changed between phases.
 
 # Results / artifacts
 results/checkpoints/*
@@ -49,3 +54,4 @@ outputs/
 .idea/
 .vscode/*
 !.vscode/settings.json
+.venv/

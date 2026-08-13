@@ -5,15 +5,15 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "snp2prot"
 version = "0.0.1"
-description = "TODO: one-line description of the SNP2PROT project"
+description = "Merged two-axis (TF DNA-binding domain x DNA site) binary binding dataset"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    # TODO: pin as the project takes shape
-    # "numpy",
-    # "pandas",
-    # "scikit-learn",
-    # "torch",
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "pyarrow>=14",       # Parquet checkpoints; CSV only for tables under ~1e5 rows
+    "pyyaml>=6",
+    "requests>=2.31",
 ]
 
 [project.optional-dependencies]
@@ -21,7 +21,10 @@ dev = [
     "pytest",
     "ruff",
     "ipykernel",
+    "matplotlib",        # score-distribution plots in the binarization reports
 ]
+
+# Modeling dependencies are deliberately unpinned until after Phase 6 (see CLAUDE.md).
 
 [tool.setuptools.packages.find]
 where = ["src"]

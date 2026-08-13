@@ -1,4 +1,4 @@
-"""Project paths and run config.
+"""Project paths.
 
 Single source of truth for where things live. No other module builds a path by hand or
 uses a relative path — import from here so that scripts, notebooks and tests all agree
@@ -13,9 +13,7 @@ Directory contract (brief §1.3):
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -63,24 +61,3 @@ def interim_table(source: str) -> Path:
 def relative_to_raw(path: str | Path) -> str:
     """Render a path as the `source_file` column wants it: relative to `data/raw/`."""
     return str(Path(path).resolve().relative_to(RAW_DIR))
-
-
-@dataclass
-class Config:
-    """Run configuration. Modeling fields stay empty until after Phase 6."""
-
-    name: str = "default"
-    seed: int = 42
-    data: dict[str, Any] = field(default_factory=dict)
-    model: dict[str, Any] = field(default_factory=dict)
-    training: dict[str, Any] = field(default_factory=dict)
-
-
-def load_config(path: str | Path) -> Config:
-    """Load a YAML run config into a `Config`."""
-    import yaml
-
-    with Path(path).open() as fh:
-        raw = yaml.safe_load(fh) or {}
-    known = {k: v for k, v in raw.items() if k in Config.__dataclass_fields__}
-    return Config(**known)

@@ -37,8 +37,9 @@ concrete consequences that shape the code:
 ```
 docs/TFDNA_MERGE_BRIEF.md   the owner's spec, verbatim — source of record
 docs/REFERENCES.md          dataset -> paper -> Crossref-verified DOI, plus reading order
+docs/papers/                paper PDFs (git-ignored); README.md there is the manifest
 PROVENANCE.md               one row per raw file: URL, accession, timestamp, size, sha256
-configs/thresholds.yaml     ALL binarization cutoffs; the owner's control surface
+configs/thresholds.yaml     the ONLY config file; all binarization cutoffs live here
 reports/                    generated markdown, committed; the phase-boundary deliverables
 
 src/snp2prot/
@@ -50,8 +51,8 @@ src/snp2prot/
   reports.py      binarization summary, cluster inventory, overlap report
   splits.py       leave-one-variant / -cluster / -family out
   baselines/      nn_lookup — the number a model must beat
+  evaluation/     metrics for scoring the baseline per split regime; Phase 5
   data/           featurization (padded20 vs common_core); Phase 6+
-  models/ training/ evaluation/   DORMANT until after Phase 6. Do not build these out.
 
 data/raw/<source>/       append-only, never edited          (git-ignored)
 data/interim/<source>/   per-source parsed Parquet          (git-ignored)
@@ -96,9 +97,19 @@ names — **do not create the left-hand paths**, that would fork the structure i
    `data/raw/<source>/HOWTO.md` with exact manual steps, a row in the PROVENANCE manual queue,
    and then you move to the next source. Do not burn effort brute-forcing a download.
 9. **Stop at each phase boundary** and hand back the reports. Do not run ahead to modeling.
+10. **Never `git commit` unsolicited.** The owner reviews work as an uncommitted diff;
+    committing removes the review surface. Finish, run tests and lint, leave the tree dirty.
 
 ## Conventions
 
+- **One config file: `configs/thresholds.yaml`.** There is no `default.yaml` and no per-run
+  config, because at this stage a "run" *is* a dataset build and the thresholds are the only
+  thing that varies. When modeling arrives (post-Phase 6) its hyperparameters get their own
+  file — deliberately not merged into this one, because changing a threshold invalidates the
+  dataset, every report and every provenance row, while changing a learning rate does not.
+  Two things with different blast radii do not belong in one file.
+- **Paper PDFs go in `docs/papers/`**, git-ignored, named `<firstauthor><year>_<slug>.pdf`.
+  The manifest is `docs/papers/README.md`; `scripts/check_papers.py` reports what is missing.
 - **Parquet, not CSV**, for anything over ~10⁵ rows. Checkpoint often.
 - Parser output goes through `schema.coerce(df)`, then `schema.validate(df, source)`, and the
   report's `raise_if_failed()` before any write to `data/interim/`.

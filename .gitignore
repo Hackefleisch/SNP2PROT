@@ -55,3 +55,7 @@ outputs/
 .vscode/*
 !.vscode/settings.json
 .venv/
+
+# Paper PDFs: copyrighted and large. The manifest in docs/papers/README.md is tracked.
+docs/papers/*.pdf
+docs/papers/*_supp*

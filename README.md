@@ -26,7 +26,7 @@ uv pip install --python .venv -e ".[dev]"
 | --- | --- |
 | [docs/](docs/) | The owner's brief (verbatim) and [REFERENCES.md](docs/REFERENCES.md), the verified DOI list |
 | [PROVENANCE.md](PROVENANCE.md) | One row per raw file: URL, accession, timestamp, size, sha256 |
-| [configs/thresholds.yaml](configs/thresholds.yaml) | Every binarization cutoff in the project |
+| [configs/thresholds.yaml](configs/thresholds.yaml) | The project's only config file — every binarization cutoff |
 | [src/snp2prot/schema.py](src/snp2prot/schema.py) | The 22-column row schema and its validator |
 | [src/snp2prot/parsers/](src/snp2prot/parsers/) | One module per source dataset |
 | [reports/](reports/) | Generated markdown deliverables, committed to git |

@@ -4,6 +4,9 @@ The paper behind each dataset in [TFDNA_MERGE_BRIEF.md](TFDNA_MERGE_BRIEF.md). E
 below was **resolved against the Crossref API**, not recalled — title, journal, volume and
 page were checked to match the brief's citation. Anything unverified is marked as such.
 
+PDFs live in [papers/](papers/) (git-ignored) under the naming scheme documented there;
+run `scripts/check_papers.py` to see which are still missing.
+
 Read the paper before writing its parser: the binarization rule, the negative's provenance,
 and the DBD boundary convention all come from the methods section, not from the file format.
 

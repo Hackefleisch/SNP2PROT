@@ -27,7 +27,5 @@ from snp2prot.parsers import bar15a, uniprobe_panels
 #: source_dataset -> zero-argument parse function. Populated in Phases 1-4.
 REGISTRY: dict[str, Callable[[], pd.DataFrame]] = {
     bar15a.SOURCE: bar15a.parse,
-    "Cell08": uniprobe_panels.parse_cell08,
-    "EMBO10": uniprobe_panels.parse_embo10,
-    "PNAS13": uniprobe_panels.parse_pnas13,
+    **{acc: uniprobe_panels.make_parser(acc) for acc in uniprobe_panels.PANELS},
 }

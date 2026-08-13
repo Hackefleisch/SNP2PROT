@@ -17,8 +17,9 @@ owner's brief, stored verbatim. **Read it before touching anything under `src/sn
 Where it and this file disagree about *paths*, this file wins (see the mapping below); where
 they disagree about *intent*, the brief wins.
 
-**Current phase: 2 complete, under the domain policy. Four UniPROBE sources parsed and
-validator-clean — 9,145,088 rows, 278 domains in 212 clusters. Phase 3 is DROPPED (see below).**
+**Current phase: 2 complete, under the domain policy. Nine UniPROBE sources parsed and
+validator-clean — 11,710,976 rows, 340 domains in 290 clusters, across 7 Pfam families.
+Phase 3 is DROPPED (see below); Phase 4 is next.**
 
 > ### `dbd_seq` is the PADDED Pfam domain
 > Not the bare Pfam envelope, and not the sequence that was on the array. It is the Pfam
@@ -182,7 +183,7 @@ Use `uv` (already installed at `~/.local/bin/uv`).
 |---|---|---|
 | 0 | scaffold, `PROVENANCE.md`, thresholds config, schema + validator | **done** |
 | 1 | UniPROBE / Barrera `BAR15A` end-to-end, cluster inventory for it alone | **done** |
-| 2 | remaining UniPROBE family panels (homeodomain, forkhead, ETS, bZIP) | **done** — Cell08, EMBO10, PNAS13; further accessions surveyed in `docs/UNIPROBE_ACCESSIONS.md` |
+| 2 | remaining UniPROBE family panels | **done** — Cell08, EMBO10, PNAS13, then SCI09, GR09, MAR17A, SHO18A, ROG18A to rebuild breadth after the policy. Survey in `docs/UNIPROBE_ACCESSIONS.md`; `GB11` (27 bHLH) is the best remaining candidate. |
 | 3 | ~~Persikov B1H + Najafabadi C2H2~~ | **DROPPED** — C2H2 arrays fail condition 2; Persikov varies a different subunit than the one that binds. ~8,000 domains excluded. |
 | 4 | SNP-SELEX, trimmed to a 19 bp window | next — screen every TF through the domain policy; many of its 270 are C2H2 and will be rejected |
 | 5 | merge, overlap report, splits, NN baseline | |

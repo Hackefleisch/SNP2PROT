@@ -10,6 +10,15 @@ That is a real limitation, not a bookkeeping artefact, and the cluster inventory
 | `Cell08`  | Berger et al., Cell 2008        | ~168 mouse homeodomains|
 | `EMBO10`  | Wei et al., EMBO J 2010         | ETS family             |
 | `PNAS13`  | Nakagawa et al., PNAS 2013      | forkhead family        |
+| `SCI09`   | Badis et al., Science 2009      | 104 mouse TFs, broad   |
+| `GR09`    | Zhu et al., Genome Res 2009     | yeast TFs              |
+| `MAR17A`  | Mariani et al., Cell Syst 2017  | bZIP and forkhead      |
+| `SHO18A`  | Shokri et al., Cell Reports 2019| mixed                  |
+| `ROG18A`  | Rogers et al., Mol Cell 2019    | forkhead, replicated   |
+
+The last five were added to rebuild family breadth after the domain policy left the corpus
+79.5% homeodomain. Every one is screened by the same policy, so a panel contributes only the
+constructs whose signal is attributable to a single continuous domain.
 
 `dbd_seq` is the detail page's Pfam-trimmed **DNA binding domain** field where present. That
 differs from BAR15A, which must use the clone insert because its variant sequences exist only
@@ -49,6 +58,11 @@ PANELS: dict[str, Panel] = {
         Panel("Cell08", "Berger et al., Cell 2008", "Cell08_contig8mers.zip"),
         Panel("EMBO10", "Wei et al., EMBO J 2010", "EMBO10_contig8mers.zip"),
         Panel("PNAS13", "Nakagawa et al., PNAS 2013", "PNAS13_contig8mers.zip"),
+        Panel("SCI09", "Badis et al., Science 2009", "SCI09_contig8mers.zip"),
+        Panel("GR09", "Zhu et al., Genome Res 2009", "GR09_contig8mers.zip"),
+        Panel("MAR17A", "Mariani et al., Cell Systems 2017", "MAR17A_contig8mers.zip"),
+        Panel("SHO18A", "Shokri et al., Cell Reports 2019", "SHO18A_contig8mers.zip"),
+        Panel("ROG18A", "Rogers et al., Mol Cell 2019", "ROG18A_contig8mers.zip"),
     )
 }
 
@@ -168,13 +182,12 @@ def parse_panel(
     return schema.coerce(pd.concat(frames, ignore_index=True)), skipped
 
 
-def parse_cell08() -> pd.DataFrame:
-    return parse_panel("Cell08")[0]
+def make_parser(accession: str):
+    """A zero-argument `parse()` for one accession, as the parser registry expects."""
 
+    def parse() -> pd.DataFrame:
+        return parse_panel(accession)[0]
 
-def parse_embo10() -> pd.DataFrame:
-    return parse_panel("EMBO10")[0]
-
-
-def parse_pnas13() -> pd.DataFrame:
-    return parse_panel("PNAS13")[0]
+    parse.__name__ = f"parse_{accession.lower()}"
+    parse.__doc__ = f"Parse the {accession} panel ({PANELS[accession].citation})."
+    return parse

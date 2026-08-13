@@ -14,10 +14,10 @@ Phases 1-2. Downloads are not licence-gated (open item #6).
 | accession | citation | proteins | forkhead | ETS | bZIP | homeodomain | parsed |
 |---|---|---:|---:|---:|---:|---:|---|
 | `Cell08` | Berger et al., Cell 2008 | 168 | 0 | 0 | 0 | 121 | Phase 2 |
-| `SCI09` | Badis et al., Science 2009 | 104 | 5 | 5 | 4 | 3 | — |
-| `GR09` | Zhu et al., Genome Res 2009 | 89 | 0 | 0 | 1 | 0 | — |
-| `MAR17A` | Mariani et al., Cell Systems 2017 | 61 | 8 | 1 | 8 | 3 | — |
-| `SHO18A` | Shokri et al., Cell Reports 2019 | 45 | 0 | 0 | 2 | 0 | — |
+| `SCI09` | Badis et al., Science 2009 | 104 | 5 | 5 | 4 | 3 | Phase 2b |
+| `GR09` | Zhu et al., Genome Res 2009 | 89 | 0 | 0 | 1 | 0 | Phase 2b |
+| `MAR17A` | Mariani et al., Cell Systems 2017 | 61 | 8 | 1 | 8 | 3 | Phase 2b |
+| `SHO18A` | Shokri et al., Cell Reports 2019 | 45 | 0 | 0 | 2 | 0 | Phase 2b |
 | `BAR15A` | Barrera et al., Science 2016 | 41 | 1 | 0 | 0 | 20 | Phase 1 |
 | `GB11` | Gordan et al., Gen. Bio. 2011 | 27 | 0 | 0 | 0 | 0 | — |
 | `EMBO10` | Wei et al., EMBO J 2010 | 22 | 0 | 20 | 0 | 0 | Phase 2 |
@@ -27,7 +27,7 @@ Phases 1-2. Downloads are not licence-gated (open item #6).
 | `Path10` | Campbell et al., PLoS Pathog 2010 | 19 | 0 | 0 | 0 | 0 | — |
 | `LIN14B` | Lindemose et al, Nucleic Acids Res. 2014 | 13 | 0 | 0 | 0 | 0 | — |
 | `DEV12` | Busser et al., Development 2012 | 10 | 0 | 0 | 0 | 1 | — |
-| `ROG18A` | Rogers et al., Mol Cell 2019 | 7 | 7 | 0 | 0 | 0 | — |
+| `ROG18A` | Rogers et al., Mol Cell 2019 | 7 | 7 | 0 | 0 | 0 | Phase 2b |
 | `PO10` | Del Bianco et al., PLoS ONE 2010 | 6 | 0 | 0 | 0 | 0 | — |
 | `NBT06` | Berger et al., Nat Biotech 2006 | 5 | 0 | 0 | 0 | 0 | — |
 | `PNAS08` | De Silva et al., PNAS 2008 | 3 | 0 | 0 | 0 | 0 | — |
@@ -68,7 +68,7 @@ to the Phase 3 B1H work, not to the UniPROBE panels.
 
 | accession | why | proteins |
 |---|---|---:|
-| `SCI09` | broadest family spread in the database; Badis 2009 is the standard mouse PBM panel | 104 |
+| `GB11` | Gordan 2011, bHLH — would most directly strengthen the smallest family (13 domains today) | 27 |
 | `GR09` | Zhu et al. 2009, yeast TFs — adds a whole other clade of protein space | 89 |
 | `MAR17A` | the clearest bZIP contribution, plus more forkhead | 61 |
 | `SHO18A` | Shokri et al. 2019 | 45 |

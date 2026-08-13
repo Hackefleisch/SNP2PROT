@@ -19,7 +19,10 @@ from snp2prot import domains, proteins, thresholds
 from snp2prot.config import EXTERNAL_DIR, INTERIM_DIR, raw_dir
 from snp2prot.parsers import _uniprobe
 
-SOURCES = ["BAR15A", "Cell08", "EMBO10", "PNAS13"]
+SOURCES = [
+    "BAR15A", "Cell08", "EMBO10", "PNAS13",
+    "SCI09", "GR09", "MAR17A", "SHO18A", "ROG18A",
+]
 CACHE = EXTERNAL_DIR / "uniprot"
 UNIPROT = "https://rest.uniprot.org/uniprotkb/{}.fasta"
 

@@ -110,6 +110,33 @@ def group_experiments(archive: Path) -> dict[str, list[str]]:
     return {k: sorted(v) for k, v in sorted(out.items())}
 
 
+def split_by_construct(members: list[str], constructs: list[str]) -> dict[str, list[str]]:
+    """Split one gene's experiments across the distinct constructs on its detail page.
+
+    A gene folder does not always hold one protein. ROG18A's `FoxJ3_N3/` holds six chimeras
+    (`FoxJ3_N3_6aa`, `FoxJ3_N3_loop`, ...), NAR11's `HLH-1/` holds a point-mutant series
+    (`HLH-1_L13R`, `_L13T`, `_L13V`), LIN14B's `ANAC092/` holds a domain construct and a
+    full-length one. Each is a different protein, and treating them as replicates of one
+    sequence would average distinct proteins together and attach the wrong sequence to the
+    measurements.
+
+    The construct is encoded as a path element, so members are matched against the detail
+    page's own construct names, longest first (`HLH-1_L13R` must win over `HLH-1`). Members
+    matching nothing fall back to the single-construct case.
+    """
+    if len(constructs) <= 1:
+        return {constructs[0]: members} if constructs else {}
+
+    out: dict[str, list[str]] = {}
+    ordered = sorted(constructs, key=len, reverse=True)
+    for m in members:
+        parts = set(m.split("/"))
+        hit = next((c for c in ordered if c in parts), None)
+        if hit is not None:
+            out.setdefault(hit, []).append(m)
+    return {k: sorted(v) for k, v in out.items()}
+
+
 def parse_panel(
     accession: str,
     genes: list[str] | None = None,
@@ -136,14 +163,18 @@ def parse_panel(
     # sequence, so they are reconciled exactly like replicates. Keeping only the first would
     # discard real data and, worse, hide whether the two agree.
     domain_cfg = thresholds.load(threshold_path)["domain"]
+    # Every construct on every detail page, not one per gene: a gene folder can hold several
+    # distinct engineered proteins.
     constructs = {
-        g: next(iter(p.inserts.values()))
-        for g, p in details.items()
-        if p.inserts and (not genes or g in genes)
+        name: seq
+        for g, page in details.items()
+        if not genes or g in genes
+        for name, seq in page.inserts.items()
     }
     hits = domains.scan(constructs)
 
     groups: dict[str, dict] = {}
+    unmatched: list[str] = []
     for gene, members in experiments.items():
         if genes and gene not in genes:
             continue
@@ -154,23 +185,69 @@ def parse_panel(
         if not page.inserts:
             skipped.append(SkippedProtein(gene, "detail page has no clone insert sequence"))
             continue
-        # The construct that was on the array is what gets annotated -- never the protein's
-        # own domain annotation, which describes the full-length protein and would say
-        # "Homeobox, POU" for a construct that in fact carries both domains.
-        construct = next(iter(page.inserts.values()))
-        call = domains.call_domain(construct, hits[gene], domain_cfg)
-        if not call.ok:
-            skipped.append(SkippedProtein(gene, f"rejected: {call.rejection} ({call.family})"))
-            continue
-        g = groups.setdefault(
-            call.sequence, {"genes": [], "members": [], "call": call, "page": page}
-        )
-        g["genes"].append(gene)
-        g["members"].extend(members)
+
+        by_construct = split_by_construct(members, list(page.inserts))
+        placed = sum(len(v) for v in by_construct.values())
+        if placed < len(members):
+            unmatched.append(f"{gene}: {len(members) - placed} experiment(s) matched no construct")
+
+        for construct, cmembers in by_construct.items():
+            # The construct that was on the array is what gets annotated -- never the
+            # protein's own domain annotation, which describes the full-length protein.
+            call = domains.call_domain(page.inserts[construct], hits[construct], domain_cfg)
+            if not call.ok:
+                skipped.append(
+                    SkippedProtein(construct, f"rejected: {call.rejection} ({call.family})")
+                )
+                continue
+            g = groups.setdefault(
+                call.sequence,
+                {"genes": [], "members": [], "call": call, "page": page, "gene": gene},
+            )
+            g["genes"].append(construct)
+            g["members"].extend(cmembers)
+
+    for u in unmatched:
+        skipped.append(SkippedProtein("<unmatched>", u))
+
+    # Cluster engineered variants with their reference. A gene folder holding several
+    # constructs is a variant series: NAR11's HLH-1 carries L13R/L13T/L13V, ROG18A's FoxN3
+    # carries chimeras. The construct named after the gene is the reference; the rest are
+    # variants of it, provided they are the same length (Hamming distance is undefined
+    # otherwise, and the validator rejects ragged clusters).
+    references = {g["gene"]: seq for seq, g in groups.items() if g["gene"] in g["genes"]}
+
+    def find_reference(gene: str, seq: str) -> tuple[str, str] | None:
+        """The reference this construct varies from, if there is an unambiguous one."""
+        ref = references.get(gene)
+        if ref is not None and len(ref) == len(seq):
+            return gene, ref
+        # Sibling folders: ROG18A puts FoxN3 and its chimeras FoxN3_J3_* side by side, so the
+        # parent is the longest reference whose name prefixes this one. Requiring equal length
+        # keeps the inference honest -- a name that merely looks related is not enough.
+        cands = [
+            (g, r)
+            for g, r in references.items()
+            if g != gene and gene.startswith(g + "_") and len(r) == len(seq)
+        ]
+        return max(cands, key=lambda c: len(c[0])) if cands else None
 
     with zipfile.ZipFile(archive) as z:
         for dbd_seq, g in groups.items():
             group_genes = sorted(g["genes"])
+            found = find_reference(g["gene"], dbd_seq)
+            if found is not None:
+                ref_gene, ref_seq = found
+                positions = [
+                    i for i, (a, b) in enumerate(zip(ref_seq, dbd_seq, strict=True), 1) if a != b
+                ]
+                wt_id = f"{accession}:{ref_gene}"
+                n_mut = len(positions)
+                mut_positions = ",".join(str(i) for i in positions)
+            else:
+                # No same-length reference: this construct is its own reference.
+                wt_id = f"{accession}:{'/'.join(group_genes)}"
+                n_mut, mut_positions = 0, ""
             if len(group_genes) > 1:
                 skipped.append(
                     SkippedProtein(
@@ -191,10 +268,9 @@ def parse_panel(
                     dbd_seq=dbd_seq,
                     dbd_family=g["call"].family,
                     dbd_source=DBD_SOURCE,
-                    # No engineered variants: each distinct domain is its own reference.
-                    wt_id=f"{accession}:{'/'.join(group_genes)}",
-                    n_mut_from_wt=0,
-                    mut_positions="",
+                    wt_id=wt_id,
+                    n_mut_from_wt=n_mut,
+                    mut_positions=mut_positions,
                     protein_id=page.protein_id,
                     species=page.species,
                     pos_cut=pos_cut,

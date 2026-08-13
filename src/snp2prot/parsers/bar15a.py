@@ -80,6 +80,11 @@ def load_metadata(details_dir: Path | None = None) -> dict[str, _uniprobe.Detail
     """Parse every `details/<GENE>.html` page. Every gene must expose a REF insert."""
     pages = _uniprobe.load_details(details_dir or (raw_dir(SOURCE) / DETAILS))
     for gene, page in pages.items():
+        # Re-key "ARX_L343Q" -> "L343Q" so alleles line up with the archive's allele folders.
+        page.inserts = {
+            (k[len(gene) + 1 :] if k.startswith(gene + "_") else k): v
+            for k, v in page.inserts.items()
+        }
         if "REF" not in page.inserts:
             raise ValueError(f"{gene}: no REF insert sequence found")
     return pages

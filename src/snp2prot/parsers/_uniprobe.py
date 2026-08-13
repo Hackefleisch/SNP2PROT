@@ -72,7 +72,10 @@ class DetailPage:
     protein_id: str = ""
     species: str = ""
     dbd: str = ""
-    #: allele label -> clone insert sequence. `REF` for a reference allele.
+    #: construct name -> clone insert sequence, keyed by the FULL name the page gives
+    #: ("ARX_L343Q", "FoxJ3_N3_6aa", "HLH-1_L13R"). The full name matters: UniPROBE archives
+    #: encode the construct as a path element, so keying by anything shorter makes distinct
+    #: engineered proteins impossible to tell apart and silently merges them.
     inserts: dict[str, str] = field(default_factory=dict)
 
 
@@ -92,12 +95,16 @@ def parse_detail_page(html: str, gene: str) -> DetailPage:
         if low.endswith("dna binding domain"):
             page.dbd = seq
         elif low.endswith("insert sequence"):
-            if low.startswith("clone "):
-                page.inserts.setdefault("REF", seq)
+            # The label names the construct ("ARX_L343Q Insert Sequence"), but not always:
+            # it can name the plasmid ("Clone pTH3418 insert sequence") or nothing at all
+            # (GR09 uses a bare "Insert sequence"). Both fall back to the gene, which is the
+            # construct in those panels. An empty key would fuse every such gene into one
+            # cluster -- GR09 alone would collapse 88 proteins.
+            name = label[: -len(" Insert Sequence")].strip()
+            if low.startswith("clone ") or not name:
+                page.inserts.setdefault(gene, seq)
             else:
-                allele_full = label[: -len(" Insert Sequence")].strip()
-                _, _, allele = allele_full.partition("_")
-                page.inserts[allele or "REF"] = seq
+                page.inserts[name] = seq
     return page
 
 

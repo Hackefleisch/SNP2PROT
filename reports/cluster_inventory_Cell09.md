@@ -44,7 +44,7 @@ A family above 40% of rows is flagged: it can be memorized instead of learned.
 | `Cell09:HLH-15` | `HLH` | 1 | 32,896 | yes |
 | `Cell09:HLH-19` | `HLH` | 1 | 32,896 | yes |
 | `Cell09:HLH-2` | `HLH` | 1 | 32,896 | yes |
-| `Cell09:HLH-25/HLH-27` | `HLH` | 1 | 32,896 | yes |
+| `Cell09:HLH-25` | `HLH` | 1 | 32,896 | yes |
 | `Cell09:HLH-26` | `HLH` | 1 | 32,896 | yes |
 | `Cell09:HLH-3` | `HLH` | 1 | 32,896 | yes |
 | `Cell09:HLH-30` | `HLH` | 1 | 32,896 | yes |

@@ -143,6 +143,28 @@ def test_detail_page_accepts_both_uniprot_labels():
     assert b.protein_id == "P12345"
 
 
+def test_multiple_constructs_on_one_page_stay_distinct():
+    """ROG18A packs six chimeras onto one page; merging them would fuse six proteins."""
+    html = "".join(
+        f"<dt>FoxJ3_N3_{n} Insert Sequence</dt><dd>\n<kbd>1 {seq}</kbd></dd>"
+        for n, seq in [("6aa", "AAAA"), ("loop", "CCCC"), ("wing", "GGGG")]
+    )
+    page = _uniprobe.parse_detail_page(html, "FoxJ3_N3")
+    assert page.inserts == {
+        "FoxJ3_N3_6aa": "AAAA",
+        "FoxJ3_N3_loop": "CCCC",
+        "FoxJ3_N3_wing": "GGGG",
+    }
+
+
+def test_bare_insert_label_falls_back_to_the_gene():
+    """GR09 labels its sequence just "Insert sequence"; an empty key would fuse 88 genes."""
+    page = _uniprobe.parse_detail_page(
+        "<dt>Insert sequence</dt><dd>\n<kbd>1 ACDE</kbd></dd>", "Aft1"
+    )
+    assert page.inserts == {"Aft1": "ACDE"}
+
+
 def test_detail_page_accepts_both_insert_label_styles():
     allele_style = _uniprobe.parse_detail_page(
         "<dt>ARX_L343Q Insert Sequence</dt><dd>\n<kbd>1 AAAA</kbd></dd>", "ARX"
@@ -150,5 +172,8 @@ def test_detail_page_accepts_both_insert_label_styles():
     clone_style = _uniprobe.parse_detail_page(
         "<dt>Clone pTH3418 insert sequence</dt><dd>\n<kbd>1 CCCC</kbd></dd>", "Alx3"
     )
-    assert allele_style.inserts == {"L343Q": "AAAA"}
-    assert clone_style.inserts == {"REF": "CCCC"}
+    # Keyed by the FULL construct name: distinct engineered proteins share a gene folder in
+    # the archive and are only separable by that name.
+    assert allele_style.inserts == {"ARX_L343Q": "AAAA"}
+    # "Clone pTH3418" names a plasmid, so the gene stands in.
+    assert clone_style.inserts == {"Alx3": "CCCC"}

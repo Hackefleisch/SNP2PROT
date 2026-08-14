@@ -1,3 +1,14 @@
+> **ARCHIVED 2026-08-14. Do not edit; do not use its figures.**
+>
+> Superseded by [`TODO.md`](../../TODO.md) (open tasks, open decisions, notes) and
+> [`docs/DECISIONS.md`](../../docs/DECISIONS.md) (decisions taken, defects fixed, sources
+> excluded). Kept because its `#N` numbers are cited in commit messages and code comments.
+>
+> Its counts describe the 2026-08-13 state and were overtaken by the builds of the following
+> day: the corpus went from 468 domains / 402 clusters / 11.71M rows to **489 / 425 /
+> 16,645,376**, point variants from 66 to 81, families from 31 to 30, and neg:pos from 255:1
+> to 318:1. Current figures live in [`docs/METHODS.md`](../../docs/METHODS.md) §9.
+
 # Open items
 
 Decisions reserved for the project owner, plus questions raised by the work. Flag here; do

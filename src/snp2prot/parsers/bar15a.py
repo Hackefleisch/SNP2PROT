@@ -50,7 +50,7 @@ ALLELE_NAME_RE = re.compile(r"^([A-Z])(\d+)([A-Z])$")
 #: Alleles whose deposited insert contradicts their own name. Characterised in Phase 1 by
 #: deriving each gene's insert->protein offset from its self-consistent variants (all 41 genes
 #: give a single unambiguous offset) and re-testing these against it. Reported, not silently
-#: repaired — see reports/validation_BAR15A.md and reports/OPEN_ITEMS.md.
+#: repaired — see reports/validation_BAR15A.md and docs/DECISIONS.md §4.
 ANOMALIES: dict[str, str] = {
     "PITX2_T114P": (
         "deposited insert is byte-identical to REF; the T->P substitution at insert "

@@ -92,7 +92,7 @@ b1h:
   score_type: b1h_sscore
   # Recovery-based, using the two 3-AT stringencies as natural cutpoints.
   # NOTE: provisional — must be checked against the paper's own treatment before Phase 3
-  # is considered done. Tracked as an open item in reports/OPEN_ITEMS.md.
+  # is considered done. Phase 3 was dropped; this block is dead config (TODO.md T8).
   positive_stringency: 10mM_3AT   # recovered here -> label 1
   negative_stringency: 2mM_3AT    # NOT recovered even here -> label 0
   # recovered at 2 mM but not 10 mM -> label -1

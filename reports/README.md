@@ -11,6 +11,7 @@ how the dataset changed.
 | `cluster_inventory.md` | Phase 5 | the same, for the merged table |
 | `overlap.md` | Phase 5 | cross-source duplicate pairs and label agreement |
 | `validation_<source>.md` | Phase 1-4 | schema validator output |
-| `OPEN_ITEMS.md` | ongoing | decisions deferred to the owner; see brief §7 |
+| `archive/` | — | superseded hand-maintained files, frozen; see `TODO.md` for what replaced them |
 
-Regenerate, never hand-edit — except `OPEN_ITEMS.md`, which is maintained by hand.
+Regenerate, never hand-edit. Open tasks and decisions live in [`TODO.md`](../TODO.md) at
+the repository root; resolved ones in [`docs/DECISIONS.md`](../docs/DECISIONS.md).

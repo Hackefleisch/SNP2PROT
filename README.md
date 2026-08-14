@@ -28,6 +28,8 @@ Protein-side depth is concentrated in 28 clusters holding 81 variants; **397 of 
 (93%) hold a single domain**.
 
 **How the dataset was built, in full: [docs/METHODS.md](docs/METHODS.md).**
+**What is open right now: [TODO.md](TODO.md).** What has been settled and why:
+[docs/DECISIONS.md](docs/DECISIONS.md).
 
 > **`dbd_seq` is the Pfam domain padded by 10 residues each side** — not the bare envelope.
 > See [docs/DOMAIN_POLICY.md](docs/DOMAIN_POLICY.md) for the admission policy and what it

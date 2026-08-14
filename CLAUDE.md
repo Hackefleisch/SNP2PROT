@@ -23,7 +23,7 @@ scored against the same 32,896 8-mers. Phase 3 is DROPPED (see below); Phase 4 i
 
 **Read [docs/METHODS.md](docs/METHODS.md) first** — it records how the dataset was built and
 why, in enough detail to reimplement. [docs/DOMAIN_POLICY.md](docs/DOMAIN_POLICY.md) states
-the admission rules; [reports/OPEN_ITEMS.md](reports/OPEN_ITEMS.md) tracks decisions.
+the admission rules; [TODO.md](TODO.md) holds open tasks and decisions, [docs/DECISIONS.md](docs/DECISIONS.md) the resolved ones.
 
 > ### `dbd_seq` is the PADDED Pfam domain
 > Not the bare Pfam envelope, and not the sequence that was on the array. It is the Pfam
@@ -64,6 +64,8 @@ concrete consequences that shape the code:
 ## Layout
 
 ```
+TODO.md                     open tasks, open decisions, notes  <- THE WORKING FILE
+docs/DECISIONS.md           decisions taken, defects fixed, sources excluded
 docs/TFDNA_MERGE_BRIEF.md   the owner's spec, verbatim — source of record
 docs/REFERENCES.md          dataset -> paper -> Crossref-verified DOI, plus reading order
 docs/UNIPROBE_ACCESSIONS.md all 36 UniPROBE accessions, citations, family survey
@@ -204,13 +206,18 @@ Use `uv` (already installed at `~/.local/bin/uv`).
 | 1 | UniPROBE / Barrera `BAR15A` end-to-end, cluster inventory for it alone | **done** |
 | 2 | remaining UniPROBE family panels | **done** — Cell08, EMBO10, PNAS13, then SCI09, GR09, MAR17A, SHO18A, ROG18A to rebuild breadth after the policy. Survey in `docs/UNIPROBE_ACCESSIONS.md`; `GB11` (27 bHLH) is the best remaining candidate. |
 | 3 | ~~Persikov B1H + Najafabadi C2H2~~ | **DROPPED** — C2H2 arrays fail condition 2; Persikov varies a different subunit than the one that binds. ~8,000 domains excluded. |
-| 4 | SNP-SELEX, trimmed to a 19 bp window | next — screen every TF through the domain policy; many of its 270 are C2H2 and will be rejected |
-| 5 | merge, overlap report, splits, NN baseline | |
-| 6 | Tier 4 test sets, in `data/testsets/` | end of brief — bHLH dimers; MAX substitutions are "in and around" the DBD, so condition 3 needs checking per variant |
+| 4 | ~~SNP-SELEX, trimmed to a 19 bp window~~ | **DROPPED 2026-08-14** — the dataset is PBM only, so every row is an 8-mer and the `dna_len` leak cannot occur |
+| 5 | merge, overlap report, splits, NN baseline | **deferred** — happens after PBM coverage is extended, not before |
+| — | **extend PBM coverage beyond UniPROBE** | **next** — CIS-BP first; the gate is whether it publishes the assayed construct sequence. See `TODO.md` T1 |
+| 6 | Tier 4 test sets, in `data/testsets/` | still wanted — bHLH dimers; a heterodimer fails condition 1, and MAX substitutions are "in and around" the DBD, so condition 3 needs checking per variant |
 
 ## Deferred to the owner — flag, do not resolve
 
-Tracked in [reports/OPEN_ITEMS.md](reports/OPEN_ITEMS.md). Currently: whether to keep B1H at
-all given its weak negatives; whether to require ≥5 variants per DBD; whether padded-20 bp or
-common-core becomes the primary dataset. If parsing turns up evidence bearing on any of these,
-add it to that file rather than acting on it.
+Tracked in [TODO.md](TODO.md), the working file for open tasks, open decisions and notes.
+Currently open: whether 70% full-length UniProt coverage is enough (before embedding work),
+and whether to drop `MAR17A:Esrrb` for its 2 unresolved `X` residues (before structure work).
+If parsing turns up evidence bearing on either, add it to that file rather than acting on it.
+
+Anything decided or finished moves to [docs/DECISIONS.md](docs/DECISIONS.md) — read it before
+reopening a question, since several obvious-looking ones have already been settled with
+reasons.

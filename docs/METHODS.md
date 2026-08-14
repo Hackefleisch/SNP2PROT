@@ -10,6 +10,28 @@ complete build (see §10).
 
 ---
 
+## Glossary
+
+Terms are used throughout in the following senses.
+
+| term | meaning |
+|---|---|
+| **transcription factor (TF)** | A protein that binds specific DNA sequences and regulates transcription of nearby genes. |
+| **domain** | A part of a protein that folds into a stable shape on its own and carries one function. Proteins are built from domains the way a program is built from functions: they recur across otherwise unrelated proteins, and one can often be studied in isolation. A transcription factor typically has a DNA-binding domain plus separate domains for other roles. Throughout this document "domain" means one stored `dbd_seq` — one protein entry in the dataset. |
+| **DNA-binding domain (DBD)** | The compact, independently folding part of a TF that contacts DNA. The rest of the protein does other work and is not represented here. Stored as `dbd_seq`. |
+| **construct** (or *insert*) | The protein fragment actually cloned and put on the array. It is usually a DBD plus some flanking residues, and is not the full-length protein. Domains are cut from the construct, so the construct bounds what can be stored. |
+| **family** | A group of DBDs sharing a fold and a recognition mechanism — homeodomain, forkhead, bZIP, C2H2 zinc finger. Assigned here from Pfam, and stored as `dbd_family`. Families are the coarsest unit at which generalization can be tested. |
+| **Pfam / HMM** | Pfam is a library of protein-family models; each family is a profile hidden Markov model that scores how well a stretch of sequence matches that family. Used here to locate domains and assign families. |
+| **envelope** | The span of a construct that a Pfam model matches, in residue coordinates. `dbd_seq` is this envelope plus padding (§3.3). |
+| **reference** (or *wild type*) | The unmodified version of a domain, against which its variants are compared. `n_mut_from_wt = 0`. |
+| **variant** | A version of a reference domain carrying one or more sequence changes — a point substitution, or an engineered chimera. |
+| **cluster** | A reference domain together with all of its variants, keyed by `wt_id`. The unit at which train/test partitions must be made: splitting two variants of one protein across the partition does not test generalization. A cluster of size 1 is a reference with no variants. |
+| **paralogue** | Two genes descended from a duplication within one organism. Their DBDs are sometimes byte-identical while the rest of the protein has diverged (§6). |
+| **site** (or *8-mer*) | The DNA sequence whose binding is measured — here always 8 base pairs. Stored as `dna_seq`. |
+| **PBM** | Protein-binding microarray. A single experiment scores one protein against every possible DNA sequence on the array at once, giving a complete profile rather than a handful of measurements. |
+| **E-score** | The PBM enrichment statistic: a rank-based measure bounded to [−0.5, 0.5], comparable across experiments, high for bound sequences. Thresholded to produce the binary label. |
+| **replicate** | A repeat measurement of the same protein, possibly on a different array design. Reconciled rather than averaged (§6). |
+
 ## 1. Design objective and its consequences
 
 The dataset is intended to support models that are sensitive to variation on the protein and
@@ -47,6 +69,8 @@ Three classes of source were not usable and are recorded as such rather than sub
 - one publishes 8-mer tables truncated to the enriched end (341-1,391 rows cut at E ≥ 0.25,
   against 32,896 for a complete experiment), which carry no non-binding evidence and would
   invert the labels of the protein's strongest sites if thresholded.
+
+The resulting attrition is quantified in §9.1.
 
 Files are additionally required to contain the complete non-redundant 8-mer set, since the
 design is fully crossed and a partial table cannot contribute negatives.
@@ -210,41 +234,118 @@ across sources, and that no cluster is a size outlier.
 
 ## 9. Dataset composition
 
-From 30 accessions retrieved, 779 constructs carried a sequence. 479 distinct domains were
-admitted; the remainder were either rejected under §3.2 or resolved to a domain sequence
-identical to another construct's.
+### 9.1 Acquisition and attrition
+
+The UniPROBE download index lists 36 accessions. Two advertise a contiguous 8-mer archive the
+server does not hold, and one further accession provides no detail pages, leaving **33
+archives retrieved**. Of those, three publish detail pages carrying no sequence at all, so the
+assayed construct is unknown and no measurement can be attributed to a protein.
+
+The remaining accessions supply **779 constructs carrying a sequence**. Each was scanned
+against Pfam-A and put through the admission policy of §3.2:
+
+| outcome | constructs | share |
+|---|---:|---:|
+| admitted | 568 | 72.9% |
+| rejected — repeated array | 106 | 13.6% |
+| rejected — no domain above threshold | 55 | 7.1% |
+| rejected — mixed families | 50 | 6.4% |
+
+Admission of a construct is necessary but not sufficient. A further 20 admitted constructs
+belong to accessions whose measurements could not be used: one publishes 8-mer tables
+truncated to the enriched end, and the rest provide no experiment file that resolves to a
+complete, readable 8-mer table. Twelve registered accessions therefore contribute nothing,
+each reported with its reason rather than passed over.
+
+Of the 548 admitted constructs in usable accessions, **489 distinct domain sequences** remain;
+the difference is constructs that resolve to an identical stored sequence, chiefly paralogues
+whose domains are invariant and separate array designs of one protein. These are reconciled
+rather than deduplicated (§6).
+
+### 9.2 The dataset as it stands
+
+Build of 2026-08-14, from 18 contributing accessions.
 
 | property | value |
 |---|---|
-| rows | 16,316,416 |
-| distinct DNA-binding domains | 479 |
-| clusters | 424 |
-| Pfam families | 31 |
-| source organisms | 22 |
+| rows | 16,645,376 |
+| distinct DNA-binding domains | 489 |
+| clusters | 425 |
+| Pfam families | 30 |
+| source organisms | 24 |
 | distinct 8-mers | 32,896 (identical in every source) |
-| binding / non-binding / excluded | 50,655 / 15,998,460 / 267,301 |
-| negative:positive ratio | 316:1 |
-| `dbd_seq` length | 43–216 aa (median 77) |
+| binding / non-binding / excluded | 51,387 / 16,323,689 / 270,300 |
+| negative:positive ratio | 318:1 |
+| `dbd_seq` length | 43-216 aa (median 77) |
 
-Composition is dominated by homeodomains (234 domains), followed by forkhead (54), bHLH (35),
-zf-C4 (28), ETS (22), HMG box (21) and Zn₂Cys₆ (17), with a further 24 families represented by
-ten or fewer domains each.
+Composition by family:
 
-Protein-side depth is concentrated: 72 variants across 26 clusters, with 381 clusters
-containing a single domain. Variants are predominantly homeodomain (54), with forkhead (9),
-zf-C4 (5), bHLH (3) and paired-domain (1) representation.
+| family | domains | family | domains |
+|---|---:|---|---:|
+| Homeodomain | 234 | T-box | 11 |
+| Forkhead | 54 | IRF | 6 |
+| bHLH (`HLH`) | 35 | ARID, zf-C2H2, RFX, TF-AP-2 | 4 each |
+| zf-C4 | 28 | PAX, E2F-TDP, HSF, SAND, AP2 | 3 each |
+| ETS | 23 | GATA, SRF-TF, KilA-N, TEA, Myb | 2 each |
+| HMG box | 21 | AFT, BrkDBD, GCM, TBP, WRKY, zf-BED | 1 each |
+| Zn2Cys6 | 17 | | |
+| bZIP | 13 | | |
+
+Protein-side depth remains concentrated. Each row below is one cluster *size*: how many
+clusters contain exactly that many domains, and how those domains divide into references and
+variants.
+
+| domains per cluster | clusters of this size | domains in them | references | variants |
+|---:|---:|---:|---:|---:|
+| 1 | 397 | 397 | 397 | 0 |
+| 2 | 8 | 16 | 8 | 8 |
+| 3 | 6 | 18 | 6 | 12 |
+| 4 | 5 | 20 | 5 | 15 |
+| 5 | 4 | 20 | 4 | 16 |
+| 6 | 2 | 12 | 2 | 10 |
+| 7 | 1 | 7 | 1 | 6 |
+| 8 | 2 | 16 | 2 | 14 |
+| | **425** | **506** | **425** | **81** |
+
+The columns are related exactly. *Domains in them* is simply the size times the number of
+clusters — the six clusters of size three account for 18 domains. Every cluster contains
+**exactly one reference** (verified: all 425), so *references* equals the cluster count and
+*variants* is the remainder:
+
+> variants = domains − clusters
+
+Hence a cluster of size 1 is a reference with nothing to compare it to and contributes no
+variants, while the two clusters of size 8 contribute 7 variants each.
+
+**93% of clusters hold a single domain.** The 81 variants sit in the 28 clusters of size two
+or more, and half of them in the eight clusters of size five or more. The largest are
+`BAR15A:HOXD13` and `ROG18A:FoxJ3` at eight domains each, then `BAR15A:FOXC1` at seven.
+
+Domains covered (506) exceeds distinct domains (489) because 17 domains appear in more than
+one cluster: the same sequence assayed by two studies enters each study's cluster
+independently, which is what makes the cross-source label agreement in `overlap.md` measurable.
+
+Variants are predominantly homeodomain (54), then forkhead (18), zf-C4 (5), bHLH (3) and
+paired domain (1). Two of the three families carrying variants outside the homeodomain arose
+only once distinct constructs sharing a gene directory were separated (§4): a bHLH
+point-mutant series and a set of forkhead chimeras.
+
+The companion protein table carries all 489 domains. A canonical UniProt sequence resolves for
+92%, and the domain can be located within that full-length sequence for 70%; the remainder are
+clone constructs differing from the canonical isoform, or non-model organisms.
 
 ## 10. Reproducibility
 
-The dataset is rebuilt from the raw archives by a single command, and all parameters that
-affect its content live in one configuration file. Reports summarizing binarization, cluster
-inventory and validation are regenerated per source and version-controlled, so that a change
-in the dataset is visible as a diff.
+The dataset is rebuilt from the raw archives by a single command, and every parameter that
+affects its content lives in one configuration file. Reports summarizing binarization, cluster
+inventory and validation are regenerated per source and version-controlled, so a change in the
+dataset appears as a diff.
 
-Statistics in §9 are from the build of 2026-08-13. Two subsequent method changes — the
-alignment-based cluster distance of §7 and the recovery of one accession whose archive has a
-flat layout — are implemented but not reflected in those figures; they increase variant and
-domain counts and do not alter any other procedure.
+All statistics in §9 are from the build of 2026-08-14 and reflect the procedures described
+above; no method change is outstanding. Consistency between the tables, the protein table and
+the reports is asserted after each build: every corpus domain appears in the protein table with
+offsets that index the stored sequence, every source carries the complete 8-mer set exactly
+once, and every source has a full set of current reports.
 
 ## References
 

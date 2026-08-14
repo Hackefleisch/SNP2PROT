@@ -17,9 +17,13 @@ owner's brief, stored verbatim. **Read it before touching anything under `src/sn
 Where it and this file disagree about *paths*, this file wins (see the mapping below); where
 they disagree about *intent*, the brief wins.
 
-**Current phase: 2 complete, under the domain policy. Nine UniPROBE sources parsed and
-validator-clean — 11,710,976 rows, 340 domains in 290 clusters, across 7 Pfam families.
-Phase 3 is DROPPED (see below); Phase 4 is next.**
+**Current phase: 2 complete. 18 UniPROBE PBM sources parsed and validator-clean —
+16,645,376 rows, 489 domains in 425 clusters, 30 Pfam families, 24 organisms, every protein
+scored against the same 32,896 8-mers. Phase 3 is DROPPED (see below); Phase 4 is next.**
+
+**Read [docs/METHODS.md](docs/METHODS.md) first** — it records how the dataset was built and
+why, in enough detail to reimplement. [docs/DOMAIN_POLICY.md](docs/DOMAIN_POLICY.md) states
+the admission rules; [reports/OPEN_ITEMS.md](reports/OPEN_ITEMS.md) tracks decisions.
 
 > ### `dbd_seq` is the PADDED Pfam domain
 > Not the bare Pfam envelope, and not the sequence that was on the array. It is the Pfam

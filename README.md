@@ -9,15 +9,23 @@ Agent working notes and conventions: [CLAUDE.md](CLAUDE.md).
 
 ## Status
 
-**Phase 2 complete.** 17 UniPROBE PBM sources parsed and validator-clean:
+**Phase 2 complete.** 18 UniPROBE PBM sources parsed and validator-clean:
 
 | property | value |
 |---|---|
-| rows | 16,316,416 |
-| DNA-binding domains | 479 in 424 clusters |
-| Pfam families / organisms | 31 / 22 |
+| rows | 16,645,376 |
+| DNA-binding domains | 489 in 425 clusters |
+| Pfam families / organisms | 30 / 24 |
 | DNA sites | all 32,896 non-redundant 8-mers, identical in every source |
-| labels | 50,655 binding / 15,998,460 non-binding / 267,301 excluded |
+| labels | 51,387 binding / 16,323,689 non-binding / 270,300 excluded |
+| negative:positive | 318:1 |
+| `dbd_seq` length | 43-216 aa (median 77) |
+
+Largest families: Homeodomain 234, Forkhead 54, bHLH 35, zf-C4 28, ETS 23, HMG box 21,
+Zn2Cys6 17, bZIP 13, T-box 11, then 21 further families of ten or fewer.
+
+Protein-side depth is concentrated in 28 clusters holding 81 variants; **397 of 425 clusters
+(93%) hold a single domain**.
 
 **How the dataset was built, in full: [docs/METHODS.md](docs/METHODS.md).**
 

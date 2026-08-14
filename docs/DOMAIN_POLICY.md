@@ -60,6 +60,49 @@ unpadded envelope offsets.
 | mutation outside the padded domain | 3 | The variant would be sequence-identical to its wild type. |
 | protein complex | 1 | Two or three *different chains* forming one binding unit — `Myc_Max`, `Kay_Jra` (Fos/Jun), `Da_Twi`, the C. elegans `HLH-2_*` heterodimers, the `MAML1-CSL-GST-NOTCH*` ternary complexes. No single `dbd_seq` is responsible for the measurement. This is the same principle as the mixed-family rejection, one level up: there the two domains sat in one chain, here they sit in two. UniPROBE publishes no sequence for any of them, so they are excluded either way, but the reason is now recorded rather than incidental. |
 
+## 3b. One domain described by several Pfam models
+
+Pfam sometimes models a single domain with more than one family. Applied naively, the
+`mixed_families` rule then rejects a perfectly good protein, because two family names appear
+in one construct.
+
+This is not hypothetical. An audit of every construct found **12 rejections where the two
+families covered the same region**, eight of them bZIP:
+
+| construct | hits | overlap |
+|---|---|---|
+| `MAR17A:Atf3` | `bZIP_1[18-74]` + `bZIP_2[18-70]` | 100% |
+| `SCI09:Jundm2` | `bZIP_1[16-74]` + `bZIP_2[17-70]` | 100% |
+| `SHO18A:Jra` | `bZIP_1[210-273]` + `bZIP_2[216-264]` | 100% |
+| `SCI09:Zfp691` | `zf-H2C2_2[30-55]` + `zf-C2H2[44-66]` | 52% |
+| `EMBO10:Gm4881` | `Ets[16-96]` + `HSF_DNA-bind[23-88]` | 100% |
+
+bZIP is one of the three families the brief names explicitly, and it was being discarded
+almost entirely, with rejection messages that read as if the policy were working.
+
+**Rule.** Before the policy is applied, hits overlapping more than 50% of the shorter one are
+collapsed to the highest-scoring, since they describe one domain. Deliberately narrow:
+
+- separated hits still reject — PAX + homeodomain remain two spatial units (condition 1);
+- partially overlapping hits still reject — two domains touching is not one domain twice;
+- zinc-finger arrays remain arrays — fingers sit side by side, so `repeat_array` still fires.
+
+Recovering bZIP took it from 6 to 13 domains.
+
+## 3c. Family naming
+
+Collapsing leaves whichever model scored higher, so `dbd_family` would otherwise depend on an
+implementation detail: bZIP appeared as `bZIP_1` for some proteins and `bZIP_2` for others,
+splitting one family in two. Since `dbd_family` drives leave-one-family-out, a family split
+this way could never be held out as a group.
+
+Synonymous model names are therefore mapped to one label (`domains.FAMILY_ALIASES`):
+`bZIP_1`/`bZIP_2` → `bZIP`, `zf-H2C2_2` → `zf-C2H2`, `Homeobox_KN` → `Homeodomain`,
+`SOXp` → `HMG_box`.
+
+**`TF_AP-2` (mammalian TFAP2) and `AP2` (plant AP2/ERF) are deliberately NOT merged** — similar
+names, different domains. A test pins this so the two are not tidied together later.
+
 ## 4. Consequences for the phase plan
 
 **Phase 3 (Persikov B1H + Najafabadi C2H2) is dropped.** Both are C2H2 zinc-finger arrays, so

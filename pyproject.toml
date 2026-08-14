@@ -14,6 +14,7 @@ dependencies = [
     "pyarrow>=14",       # Parquet checkpoints; CSV only for tables under ~1e5 rows
     "pyyaml>=6",
     "requests>=2.31",
+    "openpyxl>=3.1",     # Weirauch 2014 Table S6 ships the construct sequences as .xlsx
 ]
 
 [project.optional-dependencies]

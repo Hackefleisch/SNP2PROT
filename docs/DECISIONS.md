@@ -192,8 +192,9 @@ the invariants they violated. The live checklist is `TODO.md` `N3`.
 ### `#34` — The HMM set covered 9 families; UniPROBE spans 86 domain labels
 Constructs from bZIP, HMG_box, GATA, T-box, Zn_clus, IRF and others were rejected as
 `no_domain` because the HMM was missing, not because nothing was there. Fixed by scanning the
-full Pfam-A library (30,134 families), with the admission policy evaluated over a 41-family
-DNA-binding whitelist (`data/external/pfam/dbd_families.txt`) so a DBD beside an unrelated
+full Pfam-A library (30,134 families), with the admission policy evaluated over a DNA-binding
+whitelist (`data/external/pfam/dbd_families.txt`, 41 families at the time, 65 after `T15`
+below) so a DBD beside an unrelated
 domain is still admitted. **340 → 468 domains, 7 → 31 families.**
 
 ### `#35` — UniPROBE labels predate several Pfam renames
@@ -419,3 +420,31 @@ and should be spot-checked rather than assumed correct. And this is Weirauch 201
 constructs, **not** the ~2,294 TFs with PBM data the database aggregates: for aggregated
 entries the construct sequence belongs to the contributing study, and much of that is UniPROBE
 already held.
+
+### 2026-08-14 — The whitelist is built from every source database's vocabulary, not one
+`#34` fixed the HMM library but left the *whitelist* derived from a single database:
+`build_dbd_family_list.py` read UniPROBE's `Domain` labels, so it could only ever name
+families UniPROBE happened to publish. Screening CIS-BP exposed the same failure a second
+time — of 240 constructs rejected as `no_domain`, **only 33 had no Pfam hit at all**; the
+other 207 had a perfectly good hit belonging to a family we had no word for. Plant TCP, Dof,
+NAC and SBP, Doublesex DM, the Rel homology domain of NF-kB.
+
+The script now reads **both** UniPROBE's `Domain` labels and CIS-BP's `Pfam ID` column, each
+being that database's own curation of what binds DNA, and each resolved against Pfam-A `NAME`
+fields rather than trusted verbatim. **41 -> 65 families**, 24 added, none removed. The output
+records which database vouched for each family.
+
+Six CIS-BP labels predate Pfam renames and could not be resolved by string match. Rather than
+guess, each was resolved **by the sequence**: scan the constructs CIS-BP gave that label to
+against full Pfam-A and read off which family actually hits them. The method reproduces the
+three existing hand mappings (`Homeobox`, `Fork_head`, `E2F_TDP`) exactly, which is why it was
+trusted for the rest, and every result is confirmed by the target's own Pfam description —
+`DUF573` -> `GeBP-like_DBD` ("DBD domain"), `RHD` -> `RHD_DNA_bind` and not `RHD_dimer`,
+`EIN3` -> `EIN3_DNA-bd` and not `EIN3_N`.
+
+Effect, measured: CIS-BP admission **731 -> 896**, and on sources already parsed **477 -> 490**
+constructs with nothing lost — `LIN14B` alone goes from 1 admitted construct to 12, because
+NAC is a family the corpus previously could not see. A rebuild follows (`TODO.md` `T16`).
+
+Pinned by `tests/test_domains.py::test_whitelist_covers_the_families_recovered_from_cisbp`,
+because this failure mode is silent: a missing family looks exactly like an absent domain.

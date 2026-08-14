@@ -3,10 +3,19 @@
 
     python scripts/build_dbd_family_list.py
 
-UniPROBE publishes a `Domain` label for every experiment on its browse page. Those labels
-are the database's own curation of what does the DNA binding, so they are the right basis
-for the whitelist — but they are free text ("Zinc Finger C2H2", "HMG BOX", "forkhead"), so
-each token is resolved against Pfam-A's own `NAME` fields rather than trusted verbatim.
+The whitelist decides which Pfam families take part in the admission policy, so a family
+missing from it is rejected as `no_domain` — not because nothing was found, but because we
+were not looking. That failure has now happened twice (open items #34 and T15), and both
+times the cause was the same: the whitelist was derived from ONE database's vocabulary.
+
+So it is built from every source database's own curation of what does the DNA binding:
+
+  * **UniPROBE** publishes a `Domain` label per experiment on its browse page.
+  * **CIS-BP / Weirauch 2014** publishes a `Pfam ID` per construct in Table S6.
+
+Both are free text and both are stale in places, so **no label is trusted verbatim**. Each
+token is resolved against Pfam-A's own `NAME` fields; where a label predates a Pfam rename it
+is resolved through `MANUAL`, whose entries carry the accession they were checked against.
 
 Tokens that resolve to nothing are printed, not silently dropped.
 """
@@ -15,9 +24,13 @@ from __future__ import annotations
 
 import re
 
-from snp2prot.config import EXTERNAL_DIR, PROJECT_ROOT
+import pandas as pd
+
+from snp2prot.config import EXTERNAL_DIR, PROJECT_ROOT, RAW_DIR
 
 BROWSE = EXTERNAL_DIR / "uniprobe" / "browse.html"
+CISBP = RAW_DIR / "weirauch2014" / "TabS6_DBD_clone_information.xlsx"
+CISBP_SHEET = "Experimental constructs"
 PFAM = EXTERNAL_DIR / "pfam" / "Pfam-A.hmm"
 OUT = EXTERNAL_DIR / "pfam" / "dbd_families.txt"
 
@@ -54,6 +67,17 @@ MANUAL = {
     "brlz": "bZIP_1",
     "wh": "Forkhead",
     "hth apses-type": "KilA-N",
+    # CIS-BP's Table S6 labels are older still. Each of these was resolved by scanning the
+    # constructs CIS-BP gave the label to against the full Pfam-A library and reading off
+    # which family actually hits them -- the sequence decides, not the string. The method
+    # reproduces the three hand mappings above (Homeobox, Fork_head, E2F_TDP) exactly, which
+    # is why it is trusted for the rest. Accession and description confirm each one.
+    "cxc": "TCR",  # PF03638 "Tesmin/TSO1-like CXC domain"
+    "duf260": "LOB",  # PF03195 "Lateral organ boundaries (LOB) domain"
+    "duf573": "GeBP-like_DBD",  # PF04504 "...DBD domain"
+    "ein3": "EIN3_DNA-bd",  # PF04873 -- the DNA-binding domain, NOT EIN3_N (PF27048)
+    "rhd": "RHD_DNA_bind",  # PF00554 -- DNA-binding, NOT RHD_dimer (PF16179)
+    "zf-dof": "Zn_ribbon_Dof",  # PF02701 "Dof domain, zinc finger"
 }
 #: Labels that are not DNA-binding domains at all, or are too vague to resolve.
 IGNORE = {
@@ -74,6 +98,29 @@ IGNORE = {
 }
 
 
+def uniprobe_labels() -> list[str]:
+    """UniPROBE's `Domain` column, one free-text label per experiment."""
+    if not BROWSE.exists():
+        print(f"note: UniPROBE browse page not cached ({BROWSE}); skipping that source")
+        return []
+    html = BROWSE.read_text(errors="ignore")
+    return re.findall(r'value="[^"/]+/[^"/]+/[^"]*".*?</a></td>\s*<td>([^<]*)</td>', html, re.S)
+
+
+def cisbp_labels() -> list[str]:
+    """CIS-BP's `Pfam ID` column, one label per experimental construct.
+
+    Multi-domain constructs are written as a comma-joined list ("Homeobox,Pou"), which the
+    caller already splits -- the admission policy rejects those constructs anyway, but each
+    of their domains is still a DNA-binding family and belongs on the whitelist.
+    """
+    if not CISBP.exists():
+        print(f"note: CIS-BP Table S6 not present ({CISBP}); skipping that source")
+        return []
+    df = pd.read_excel(CISBP, sheet_name=CISBP_SHEET)
+    return df["Pfam ID"].dropna().astype(str).tolist()
+
+
 def pfam_names() -> set[str]:
     if not PFAM.exists():
         raise SystemExit(f"Pfam-A not found: {PFAM}")
@@ -85,41 +132,65 @@ def pfam_names() -> set[str]:
 
 
 def main() -> None:
-    if not BROWSE.exists():
-        raise SystemExit(f"browse page not cached: {BROWSE}")
-    html = BROWSE.read_text(errors="ignore")
-    rows = re.findall(r'value="[^"/]+/[^"/]+/[^"]*".*?</a></td>\s*<td>([^<]*)</td>', html, re.S)
+    sources = {"uniprobe": uniprobe_labels(), "cisbp": cisbp_labels()}
+    if not any(sources.values()):
+        raise SystemExit("no label source available; nothing to generate")
 
     names = pfam_names()
     lower = {n.lower(): n for n in names}
-    resolved, unresolved = {}, set()
-    for label in rows:
-        for token in (t.strip() for t in label.split(",")):
-            key = token.lower()
-            if key in IGNORE:
-                continue
-            if key in MANUAL:
-                resolved.setdefault(MANUAL[key], set()).add(token)
-            elif key in lower:
-                resolved.setdefault(lower[key], set()).add(token)
-            else:
-                unresolved.add(token)
+    resolved: dict[str, set[str]] = {}
+    origin: dict[str, set[str]] = {}
+    unresolved: dict[str, set[str]] = {}
+    for source, rows in sources.items():
+        for label in rows:
+            for token in (t.strip() for t in label.split(",")):
+                key = token.lower()
+                if key in IGNORE:
+                    continue
+                family = MANUAL.get(key) or lower.get(key)
+                if family is None:
+                    unresolved.setdefault(source, set()).add(token)
+                    continue
+                resolved.setdefault(family, set()).add(token)
+                origin.setdefault(family, set()).add(source)
 
     missing = sorted(f for f in resolved if f not in names)
+    previous = set()
+    if OUT.exists():
+        previous = {
+            ln.split("#")[0].strip()
+            for ln in OUT.read_text().splitlines()
+            if ln.strip() and not ln.startswith("#")
+        }
+
     lines = [
         "# DNA-binding Pfam families used by the domain admission policy.",
-        "# Generated by scripts/build_dbd_family_list.py from UniPROBE's own Domain labels,",
-        "# resolved against Pfam-A NAME fields. Do not hand-edit; re-run the script.",
+        "# Generated by scripts/build_dbd_family_list.py from the source databases' own",
+        "# curation of what binds DNA -- UniPROBE's Domain labels and CIS-BP's Pfam ID column",
+        "# -- each resolved against Pfam-A NAME fields. Do not hand-edit; re-run the script.",
+        "#",
+        "# The trailing comment records which database vouched for the family. A family listed",
+        "# by only one of them is not more doubtful: they curate different organisms.",
         "",
     ]
-    lines += sorted(resolved)
+    width = max(len(f) for f in resolved)
+    lines += [f"{f:<{width}}  # {', '.join(sorted(origin[f]))}" for f in sorted(resolved)]
     OUT.write_text("\n".join(lines) + "\n")
 
+    added = sorted(set(resolved) - previous)
+    dropped = sorted(previous - set(resolved))
     print(f"{len(resolved)} DNA-binding families -> {OUT.relative_to(PROJECT_ROOT)}")
+    for source, rows in sources.items():
+        n = sum(1 for f, o in origin.items() if source in o)
+        print(f"  {source:<9} {len(rows):>5} labels -> {n} families")
+    if added:
+        print(f"\nADDED {len(added)}: {added}")
+    if dropped:
+        print(f"REMOVED {len(dropped)}: {dropped}   <-- check this is intended")
     if missing:
         print(f"WARNING: {len(missing)} mapped names absent from Pfam-A: {missing}")
-    if unresolved:
-        print(f"unresolved labels ({len(unresolved)}), not included: {sorted(unresolved)}")
+    for source, toks in unresolved.items():
+        print(f"unresolved in {source} ({len(toks)}), not included: {sorted(toks)}")
 
 
 if __name__ == "__main__":

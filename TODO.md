@@ -90,17 +90,22 @@ Plus 24 new domains within 1-3 edits of something we already hold, and 69 within
 domains and no variant depth at all, so this attacks `N2` in a way Kock's homeodomain-only
 series cannot.
 
-**Three things to settle before parsing:**
-1. **Spot-check the 240 `no_domain` rejections.** CIS-BP scanned 81 Pfam models at
-   Eval < 0.01; we use gathering thresholds over full Pfam-A, so our bar is stricter and the
-   gap is probably real. 23% is high enough to check a handful rather than assume.
+**ACQUIRED 2026-08-14** as source key `weirauch2014`. All four files are in
+`data/raw/weirauch2014/` with `PROVENANCE.md` rows; see that directory's `README.md` for what
+each one is and the traps. **The parser reads `GSE53348_family.soft.gz`** — the 2.6 GB RAW tar
+is probe-level intensities, not 8-mer tables, which is the easiest mistake to make here.
+
+**Remaining before parsing:**
+1. **`T15` is done** (2026-08-14): the whitelist went 41 -> 65 families and this source now
+   admits **896 of 1,032**, giving 884 distinct domain sequences.
 2. **This is Weirauch 2014's own 1,032 constructs, not all of CIS-BP.** The database
    aggregates ~2,294 TFs with PBM data, but for aggregated entries the construct sequence
    belongs to the contributing study — and much of that is UniPROBE we already hold. 1,032 is
    the verified-attributable subset; Lambert 2019 is the next tranche and needs this same
    check (`T2`).
-3. **Pick a source key and record provenance** for Table S6 and the GEO archive before any
-   parsing. The GEO RAW tar is 2.6 GB.
+3. Write `src/snp2prot/parsers/weirauch2014.py`. It is not a UniPROBE panel — SOFT blocks, not
+   a zip of per-gene folders — so it does not share `_uniprobe.py`'s archive walking, though
+   it should reuse `reconcile_replicates` for the HK/ME pair.
 
 **It also hands `T13` its covariates for free**: `#Flanking AAs` (671 at 50, 265 at 0, 96 at
 15), `Backbone` and `Tag location` are published per construct. And it makes the confound
@@ -202,6 +207,21 @@ is reported at Dryad `10.5061/dryad.pm3g4r3` with a companion GitHub repo — un
 Small, but it is ancestral reconstruction, so every sequence is stated explicitly and there is
 no accession chasing. Reconstructed-ancestor series are also the one place where designed
 protein-axis depth exists outside homeodomain point mutants.
+
+### T16 — Rebuild the corpus on the widened whitelist
+`T15` widened the DNA-binding family whitelist from 41 to 65 families, which changes admission
+for **every** source, so `data/interim/` is now stale. Verified in-process without writing:
+
+- **LIN14B 1 -> 12 constructs** (11 `NAM` plus its original `WRKY`) — NAC was a whole family
+  the corpus could not see. Lindemose et al. is a NAC paper, so it was contributing almost
+  nothing for the wrong reason.
+- **SCI09 68 -> 69** (`MH1`, the SMAD DNA-binding domain).
+- Both revalidate clean. **No construct anywhere lost admission** — the change is purely
+  additive, 477 -> 490 UniPROBE constructs.
+
+Run `scripts/build_dataset.py --all` (~4-5 min) and regenerate reports. Expect roughly 502
+domains rather than 489, and `NAM` and `MH1` as new families. `docs/METHODS.md` §9 and the
+README status block both quote the old figures and need refreshing from the new build.
 
 ### T3 — Make cluster size cheap to filter on
 Whether to require ≥5 variants per DBD is a **training-time** choice, not a dataset one

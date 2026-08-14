@@ -30,6 +30,50 @@ Consequences, all of them simplifications:
   a phase that no longer exists;
 - `b1h:` and `snp_selex:` in `configs/thresholds.yaml` become dead config (`TODO.md` `T8`).
 
+### 2026-08-14 — upbm Q-values may enter as their own `score_type`
+If the Kock deposit turns out to publish only upbm affinity/contrast/specificity Q-values and
+no probe-level or E-score data, it is still admitted — with a new `score_type` and its own
+cutoffs, rather than being skipped to protect the single-E-score scale.
+
+**The cost is real and was accepted knowingly.** Every stored row is currently `pbm_escore` on
+one scale with one pair of cutoffs, and the validator makes any value outside [-0.5, 0.5] a
+hard error precisely because reading the wrong column once produced a 4:1 ratio (§5, `#36`).
+A second score type means a second cutoff pair in `configs/thresholds.yaml`, and by this
+project's own convention that invalidates the dataset, every report and every provenance row.
+Weighed against 122 alleles in 30 designed series — the single largest addition of protein-axis
+depth identified — and the depth won. Tracked as `TODO.md` `T11`.
+
+### 2026-08-14 — Homeodomain may go to ~58% of domains; depth beats balance
+Admitting Kock takes homeodomain from 47.9% to roughly 58% of domains and from 67% to ~84% of
+point variants. Accepted as a straight consequence of the earlier call that family imbalance
+is fixed by parsing more rather than down-sampling (`#10`), and because multi-member clusters
+roughly double — 28 to ~58 — which is the corpus's scarcest property.
+
+It does make the transfer question harder to answer, not easier: whether single-residue
+sensitivity generalises to another fold is what `TODO.md` `N2` is about, and this deepens the
+fold the corpus is already richest in. That was the trade, made with the numbers in view.
+
+### 2026-08-14 — Clusters are formed by sequence distance, not only by construct lineage
+Two natural paralogues one substitution apart previously sat in separate singleton clusters,
+because `wt_id` came from construct naming — a gene folder and its insert names. They now
+merge. Worth roughly a dozen new multi-member clusters, at no acquisition cost, and it
+subsumes the distance-0 case that `TODO.md` `T4` describes.
+
+`wt_id` thereby stops meaning "one reference and the variants engineered from it" and starts
+meaning "domains within *k* edits of each other". Two parameters follow that this decision did
+not settle, and neither has a defensible default — the threshold, and which member of a merged
+paralogue pair is the reference that `mut_positions` is expressed against. Open as `D3`.
+
+### 2026-08-14 — Construct architecture is recorded beside the table, not in it
+Flank length, affinity tag and expression system are perfectly confounded with source study,
+so they go in the protein-side companion table keyed by construct — not as columns in the
+22-column row schema. Keeps the schema frozen and rewrites no parser, while still letting a
+modeller condition on the covariate or hold it out.
+
+Noted at the time: the confound is already partly live. `dbd_seq` is the padded envelope
+clipped where the construct ends, so flank length is readable off `dbd_seq` length today —
+ROG18A's bare domains run 83-85 aa against 95-105 aa for the padded ones. Tracked as `T13`.
+
 ### 2026-08-14 — Cluster-size restriction is a training decision, not a dataset one
 Was `#2`: whether to admit only DBDs with ≥5 variants. **The dataset stores everything; the
 modeller filters.** Only 9 of 425 clusters hold 5 or more domains, so the rule would have cut
@@ -299,3 +343,79 @@ for a build whose per-source rejection reasons are load-bearing. Threads were me
 | `#31` SHO18A detail pages 500ing | Worked around via `detailsDef.php` with the site's own ids, verified against SHO18A/Apt. No ids guessed. |
 | `#48` Did construct-splitting drop data anywhere? | No — verified clean across all 30 accessions, and the check is now part of `audit_sources.py`. |
 | `#49` Does SCI09 lose anything to its rejected combined files? | No. All 104 genes keep at least one readable per-replicate file; the 105 rejected 20-column files are redundant. |
+
+---
+
+## 9. Source candidates screened and rejected
+
+### 2026-08-14 — a literature sweep for PBM sources with designed protein variation
+A separate research session surveyed the literature for PBM datasets carrying reference plus
+mutant alleles of the same DBD. Screening its results against the admission policy and
+against what is already parsed:
+
+| candidate | verdict |
+|---|---|
+| **Kock et al. 2024, *Nat Commun* 15:3110** — 30 HD allelic series, 122 alleles | **pursue** — `TODO.md` `T11`. The one large find. |
+| Rogers et al. 2019, *Mol Cell* 74:245 | **already parsed as `ROG18A`** — 15 domains in 3 clusters, including the `N3(J3-6aa)` swap the sweep highlighted. |
+| Liu et al. 2018, *eLife* 7:e34594 | **already parsed as `LIU18B`**, but only 2 of its constructs. The lead is the Dryad deposit, not the paper: `T14`. |
+| Ibrahim et al. 2013, *Genome Res* 23:2091 — HOXD13 wt/Q325R/Q325K | **mostly held already.** `Q325K` is in BAR15A, which carries HOXD13 as 8 domains / 7 variants. Only `Q325R` would be new — one domain. |
+| **Siggers et al. 2014, *Mol Cell* 55:640** — Msn2/Msn4/Com2/Usv1/Rgm1 | **rejected.** All are C2H2 zinc-finger arrays: separate ~23-residue folds on flexible linkers, failing admission condition 2. These are the exact grounds on which Phase 3 was dropped and ~8,000 domains excluded (§1). Reversible only via `domain.allow_repeat_arrays`. |
+| "Mine Berger 2008 for pairs at ≤3 substitutions" | **measured, and smaller than proposed.** Over all 489 domains: 31 pairs at ≤3 edits, but 23 are cross-source and largely re-find the 17 `T4` duplicates plus their variant halos. Genuinely new same-source paralogues at ≤3 edits: 8 pairs. Now handled generally by `T12`. |
+| Chu 2012; Noyes 2008; Aditham 2021; gcPBM paralogue panels | **out by assay**, as the sweep itself noted — B1H, microfluidic affinity, or an array design that does not yield the 32,896 8-mers. |
+
+**Identifiers from that sweep are unverified** and are recorded in `TODO.md` as such. Rule 1
+applies: none of them may be turned into a download URL by pattern, and each must be confirmed
+against the source before use.
+
+---
+
+## 10. The CIS-BP gate, answered
+
+### 2026-08-14 — CIS-BP publishes the assayed construct sequence
+`TODO.md` `T1` rested on one question: does CIS-BP publish the sequence that was physically on
+the array, or only its own DBD annotation of the full-length protein? Attributability — the
+first admission condition — depends on the answer, and it decided whether CIS-BP was the
+largest available expansion or a dead end.
+
+**It publishes the construct.** Weirauch et al. 2014's own methods: *"All inserts were
+sequence verified in full. Insert sequences and other information are available in Table
+S6."* The project site describes Table S6 as *"DBD clone source material. This spreadsheet
+provides information on the clone source material, the experimental construct sequences, and
+the clone source contributors."*
+
+Verified at every link rather than taken on the paper's word:
+
+| link | contents |
+|---|---|
+| `TabS6_DBD_clone_information.xlsx`, sheet *Experimental constructs* | 1,032 rows with `Plasmid ID`, `Insert AA`, `#Flanking AAs`, `Backbone`, `Tag location` |
+| GEO `GSE53348` | 2,064 samples, titled `pTH####_<HK\|ME>_8mer_<n>` — the plasmid ID is the join key |
+| `GSM1291226` (`pTH1294_HK_8mer_593`) | `ID_REF / VALUE / E-Score / Z-Score`, **32,896 rows** |
+
+The construct architecture is stated per row, so the confound `T13` exists to record is
+published rather than inferred: 671 constructs carry 50 flanking residues, 96 carry 15, and
+**265 carry none at all** — bare DBDs from an Agilent oligo pool, described in the methods as
+*"These constructs did not contain any AAs flanking the DBD."*
+
+**Measured yield through our own admission policy**, by scanning all 1,032 inserts and calling
+each with `call_domain`: **731 admitted (71%)** — 240 rejected `no_domain`, 49 `repeat_array`,
+12 `mixed_families` — giving 722 distinct sequences of which **677 are new**. That takes the
+protein axis from 489 domains to roughly 1,166, across 106 species instead of 24, and fills
+the families the corpus is thinnest in (Myb_DNA-binding 58 against our 2, AP2 39 against 3,
+GATA 27 against 2, WRKY 22 against 1).
+
+It also brings the depth the corpus lacks, because the paper's first selection strategy
+deliberately populated nine DBD identity bins up to **90-99.99%**: within the new domains
+alone there are 61 pairs within 3 edits and 103 within 5, led by Myb_DNA-binding — a family
+with no variant depth here today.
+
+**Nothing about the existing configuration has to change**, which is what separates this from
+Kock: the same E-score statistic on the same scale, with the paper quoting `E > 0.45` as its
+own significance cutoff — identical to `pbm.positive` — and HK/ME dual arrays per plasmid,
+which `per_experiment: true` and `reconcile_replicates` already handle.
+
+Two limits recorded honestly. The 240 `no_domain` rejections come from a stricter bar than
+CIS-BP's own (gathering thresholds over full Pfam-A, against their 81 models at Eval < 0.01)
+and should be spot-checked rather than assumed correct. And this is Weirauch 2014's own 1,032
+constructs, **not** the ~2,294 TFs with PBM data the database aggregates: for aggregated
+entries the construct sequence belongs to the contributing study, and much of that is UniPROBE
+already held.

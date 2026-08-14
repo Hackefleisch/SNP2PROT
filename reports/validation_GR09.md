@@ -20,5 +20,5 @@ No errors or warnings.
 | `n_dbd` | 37 |
 | `n_dna` | 32,896 |
 | `dna_len` | [8] |
-| `families` | Zn_clus: 559,232, zf-C2H2: 131,584, HSF_DNA-bind: 98,688, GATA: 65,792, KilA-N: 65,792, Homeodomain: 65,792, bZIP_1: 65,792, AFT: 32,896, HLH: 32,896, SRF-TF: 32,896, Myb_DNA-binding: 32,896, TEA: 32,896 |
+| `families` | Zn_clus: 559,232, zf-C2H2: 131,584, HSF_DNA-bind: 98,688, GATA: 65,792, KilA-N: 65,792, Homeodomain: 65,792, bZIP: 65,792, AFT: 32,896, HLH: 32,896, SRF-TF: 32,896, Myb_DNA-binding: 32,896, TEA: 32,896 |
 | `neg_provenance` | assayed_unbound: 1,195,498 |

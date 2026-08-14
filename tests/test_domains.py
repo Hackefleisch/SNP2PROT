@@ -106,3 +106,59 @@ def test_rebase_positions_are_one_based_within_dbd_seq():
 def test_stored_slice_always_matches_reported_offsets(pad):
     call = domains.call_domain(SEQ, [hit("Homeodomain", 30, 60)], {**CFG, "padding_aa": pad})
     assert call.sequence == SEQ[call.start - 1 : call.end]
+
+
+# --- co-located hits --------------------------------------------------------------------
+# Pfam models one domain with several families in places: bZIP_1/bZIP_2 both match the same
+# basic-leucine-zipper, zf-H2C2_2 overlaps zf-C2H2, Homeodomain overlaps Homeobox_KN. Before
+# this was handled, mixed_families rejected most of the bZIP family.
+
+
+def test_colocated_families_are_one_domain_not_two():
+    hits = [hit("bZIP_1", 18, 74), hit("bZIP_2", 18, 70)]
+    call = domains.call_domain(SEQ, hits, CFG)
+    assert call.ok, "two Pfam models of one bZIP must not read as two domains"
+    # Both models alias to one family label, so the reported family cannot depend on
+    # which of them happened to score higher.
+    assert call.family == "bZIP"
+
+
+def test_the_higher_scoring_model_is_the_one_kept():
+    """Which hit survives collapsing decides the stored boundaries, so it must be the best."""
+    a = domains.DomainHit("Homeodomain", 18, 74, score=40.0)
+    b = domains.DomainHit("Forkhead", 20, 70, score=95.0)
+    kept = domains.collapse_colocated([a, b])
+    assert len(kept) == 1
+    assert kept[0] == b, "the higher-scoring model must define the domain span"
+
+
+def test_separated_families_are_still_rejected():
+    """A real two-domain construct (PAX + homeodomain) must still fail condition 1."""
+    call = domains.call_domain(SEQ, [hit("PAX", 4, 40), hit("Homeodomain", 55, 95)], CFG)
+    assert not call.ok
+    assert call.rejection == domains.MIXED_FAMILIES
+
+
+def test_partial_overlap_below_threshold_still_counts_as_two():
+    call = domains.call_domain(SEQ, [hit("PAX", 10, 50), hit("Homeodomain", 46, 90)], CFG)
+    assert not call.ok, "a small overlap is two domains touching, not one described twice"
+
+
+def test_collapse_keeps_a_zinc_finger_array_an_array():
+    """Fingers sit side by side, so collapsing must not turn an array into one domain."""
+    hits = [hit("zf-C2H2", 10, 32), hit("zf-C2H2", 40, 62), hit("zf-C2H2", 68, 90)]
+    assert len(domains.collapse_colocated(hits)) == 3
+    assert domains.call_domain(SEQ, hits, CFG).rejection == domains.REPEAT_ARRAY
+
+
+def test_bzip_models_report_one_family_name():
+    """bZIP_1 and bZIP_2 are models of one family; dbd_family must not depend on which won."""
+    a = domains.call_domain(SEQ, [hit("bZIP_1", 18, 74)], CFG)
+    b = domains.call_domain(SEQ, [hit("bZIP_2", 18, 70)], CFG)
+    assert a.family == b.family == "bZIP"
+
+
+def test_lookalike_families_are_not_merged():
+    """TF_AP-2 (mammalian) and AP2 (plant) are different domains despite similar names."""
+    assert domains.canonical_family("TF_AP-2") == "TF_AP-2"
+    assert domains.canonical_family("AP2") == "AP2"

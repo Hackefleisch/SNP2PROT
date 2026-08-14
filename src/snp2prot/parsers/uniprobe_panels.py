@@ -59,7 +59,11 @@ PANELS: dict[str, Panel] = {
     # Not registered: MIZ19A and MMB08 advertise a contig8mers.zip the server does not
     # have; GB11, LAI20A and NAR10 publish detail pages with no sequence at all, so the
     # assayed construct is unknown and nothing can be attributed to a domain. See
-    # PROVENANCE.md for all five.
+    # PROVENANCE.md for all five. Path10 publishes only the enriched end of each table
+    # (341-1,391 rows cut at E >= 0.25, not the full 32,896), so it carries no negatives
+    # and its top hits would be mislabelled as non-binding. GD09 is excluded twice over:
+    # its tables are one 8-mer short of the full set, and its only protein has no Pfam
+    # hit above the gathering threshold anywhere in its 294-residue construct.
     for p in (
         Panel("Cell08", "Berger et al., Cell 2008", "Cell08_contig8mers.zip"),
         Panel("EMBO10", "Wei et al., EMBO J 2010", "EMBO10_contig8mers.zip"),

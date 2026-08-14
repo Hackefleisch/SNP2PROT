@@ -64,6 +64,7 @@ docs/TFDNA_MERGE_BRIEF.md   the owner's spec, verbatim — source of record
 docs/REFERENCES.md          dataset -> paper -> Crossref-verified DOI, plus reading order
 docs/UNIPROBE_ACCESSIONS.md all 36 UniPROBE accessions, citations, family survey
 docs/DOMAIN_POLICY.md       what dbd_seq is, the padding, and what gets excluded  <- READ THIS
+docs/METHODS.md             publication-quality account of how the dataset was built
 docs/papers/                paper PDFs (git-ignored); README.md there is the manifest
 docs/papers_inbox/          the owner drops papers here; Claude identifies and files them
 PROVENANCE.md               one row per raw file: URL, accession, timestamp, size, sha256

@@ -56,6 +56,11 @@ class DomainHit:
     family: str
     start: int  # 1-based, inclusive, in the scanned sequence
     end: int
+    score: float = 0.0
+
+    @property
+    def length(self) -> int:
+        return self.end - self.start + 1
 
 
 @dataclass(frozen=True)
@@ -133,10 +138,62 @@ def scan(
                     # against ARX, which gives Homeodomain[15-71] either way.
                     found[name].append(
                         DomainHit(
-                            _name(hit.name), dom.alignment.target_from, dom.alignment.target_to
+                            _name(hit.name),
+                            dom.alignment.target_from,
+                            dom.alignment.target_to,
+                            float(dom.score),
                         )
                     )
     return {k: sorted(v, key=lambda h: h.start) for k, v in found.items()}
+
+
+#: Pfam model names that denote the same biological family, mapped to one label so that
+#: `dbd_family` is a family and not a model id. Without this, `bZIP_1` and `bZIP_2` — two
+#: models of one basic-leucine-zipper — split the family across two labels depending on which
+#: scored higher per protein, and a family-level split would never see bZIP as one group.
+#: Deliberately minimal: `TF_AP-2` (mammalian TFAP2) and `AP2` (plant AP2/ERF) are different
+#: domains that merely look alike by name, and are NOT merged.
+FAMILY_ALIASES = {
+    "bZIP_1": "bZIP",
+    "bZIP_2": "bZIP",
+    "zf-H2C2_2": "zf-C2H2",
+    "Homeobox_KN": "Homeodomain",
+    "SOXp": "HMG_box",
+}
+
+
+def canonical_family(name: str) -> str:
+    return FAMILY_ALIASES.get(name, name)
+
+
+#: Two hits covering this much of the shorter one are taken to describe a single domain.
+COLOCATION_OVERLAP = 0.5
+
+
+def collapse_colocated(hits: list[DomainHit]) -> list[DomainHit]:
+    """Merge hits from different families that cover the same region.
+
+    Pfam sometimes models one domain with several families. `bZIP_1` and `bZIP_2` both match
+    the same basic-leucine-zipper, `zf-H2C2_2` overlaps `zf-C2H2`, and `Homeodomain` overlaps
+    `Homeobox_KN`. Left alone these look like two domains in one construct and the
+    `mixed_families` rule rejects the protein — which cost us most of the bZIP family before
+    this was noticed, one of the three families the brief asks for by name.
+
+    Overlapping hits are one domain described twice, so the highest-scoring is kept and the
+    rest dropped. Hits that merely sit near each other are untouched: a real two-domain
+    construct (PAX + homeodomain) has them well separated, and must still be rejected.
+    """
+    kept: list[DomainHit] = []
+    for h in sorted(hits, key=lambda x: (-x.score, -x.length)):
+        clash = False
+        for k in kept:
+            overlap = max(0, min(h.end, k.end) - max(h.start, k.start) + 1)
+            if overlap / min(h.length, k.length) > COLOCATION_OVERLAP:
+                clash = True
+                break
+        if not clash:
+            kept.append(h)
+    return sorted(kept, key=lambda x: x.start)
 
 
 def call_domain(
@@ -150,7 +207,13 @@ def call_domain(
     # plus, say, a LIM or PWWP domain is still attributable: the homeodomain is what binds.
     known = dbd_families()
     other = tuple(h for h in hits if h.family not in known)
-    hits = [h for h in hits if h.family in known]
+    hits = collapse_colocated(
+        [
+            DomainHit(canonical_family(h.family), h.start, h.end, h.score)
+            for h in hits
+            if h.family in known
+        ]
+    )
     families = {h.family for h in hits}
 
     if not hits:

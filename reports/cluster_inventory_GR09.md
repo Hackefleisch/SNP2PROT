@@ -34,7 +34,7 @@ A family above 40% of rows is flagged: it can be memorized instead of learned.
 | `zf-C2H2` | 4 | 4 | 131,584 | 10.8% | |
 | `HSF_DNA-bind` | 3 | 3 | 98,688 | 8.1% | |
 | `GATA` | 2 | 2 | 65,792 | 5.4% | |
-| `bZIP_1` | 2 | 2 | 65,792 | 5.4% | |
+| `bZIP` | 2 | 2 | 65,792 | 5.4% | |
 | `KilA-N` | 2 | 2 | 65,792 | 5.4% | |
 | `Homeodomain` | 2 | 2 | 65,792 | 5.4% | |
 | `AFT` | 1 | 1 | 32,896 | 2.7% | |
@@ -75,8 +75,8 @@ A family above 40% of rows is flagged: it can be memorized instead of learned.
 | `GR09:Tbf1` | `Myb_DNA-binding` | 1 | 32,896 | yes |
 | `GR09:Tea1` | `Zn_clus` | 1 | 32,896 | yes |
 | `GR09:Tec1` | `TEA` | 1 | 32,896 | yes |
-| `GR09:Yap1` | `bZIP_1` | 1 | 32,896 | yes |
-| `GR09:Yap6` | `bZIP_1` | 1 | 32,896 | yes |
+| `GR09:Yap1` | `bZIP` | 1 | 32,896 | yes |
+| `GR09:Yap6` | `bZIP` | 1 | 32,896 | yes |
 | `GR09:Ybr239c` | `Zn_clus` | 1 | 32,896 | yes |
 | `GR09:Ydr520c` | `Zn_clus` | 1 | 32,896 | yes |
 | `GR09:Ygr067c` | `zf-C2H2` | 1 | 32,896 | yes |

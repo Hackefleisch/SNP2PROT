@@ -36,6 +36,10 @@ from snp2prot import schema
 #: The bound is what lets the E-score column be identified when a file has no header.
 ESCORE_MIN, ESCORE_MAX = -0.5, 0.5
 
+#: A universal PBM scores every one of the non-redundant 8-mers, so a complete table has
+#: exactly this many rows. Fewer means the depositor published only part of it.
+N_NONREDUNDANT_8MERS = 32896
+
 ASSAY = "PBM"
 SCORE_TYPE = "pbm_escore"
 #: A PBM 8-mer score aggregates over many flanking contexts, so no specific flank was observed.
@@ -122,7 +126,7 @@ class EscoreColumnError(ValueError):
     """Raised when a file's E-score column cannot be identified unambiguously."""
 
 
-def read_8mer_table(z: zipfile.ZipFile, member: str) -> pd.DataFrame:
+def read_8mer_table(z: zipfile.ZipFile, member: str, require_complete: bool = True) -> pd.DataFrame:
     """One experiment's 8-mer table as `dna_seq` + `escore`.
 
     **The E-score column is identified by its value range, not by position.** Position is not
@@ -177,6 +181,20 @@ def read_8mer_table(z: zipfile.ZipFile, member: str) -> pd.DataFrame:
     ]
 
     if not candidates:
+        # Distinguish "no E-score here" from "an E-score column that never goes negative",
+        # which means the depositor published only the enriched end of the table. Path10 is
+        # the case in point: 341-1,391 rows cut at E >= 0.25 instead of the full 32,896.
+        bounded = [
+            (i, v) for i, v in numeric.items() if v.min() >= ESCORE_MIN and v.max() <= ESCORE_MAX
+        ]
+        if bounded:
+            i, v = bounded[0]
+            raise EscoreColumnError(
+                f"{member}: column {i} looks like an E-score but never goes negative "
+                f"(min {v.min():.4f}, {len(df):,} rows). This is a TRUNCATED table listing "
+                f"only enriched 8-mers, not the full {N_NONREDUNDANT_8MERS:,}. Labelling it "
+                f"would call that protein's top hits non-binding"
+            )
         raise EscoreColumnError(
             f"{member}: no column lies within [{ESCORE_MIN}, {ESCORE_MAX}] — this file "
             f"carries no E-score (columns: {list(df.columns)[:6]})"
@@ -187,6 +205,18 @@ def read_8mer_table(z: zipfile.ZipFile, member: str) -> pd.DataFrame:
             f"{[i for i, _ in candidates]}); the file probably concatenates experiments"
         )
 
+    if require_complete and len(df) != N_NONREDUNDANT_8MERS:
+        short = N_NONREDUNDANT_8MERS - len(df)
+        kind = (
+            "truncated to the enriched end"
+            if len(df) < N_NONREDUNDANT_8MERS * 0.5
+            else f"near-complete but {short} 8-mer(s) short"
+        )
+        raise EscoreColumnError(
+            f"{member}: {len(df):,} rows, expected {N_NONREDUNDANT_8MERS:,} — {kind}. The "
+            f"design is fully crossed, so every protein must be scored against every 8-mer; "
+            f"admitting a partial table would give that protein a different DNA axis"
+        )
     return _finish(df, candidates[0][1])
 
 

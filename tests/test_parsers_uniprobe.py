@@ -42,7 +42,7 @@ def _zip(members: dict[str, str]) -> zipfile.ZipFile:
 )
 def test_header_is_detected_not_assumed(body):
     z = _zip({"G/G_8mers.txt": body})
-    df = _uniprobe.read_8mer_table(z, "G/G_8mers.txt")
+    df = _uniprobe.read_8mer_table(z, "G/G_8mers.txt", require_complete=False)
     assert len(df) == 2, "a headerless file must not lose its first data row"
     assert df["dna_seq"].tolist() == ["AAAAAAAA", "AAAAAAAC"]
     assert df["escore"].tolist() == [0.49, -0.10]
@@ -76,14 +76,14 @@ NO_ESCORE = "8-mer\t8-mer\tMedian\tZ-score\nAAAAAAAA\tTTTTTTTT\t20007.4\t1.27\n"
 def test_escore_column_found_by_range_not_position():
     """GR09 puts median intensity where BAR15A puts the E-score."""
     z = _zip({"G/G_8mers.txt": GR09_LAYOUT})
-    df = _uniprobe.read_8mer_table(z, "G/G_8mers.txt")
+    df = _uniprobe.read_8mer_table(z, "G/G_8mers.txt", require_complete=False)
     assert df["escore"].tolist() == [0.49, -0.10], "must not read the intensity column"
 
 
 def test_file_without_an_escore_is_rejected():
     z = _zip({"G/G_8mers.txt": NO_ESCORE})
     with pytest.raises(_uniprobe.EscoreColumnError, match="no E-score"):
-        _uniprobe.read_8mer_table(z, "G/G_8mers.txt")
+        _uniprobe.read_8mer_table(z, "G/G_8mers.txt", require_complete=False)
 
 
 def test_concatenated_experiments_are_rejected_as_ambiguous():
@@ -94,6 +94,21 @@ def test_concatenated_experiments_are_rejected_as_ambiguous():
     )
     z = _zip({"G/G_8mers.txt": body})
     with pytest.raises(_uniprobe.EscoreColumnError, match="look like E-scores"):
+        _uniprobe.read_8mer_table(z, "G/G_8mers.txt", require_complete=False)
+
+
+def test_truncated_table_is_rejected_with_a_specific_reason():
+    """Path10 publishes only enriched 8-mers (E >= 0.25). Labelling such a table would call
+    that protein's strongest hits non-binding, so it is refused rather than parsed."""
+    body = "".join(f"AAAAAAA{c}\tTTTTTTTT\t0.4{i}\n" for i, c in enumerate("ACGT"))
+    z = _zip({"G/G_8mers.txt": body})
+    with pytest.raises(_uniprobe.EscoreColumnError, match="TRUNCATED"):
+        _uniprobe.read_8mer_table(z, "G/G_8mers.txt", require_complete=False)
+
+
+def test_incomplete_table_is_rejected_when_completeness_is_required():
+    z = _zip({"G/G_8mers.txt": BODY})
+    with pytest.raises(_uniprobe.EscoreColumnError, match="fully crossed"):
         _uniprobe.read_8mer_table(z, "G/G_8mers.txt")
 
 
@@ -177,3 +192,27 @@ def test_detail_page_accepts_both_insert_label_styles():
     assert allele_style.inserts == {"ARX_L343Q": "AAAA"}
     # "Clone pTH3418" names a plasmid, so the gene stands in.
     assert clone_style.inserts == {"Alx3": "CCCC"}
+
+
+# --- registry coverage -----------------------------------------------------------------
+# A parser registration was once dropped silently by an editing mistake, and the only symptom
+# was two accessions quietly vanishing from the corpus. This ties the registry to what is
+# actually on disk.
+
+#: Accessions we hold an archive for but deliberately do not parse. Each is recorded in
+#: PROVENANCE.md: their detail pages carry no sequence at all, so the assayed construct is
+#: unknown and nothing can be attributed to a domain.
+DELIBERATELY_UNPARSED = {"GB11", "LAI20A", "NAR10"}
+
+
+def test_every_downloaded_archive_has_a_parser_or_a_documented_reason():
+    from snp2prot.config import RAW_DIR
+    from snp2prot.parsers import REGISTRY
+
+    if not RAW_DIR.exists():
+        pytest.skip("raw data not present")
+    have = {p.name for p in RAW_DIR.iterdir() if (p / f"{p.name}_contig8mers.zip").exists()}
+    if not have:
+        pytest.skip("no archives downloaded")
+    unregistered = have - set(REGISTRY) - DELIBERATELY_UNPARSED
+    assert not unregistered, f"archives on disk with no parser: {sorted(unregistered)}"

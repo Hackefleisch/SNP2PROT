@@ -18,8 +18,8 @@ scheme; it is frozen at [`reports/archive/OPEN_ITEMS_2026-08-14.md`](reports/arc
 have mixed assay types are out — which removes the `dna_len` leakage problem entirely, since
 every row is an 8-mer and always will be.
 
-18 UniPROBE accessions parsed and validator-clean: 16,645,376 rows, 489 domains in 425
-clusters, 30 Pfam families, 24 organisms, every protein scored against the same 32,896 8-mers.
+18 UniPROBE accessions parsed and validator-clean: 17,040,128 rows, 501 domains in 437
+clusters, 32 Pfam families, 24 organisms, every protein scored against the same 32,896 8-mers.
 
 `build_dataset.py --all` was ~25 minutes and should now be roughly **4-5**, after the T6 work
 of 2026-08-14 (`docs/DECISIONS.md` §7). **The library must be pressed once per machine —
@@ -208,21 +208,6 @@ Small, but it is ancestral reconstruction, so every sequence is stated explicitl
 no accession chasing. Reconstructed-ancestor series are also the one place where designed
 protein-axis depth exists outside homeodomain point mutants.
 
-### T16 — Rebuild the corpus on the widened whitelist
-`T15` widened the DNA-binding family whitelist from 41 to 65 families, which changes admission
-for **every** source, so `data/interim/` is now stale. Verified in-process without writing:
-
-- **LIN14B 1 -> 12 constructs** (11 `NAM` plus its original `WRKY`) — NAC was a whole family
-  the corpus could not see. Lindemose et al. is a NAC paper, so it was contributing almost
-  nothing for the wrong reason.
-- **SCI09 68 -> 69** (`MH1`, the SMAD DNA-binding domain).
-- Both revalidate clean. **No construct anywhere lost admission** — the change is purely
-  additive, 477 -> 490 UniPROBE constructs.
-
-Run `scripts/build_dataset.py --all` (~4-5 min) and regenerate reports. Expect roughly 502
-domains rather than 489, and `NAM` and `MH1` as new families. `docs/METHODS.md` §9 and the
-README status block both quote the old figures and need refreshing from the new build.
-
 ### T3 — Make cluster size cheap to filter on
 Whether to require ≥5 variants per DBD is a **training-time** choice, not a dataset one
 (`D-2026-08-14-clusters`). What the dataset owes the modeller is the ability to select on it
@@ -323,16 +308,16 @@ are derived and need no row of their own, but the row should say the library get
 ## Open decisions
 
 ### D1 — Is 70% full-length coverage enough?
-**Before embedding work.** The protein table maps **342 of 489 domains** onto a canonical
-UniProt sequence; **450** have a full sequence at all. The remainder are clone constructs
+**Before embedding work.** The protein table maps **354 of 501 domains** onto a canonical
+UniProt sequence; **462** have a full sequence at all. The remainder are clone constructs
 differing from the canonical isoform, or non-model species with no clean mapping.
 
-Domain-level embeddings work for all 489. Full-protein embeddings work for roughly two thirds.
+Domain-level embeddings work for all 501. Full-protein embeddings work for roughly 71%.
 The decision is whether that asymmetry is acceptable or whether full-length becomes a filter.
 
 ### D2 — Drop `MAR17A:Esrrb`?
 **Before structure work.** It carries 2 unresolved `X` residues in an 89 aa zf-C4 domain — the
-only such domain in the corpus, 1 of 489. Harmless to a sequence embedder; a genuine problem
+only such domain in the corpus, 1 of 501. Harmless to a sequence embedder; a genuine problem
 for structure prediction and any 3D embedder. Drop it, or carry it and exclude it at
 structure-generation time.
 
@@ -359,13 +344,13 @@ exists to catch isoform-offset bugs.
 ## Notes
 
 ### N1 — The row count is an exact invariant
-`16,645,376 = 506 x 32,896`, where 506 = 489 distinct domains + the 17 cross-source duplicates
+`17,040,128 = 518 x 32,896`, where 518 = 501 distinct domains + the 17 cross-source duplicates
 of `T4`. Every construct contributes exactly one full 8-mer table. If a rebuild's row count is
 not a clean multiple of 32,896, something dropped or duplicated rows — the fastest single
 sanity check available.
 
 ### N2 — Protein-axis depth, and what it can now answer
-81 point variants across 28 clusters; **397 of 425 clusters (93%) hold a single domain**.
+81 point variants across 28 clusters; **409 of 437 clusters (94%) hold a single domain**.
 By family: Homeodomain 54, Forkhead 18, zf-C4 5, HLH 3, PAX 1.
 
 This matters for the project's central question — does sensitivity to single-residue change
@@ -392,7 +377,8 @@ Full account in [`docs/DECISIONS.md`](docs/DECISIONS.md). Run
 `scripts/audit_sources.py` (~4 min) after any new source lands — it sweeps every one of these.
 
 ### N4 — Only 8 families are large enough to hold out
-Homeodomain 234, Forkhead 54, HLH 35, zf-C4 28, Ets 23, HMG_box 21, Zn_clus 17, T-box 11. The
+Homeodomain 234, Forkhead 54, HLH 35, zf-C4 28, Ets 23, HMG_box 21, Zn_clus 17, bZIP 13,
+NAM 11, T-box 11. The
 long tail below ~10 domains gives noise under leave-one-family-out. Report LOFO for the viable
 eight and treat the rest as descriptive. Revisit when splits are designed.
 

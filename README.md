@@ -13,19 +13,19 @@ Agent working notes and conventions: [CLAUDE.md](CLAUDE.md).
 
 | property | value |
 |---|---|
-| rows | 16,645,376 |
-| DNA-binding domains | 489 in 425 clusters |
-| Pfam families / organisms | 30 / 24 |
+| rows | 17,040,128 |
+| DNA-binding domains | 501 in 437 clusters |
+| Pfam families / organisms | 32 / 24 |
 | DNA sites | all 32,896 non-redundant 8-mers, identical in every source |
-| labels | 51,387 binding / 16,323,689 non-binding / 270,300 excluded |
-| negative:positive | 318:1 |
+| labels | 51,642 binding / 16,713,577 non-binding / 274,909 excluded |
+| negative:positive | 324:1 |
 | `dbd_seq` length | 43-216 aa (median 77) |
 
 Largest families: Homeodomain 234, Forkhead 54, bHLH 35, zf-C4 28, ETS 23, HMG box 21,
-Zn2Cys6 17, bZIP 13, T-box 11, then 21 further families of ten or fewer.
+Zn2Cys6 17, bZIP 13, NAC 11, T-box 11, then 22 further families of ten or fewer.
 
-Protein-side depth is concentrated in 28 clusters holding 81 variants; **397 of 425 clusters
-(93%) hold a single domain**.
+Protein-side depth is concentrated in 28 clusters holding 81 variants; **409 of 437 clusters
+(94%) hold a single domain**.
 
 **How the dataset was built, in full: [docs/METHODS.md](docs/METHODS.md).**
 **What is open right now: [TODO.md](TODO.md).** What has been settled and why:

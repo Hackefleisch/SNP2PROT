@@ -18,8 +18,9 @@ Where it and this file disagree about *paths*, this file wins (see the mapping b
 they disagree about *intent*, the brief wins.
 
 **Current phase: 2 complete. 18 UniPROBE PBM sources parsed and validator-clean —
-16,645,376 rows, 489 domains in 425 clusters, 30 Pfam families, 24 organisms, every protein
-scored against the same 32,896 8-mers. Phase 3 is DROPPED (see below); Phase 4 is next.**
+17,040,128 rows, 501 domains in 437 clusters, 32 Pfam families, 24 organisms, every protein
+scored against the same 32,896 8-mers. Phases 3-5 are DROPPED or deferred; the dataset is now
+PBM-only and grows by extending PBM coverage. See [TODO.md](TODO.md).**
 
 **Read [docs/METHODS.md](docs/METHODS.md) first** — it records how the dataset was built and
 why, in enough detail to reimplement. [docs/DOMAIN_POLICY.md](docs/DOMAIN_POLICY.md) states

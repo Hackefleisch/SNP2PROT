@@ -448,3 +448,29 @@ NAC is a family the corpus previously could not see. A rebuild follows (`TODO.md
 
 Pinned by `tests/test_domains.py::test_whitelist_covers_the_families_recovered_from_cisbp`,
 because this failure mode is silent: a missing family looks exactly like an absent domain.
+
+### 2026-08-14 — Corpus rebuilt on the widened whitelist
+`T16`. `build_dataset.py --all` re-run after `T15`; same 18 of 30 accessions contribute, all
+validator-clean, and the twelve that yield nothing do so for their existing recorded reasons.
+
+| | before | after |
+|---|---:|---:|
+| rows | 16,645,376 | **17,040,128** |
+| distinct domains | 489 | **501** |
+| clusters | 425 | **437** |
+| Pfam families | 30 | **32** |
+| binding / non-binding / excluded | 51,387 / 16,323,689 / 270,300 | 51,642 / 16,713,577 / 274,909 |
+| admitted constructs | 568 (72.9%) | 581 (74.6%) |
+| rejected `no_domain` | 55 | 42 |
+
+Every added domain traces to the whitelist: `LIN14B` 1 → 12 constructs (11 `NAM`) and `SCI09`
+68 → 69 (`MH1`). Only those two sources' reports changed, which is the cleanest available
+evidence that nothing else moved.
+
+The row-count invariant still holds exactly — **17,040,128 = 518 × 32,896**, where 518 is 501
+distinct domains plus the 17 measured by two studies each. Every `dna_len` is 8. Cluster
+structure is otherwise untouched: still 81 variants in 28 clusters, and the new NAC domains are
+all singletons, so this bought breadth rather than depth.
+
+The protein table was rebuilt with it: 501 domains, canonical UniProt for 462 (92%), domain
+located in the full-length sequence for 354 (71%).

@@ -93,13 +93,31 @@ disagree: constructs annotated `Homeobox, POU` were found to contain both domain
 assayed insert, which the protein-level label does not establish.
 
 Because a whole-library scan also returns domains unrelated to DNA binding, the admission
-policy is evaluated over a restricted set of 41 DNA-binding families. That set was derived
-from the domain labels UniPROBE itself publishes, each resolved against Pfam-A `NAME` fields
-by accession lookup; several UniPROBE labels predate Pfam renames (`Homeobox` → `Homeodomain`,
-`Fork_head` → `Forkhead`, `MADS` → `SRF-TF`, `E2F_TDP` → `WHD_E2F_TDP`, `Zn2Cys6` → `Zn_clus`,
-`BRIGHT` → `ARID`, `AP-2` → `TF_AP-2`, `PBX` → `PBC`, `RFX` → `RFX_DNA_binding`). Pfam hits
-outside this set are recorded but do not affect admission: a DNA-binding domain adjacent to an
-unrelated domain remains solely responsible for the DNA interaction.
+policy is evaluated over a restricted set of **65 DNA-binding families**. A family absent from
+that set is indistinguishable from an absent domain, so its derivation matters: it is taken
+from the source databases' own curation of what binds DNA — UniPROBE's `Domain` labels and
+CIS-BP's per-construct `Pfam ID` — each resolved against Pfam-A `NAME` fields rather than
+trusted verbatim.
+
+Deriving it from a single database proved insufficient twice. The first set covered only the
+nine families present in the earliest sources; the second covered 41, all of them families
+UniPROBE happens to publish, which silently discarded constructs carrying plant TCP, Dof, NAC
+and SBP domains, Doublesex `DM`, and the Rel homology domain of NF-κB. Adding CIS-BP's
+vocabulary took the set to 65 and recovered 13 UniPROBE constructs that had been rejected as
+`no_domain`, eleven of them NAC.
+
+Both vocabularies are stale in places. Labels predating a Pfam rename are resolved by
+accession lookup where the accession is published (`Homeobox` → `Homeodomain`, `Fork_head` →
+`Forkhead`, `MADS` → `SRF-TF`, `E2F_TDP` → `WHD_E2F_TDP`, `Zn2Cys6` → `Zn_clus`, `BRIGHT` →
+`ARID`, `AP-2` → `TF_AP-2`, `PBX` → `PBC`, `RFX` → `RFX_DNA_binding`), and otherwise **by the
+sequence**: the constructs carrying a given label are scanned against the full library and the
+family that actually hits them is read off (`CXC` → `TCR`, `DUF260` → `LOB`, `DUF573` →
+`GeBP-like_DBD`, `EIN3` → `EIN3_DNA-bd`, `RHD` → `RHD_DNA_bind`, `zf-Dof` → `Zn_ribbon_Dof`).
+That procedure reproduces the accession-derived mappings exactly where both are available,
+which is the basis for trusting it where only one is.
+
+Pfam hits outside this set are recorded but do not affect admission: a DNA-binding domain
+adjacent to an unrelated domain remains solely responsible for the DNA interaction.
 
 ### 3.2 Admission policy
 
@@ -246,10 +264,10 @@ against Pfam-A and put through the admission policy of §3.2:
 
 | outcome | constructs | share |
 |---|---:|---:|
-| admitted | 568 | 72.9% |
+| admitted | 581 | 74.6% |
 | rejected — repeated array | 106 | 13.6% |
-| rejected — no domain above threshold | 55 | 7.1% |
 | rejected — mixed families | 50 | 6.4% |
+| rejected — no domain above threshold | 42 | 5.4% |
 
 Admission of a construct is necessary but not sufficient. A further 20 admitted constructs
 belong to accessions whose measurements could not be used: one publishes 8-mer tables
@@ -257,7 +275,7 @@ truncated to the enriched end, and the rest provide no experiment file that reso
 complete, readable 8-mer table. Twelve registered accessions therefore contribute nothing,
 each reported with its reason rather than passed over.
 
-Of the 548 admitted constructs in usable accessions, **489 distinct domain sequences** remain;
+Of the 561 admitted constructs in usable accessions, **501 distinct domain sequences** remain;
 the difference is constructs that resolve to an identical stored sequence, chiefly paralogues
 whose domains are invariant and separate array designs of one protein. These are reconciled
 rather than deduplicated (§6).
@@ -268,14 +286,14 @@ Build of 2026-08-14, from 18 contributing accessions.
 
 | property | value |
 |---|---|
-| rows | 16,645,376 |
-| distinct DNA-binding domains | 489 |
-| clusters | 425 |
-| Pfam families | 30 |
+| rows | 17,040,128 |
+| distinct DNA-binding domains | 501 |
+| clusters | 437 |
+| Pfam families | 32 |
 | source organisms | 24 |
 | distinct 8-mers | 32,896 (identical in every source) |
-| binding / non-binding / excluded | 51,387 / 16,323,689 / 270,300 |
-| negative:positive ratio | 318:1 |
+| binding / non-binding / excluded | 51,642 / 16,713,577 / 274,909 |
+| negative:positive ratio | 324:1 |
 | `dbd_seq` length | 43-216 aa (median 77) |
 
 Composition by family:
@@ -287,9 +305,10 @@ Composition by family:
 | bHLH (`HLH`) | 35 | ARID, zf-C2H2, RFX, TF-AP-2 | 4 each |
 | zf-C4 | 28 | PAX, E2F-TDP, HSF, SAND, AP2 | 3 each |
 | ETS | 23 | GATA, SRF-TF, KilA-N, TEA, Myb | 2 each |
-| HMG box | 21 | AFT, BrkDBD, GCM, TBP, WRKY, zf-BED | 1 each |
+| HMG box | 21 | AFT, BrkDBD, GCM, MH1, TBP, WRKY, zf-BED | 1 each |
 | Zn2Cys6 | 17 | | |
 | bZIP | 13 | | |
+| NAC (`NAM`) | 11 | | |
 
 Protein-side depth remains concentrated. Each row below is one cluster *size*: how many
 clusters contain exactly that many domains, and how those domains divide into references and
@@ -297,7 +316,7 @@ variants.
 
 | domains per cluster | clusters of this size | domains in them | references | variants |
 |---:|---:|---:|---:|---:|
-| 1 | 397 | 397 | 397 | 0 |
+| 1 | 409 | 409 | 409 | 0 |
 | 2 | 8 | 16 | 8 | 8 |
 | 3 | 6 | 18 | 6 | 12 |
 | 4 | 5 | 20 | 5 | 15 |
@@ -305,11 +324,11 @@ variants.
 | 6 | 2 | 12 | 2 | 10 |
 | 7 | 1 | 7 | 1 | 6 |
 | 8 | 2 | 16 | 2 | 14 |
-| | **425** | **506** | **425** | **81** |
+| | **437** | **518** | **437** | **81** |
 
 The columns are related exactly. *Domains in them* is simply the size times the number of
 clusters — the six clusters of size three account for 18 domains. Every cluster contains
-**exactly one reference** (verified: all 425), so *references* equals the cluster count and
+**exactly one reference** (verified: all 437), so *references* equals the cluster count and
 *variants* is the remainder:
 
 > variants = domains − clusters
@@ -317,11 +336,11 @@ clusters — the six clusters of size three account for 18 domains. Every cluste
 Hence a cluster of size 1 is a reference with nothing to compare it to and contributes no
 variants, while the two clusters of size 8 contribute 7 variants each.
 
-**93% of clusters hold a single domain.** The 81 variants sit in the 28 clusters of size two
+**94% of clusters hold a single domain.** The 81 variants sit in the 28 clusters of size two
 or more, and half of them in the eight clusters of size five or more. The largest are
 `BAR15A:HOXD13` and `ROG18A:FoxJ3` at eight domains each, then `BAR15A:FOXC1` at seven.
 
-Domains covered (506) exceeds distinct domains (489) because 17 domains appear in more than
+Domains covered (518) exceeds distinct domains (501) because 17 domains appear in more than
 one cluster: the same sequence assayed by two studies enters each study's cluster
 independently, which is what makes the cross-source label agreement in `overlap.md` measurable.
 
@@ -330,8 +349,8 @@ paired domain (1). Two of the three families carrying variants outside the homeo
 only once distinct constructs sharing a gene directory were separated (§4): a bHLH
 point-mutant series and a set of forkhead chimeras.
 
-The companion protein table carries all 489 domains. A canonical UniProt sequence resolves for
-92%, and the domain can be located within that full-length sequence for 70%; the remainder are
+The companion protein table carries all 501 domains. A canonical UniProt sequence resolves for
+92%, and the domain can be located within that full-length sequence for 71%; the remainder are
 clone constructs differing from the canonical isoform, or non-model organisms.
 
 ## 10. Reproducibility

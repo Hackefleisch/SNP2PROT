@@ -180,3 +180,76 @@ def test_raise_if_failed(good_frame):
     df.loc[0, "label"] = 2
     with pytest.raises(schema.SchemaValidationError):
         schema.validate(df, source="TESTSRC").raise_if_failed()
+
+
+# --------------------------------------------------------------------------------------
+# Performance rewrites — these pin BEHAVIOUR, not speed.
+#
+# `add_pair_ids` and the validator's axis checks were rewritten to work on distinct values
+# instead of per row (reports/../TODO.md T6). Both were 5-8x faster and, critically, changed
+# nothing: what these tests defend is that the row-weighted counts in every message still
+# equal what a naive per-row implementation would have produced.
+# --------------------------------------------------------------------------------------
+
+
+def _naive_pair_ids(df: pd.DataFrame) -> list[str]:
+    """The per-row implementation the vectorized one replaced."""
+    return [
+        schema.make_pair_id(
+            "" if pd.isna(d) else str(d),
+            "" if pd.isna(n) else str(n),
+            "" if pd.isna(a) else str(a),
+            "" if pd.isna(s) else str(s),
+        )
+        for d, n, a, s in zip(
+            df["dbd_seq"], df["dna_seq"], df["assay"], df["stringency"], strict=True
+        )
+    ]
+
+
+def test_pair_ids_match_the_per_row_definition(good_frame):
+    assert list(schema.add_pair_ids(good_frame)["pair_id"]) == _naive_pair_ids(good_frame)
+
+
+def test_pair_id_survives_a_missing_stringency_column(good_frame):
+    """`stringency` is optional, and its absence must hash as an empty field, not crash."""
+    df = good_frame.drop(columns=["stringency"])
+    ids = schema.add_pair_ids(df)["pair_id"]
+    assert list(ids) == list(good_frame["pair_id"])
+
+
+def test_pair_id_separator_keeps_field_boundaries():
+    """Without the separator, ("AC", "DETAAT") and ("ACDE", "TAAT") would collide."""
+    assert schema.make_pair_id("AC", "DETAAT", "PBM") != schema.make_pair_id("ACDE", "TAAT", "PBM")
+
+
+def test_axis_errors_count_rows_not_distinct_constructs(good_frame):
+    """A bad DBD repeated over many sites must report every affected ROW.
+
+    The check runs once per distinct construct for speed; the number in the message is
+    recovered by weighting. If that weighting is ever dropped this reports 1 instead of 6.
+    """
+    df = pd.concat([good_frame] * 3, ignore_index=True)
+    df["dbd_seq"] = df["dbd_seq"].str.replace("R", "B", n=1)  # B is not an amino acid
+    df = schema.coerce(df.drop(columns=["pair_id"]))
+    rep = schema.validate(df, source="TESTSRC", strict_wt=False)
+    assert not rep.ok
+    assert any("12 rows with non-standard residues" in e for e in rep.errors), rep.errors
+
+
+def test_x_residue_warning_is_row_weighted(good_frame):
+    """The 'X residues across the table' figure counts residues per row, as it always did."""
+    df = pd.concat([good_frame] * 2, ignore_index=True)
+    df["dbd_seq"] = df["dbd_seq"].str[:5] + "X" + df["dbd_seq"].str[6:]
+    df = schema.coerce(df.drop(columns=["pair_id"]))
+    rep = schema.validate(df, source="TESTSRC", strict_wt=False)
+    assert any("8 unresolved 'X' residues" in w for w in rep.warnings), rep.warnings
+
+
+def test_out_of_range_positions_still_caught_when_repeated(good_frame):
+    """Condition-3 bookkeeping is checked per construct; the row count must still be right."""
+    df = pd.concat([good_frame] * 2, ignore_index=True)
+    df.loc[df["n_mut_from_wt"] > 0, "mut_positions"] = "9999"
+    df = schema.coerce(df.drop(columns=["pair_id"]))
+    rep = schema.validate(df, source="TESTSRC", strict_wt=False)
+    assert any("4 rows with positions outside" in e for e in rep.errors), rep.errors

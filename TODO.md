@@ -21,6 +21,10 @@ every row is an 8-mer and always will be.
 18 UniPROBE accessions parsed and validator-clean: 16,645,376 rows, 489 domains in 425
 clusters, 30 Pfam families, 24 organisms, every protein scored against the same 32,896 8-mers.
 
+`build_dataset.py --all` was ~25 minutes and should now be roughly **4-5**, after the T6 work
+of 2026-08-14 (`docs/DECISIONS.md` §7). **The library must be pressed once per machine —
+`python scripts/press_pfam.py`** — or every source pays 19.5 s to re-read 2.2 GB of text.
+
 **The plan, in order:**
 
 | # | step | state |
@@ -99,12 +103,6 @@ label. Resolve from UniProt (which carries the organism) or normalise to null. R
 field mixes `C. elegans` with full binomials, so organism names are not consistently
 formatted.
 
-### T6 — Profile the build before optimising it
-`build_dataset.py --all` takes ~25 minutes, which makes every method change expensive to
-validate and quietly discourages iteration. Nothing has been measured yet. Likely candidates:
-the per-source Pfam-A scan loading all 30,134 profiles once per source rather than once per
-build; re-reading large archives; no caching of domain calls between runs. **Profile first.**
-
 ### T7 — Screen Tier 4 per construct
 Tier 4 is bHLH dimers, and it needs a per-construct call rather than a wholesale one:
 - a heterodimer is two chains forming one binding unit, which is exactly what admission
@@ -119,6 +117,38 @@ swept (`tier4.binarize_at_parse: false`).
 `configs/thresholds.yaml` still carries `b1h:` and `snp_selex:` blocks with `null` cutoffs and
 TODOs for phases that no longer exist. Harmless but misleading. Remove or comment as dropped —
 check `snp2prot.thresholds` does not require the keys before deleting.
+
+### T9 — Parallelise the build
+Deferred deliberately after the T6 work (see [`docs/DECISIONS.md`](docs/DECISIONS.md) §7):
+the serial fixes landed first because they were worth more at a fraction of the risk. This is
+the remaining headroom, roughly **4 min → 1.5-2 min**.
+
+Measured, so the design is not guesswork:
+- **Threads are useless here — 1.0x at 8, 16 and 24 workers.** pandas' CSV parser holds the
+  GIL. Anyone reaching for `ThreadPoolExecutor` on this workload gets nothing.
+- **Processes gave 7.6x** on 48 SCI09 files (9.7 s → 1.3 s at 16 workers), saturating there.
+
+Two levels are needed, not one:
+1. **Across sources.** Architecturally free — rule 7 already guarantees parsers share no
+   state and each writes its own file.
+2. **Within a source.** Unavoidable, because **SCI09 alone is 2.3 GB of the 3.2 GB read**.
+   Parallelising only across sources leaves SCI09 as the critical path and the build cannot
+   go below what SCI09 costs on its own. `reconcile_replicates` reads members serially.
+
+Constraints to respect:
+- **Memory, not cores, is the limit.** Cell08's frame is ~2 GB in memory and each worker
+  holding the Pfam profile block adds ~1.6 GB. At 16 workers that heads past 64 GB. Size at
+  **8 workers** and measure before going wider — that is already near the 7.6x ceiling.
+- `zipfile.ZipFile` handles cannot be shared; each worker opens its own.
+- **Per-source rejection reasons are load-bearing** (`N3` exists because of them). A process
+  pool must not blur which source failed and why — `build_dataset.py` currently reports that
+  per source and must continue to.
+
+### T10 — Give `Pfam-A.hmm` a PROVENANCE row
+The nine superseded per-family HMMs each have one; the 2.2 GB full library that the entire
+admission policy now rests on has none. Rule 3 makes this publication evidence, not a
+convenience log. Needs the download URL, release, size and sha256. The pressed `.h3*` files
+are derived and need no row of their own, but the row should say the library gets pressed.
 
 ---
 

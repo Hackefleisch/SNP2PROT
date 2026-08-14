@@ -116,34 +116,69 @@ def _hmm_path() -> Path:
     return p
 
 
+@functools.lru_cache(maxsize=2)
+def _library(path: str) -> Any:
+    """Load an HMM library once per process and hold it ready to scan against.
+
+    Every source used to reopen the library, and for the full Pfam-A that is 2.2 GB of text
+    parsed from scratch per accession -- 19.5 s each, against ~0.1 s of actual scanning, so a
+    30-source build spent roughly ten minutes re-reading one unchanging file.
+
+    **Press the library** (`scripts/press_pfam.py`, or `hmmpress`). Pressed, HMMER's binary
+    siblings carry profiles already optimized, so they are read straight into an
+    `OptimizedProfileBlock` in ~0.5 s and each subsequent scan costs ~0.6 s. Unpressed we can
+    still avoid re-parsing the text, but the profiles must be configured on every scan, which
+    is ~6x slower per source and why the unpressed path says so out loud.
+
+    Holding the block costs ~1.6 GB of RSS for Pfam-A, which is the whole point: it is paid
+    once instead of thirty times. Cached by path, so a test HMM and the full library can both
+    be live without evicting each other. A library re-pressed mid-process is not noticed --
+    nothing in this project does that, and a new interpreter clears the cache.
+    """
+    abc = Alphabet.amino()
+    with pyhmmer.plan7.HMMFile(path) as hmms:
+        if hmms.is_pressed():
+            return pyhmmer.plan7.OptimizedProfileBlock(abc, hmms.optimized_profiles())
+        if Path(path).stat().st_size > 100_000_000:
+            print(
+                f"note: {path} is not pressed, so every scan reconfigures {30_134:,}-odd "
+                f"profiles. Run scripts/press_pfam.py once to make this ~6x faster."
+            )
+        return list(hmms)
+
+
 def scan(
     sequences: dict[str, str], hmm_path: str | Path | None = None, cpus: int = 0
 ) -> dict[str, list[DomainHit]]:
     """Pfam-scan many sequences against the full library, using each family's own threshold.
 
     Returns every hit, DNA-binding or not; `call_domain` decides which ones the policy sees.
+
+    The library is loaded once per process and reused -- see `_library`. Scanning itself is
+    cheap and barely scales with input: 3 sequences and 100 sequences cost the same, because
+    essentially all of the work is in the library, not the queries.
     """
     abc = Alphabet.amino()
     keys = list(sequences)
     queries = [TextSequence(name=k.encode(), sequence=sequences[k]).digitize(abc) for k in keys]
     found: dict[str, list[DomainHit]] = {k: [] for k in keys}
     path = Path(hmm_path) if hmm_path else _hmm_path()
-    with pyhmmer.plan7.HMMFile(path) as hmms:
-        for top in pyhmmer.hmmer.hmmscan(queries, hmms, bit_cutoffs="gathering", cpus=cpus):
-            name = _name(top.query.name)
-            for hit in top:
-                for dom in hit.domains.included:
-                    # In hmmscan the roles are swapped relative to a per-family search, but
-                    # pyhmmer still reports target_from/to in sequence coordinates. Verified
-                    # against ARX, which gives Homeodomain[15-71] either way.
-                    found[name].append(
-                        DomainHit(
-                            _name(hit.name),
-                            dom.alignment.target_from,
-                            dom.alignment.target_to,
-                            float(dom.score),
-                        )
+    library = _library(str(path.resolve()))
+    for top in pyhmmer.hmmer.hmmscan(queries, library, bit_cutoffs="gathering", cpus=cpus):
+        name = _name(top.query.name)
+        for hit in top:
+            for dom in hit.domains.included:
+                # In hmmscan the roles are swapped relative to a per-family search, but
+                # pyhmmer still reports target_from/to in sequence coordinates. Verified
+                # against ARX, which gives Homeodomain[15-71] either way.
+                found[name].append(
+                    DomainHit(
+                        _name(hit.name),
+                        dom.alignment.target_from,
+                        dom.alignment.target_to,
+                        float(dom.score),
                     )
+                )
     return {k: sorted(v, key=lambda h: h.start) for k, v in found.items()}
 
 

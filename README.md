@@ -49,21 +49,25 @@ All are run from the repository root with the project's interpreter, `.venv/bin/
 
 | script | what it does | runtime |
 |---|---|---|
-| [`build_dataset.py`](scripts/build_dataset.py) | Parse a source, validate it, write `data/interim/<source>/` | seconds to ~10 min per source; **~25 min for `--all`** |
+| [`build_dataset.py`](scripts/build_dataset.py) | Parse a source, validate it, write `data/interim/<source>/` | seconds per source; **~4-5 min for `--all`**, provided the Pfam library is pressed |
 | [`audit_sources.py`](scripts/audit_sources.py) | Sweep every source for the invariants past defects violated | ~4 min |
 | [`make_reports.py`](scripts/make_reports.py) | Regenerate the committed markdown reports for one source | seconds |
 | [`build_protein_table.py`](scripts/build_protein_table.py) | Build the protein-side table; fetches UniProt sequences, cached | ~2 min |
 | [`record_provenance.py`](scripts/record_provenance.py) | Emit a `PROVENANCE.md` row for a raw file (size, sha256, timestamp) | instant |
+| [`press_pfam.py`](scripts/press_pfam.py) | **Run once after downloading Pfam-A.** Presses the HMM library; without it every source pays 19.5 s to re-read 2.2 GB of text | ~25 s |
 | [`build_dbd_family_list.py`](scripts/build_dbd_family_list.py) | Regenerate the DNA-binding Pfam family whitelist | seconds |
 | [`check_papers.py`](scripts/check_papers.py) | Report which source papers are present, missing or unfiled | instant |
 
 ### Building the dataset
 
 ```bash
+# once per machine — without it every source re-reads 2.2 GB of text HMM
+.venv/bin/python scripts/press_pfam.py
+
 # one source, to check a change
 .venv/bin/python scripts/build_dataset.py --source BAR15A
 
-# everything (~25 min; Cell08 and SCI09 dominate)
+# everything (~4-5 min; Cell08 and SCI09 dominate the reads)
 .venv/bin/python scripts/build_dataset.py --all 2>&1 | tee /tmp/build.log
 ```
 

@@ -237,7 +237,54 @@ Attrition is tabulated in [`METHODS.md`](METHODS.md) §9.1.
 
 ---
 
-## 7. Questions closed without action
+## 7. Build performance
+
+### 2026-08-14 — The build was profiled, then made ~6x faster without changing a byte
+Was `TODO.md` `T6`. `build_dataset.py --all` took ~25 minutes. Measured on real source
+builds, two things dominated and neither was doing useful work.
+
+**The Pfam-A load was 100% fixed cost.** Scanning 3 sequences took 19.5 s; scanning 100 took
+19.4 s. The library is 2.2 GB of *text*, reopened once per accession, so a 30-source build
+spent about ten minutes re-parsing one unchanging file to do ~0.1 s of scanning.
+
+**Validation re-checked constant columns 32,896 times per construct.** `dbd_seq` has 489
+distinct values in the corpus but every check ran per row, and
+`df.apply(_positions_in_range, axis=1)` built a pandas Series for each of 16.6 M rows to test
+a handful of integers — 50 s of a 139 s corpus validation on its own.
+
+Four changes, in descending order of payoff:
+
+| # | change | effect |
+|---|---|---|
+| 1 | **Press the library** (`scripts/press_pfam.py`) | 19.5 s → 3.5 s per source |
+| 2 | **Cache the loaded library per process** (`domains._library`) | → 0.5 s once, then ~0.6 s per source |
+| 3 | **Validator axis checks on distinct values**, weighted back to row counts | validate 162.7 s → 27.0 s over the corpus |
+| 4 | **Vectorized `add_pair_ids` payload** | 2.8x; it runs twice per build, in `coerce` and again in `validate` |
+
+**Nothing about the dataset changed, and that was checked rather than assumed:**
+- all 18 sources revalidated — **every report string, every stat and every `pair_id`
+  identical** to the previous implementation;
+- six sources fully rebuilt and compared against the committed Parquet — **byte-identical**;
+- the pressed library checked against the unpressed one by moving the `.h3*` files aside:
+  identical calls, 169 hits over 150 constructs;
+- 8 regression tests added. They pin *behaviour*, not speed — specifically that the
+  row-weighted counts in every validator message still equal what the per-row implementation
+  produced, since that weighting is the one thing a future edit could silently drop.
+
+**Pressing is a per-machine setup step**, not a repo artifact: the `.h3*` files are 2.6 GB of
+git-ignored derived data beside the library, and re-downloading Pfam-A means pressing again.
+`domains._library` says so out loud when it is handed a large unpressed library rather than
+silently running six times slower.
+
+**Parallelism was deliberately left out** and is `TODO.md` `T9`. The serial fixes were worth
+more at a fraction of the risk: parallelism means restructuring `build_dataset.py` and
+`reconcile_replicates`, and process pools make failures harder to attribute — which matters
+for a build whose per-source rejection reasons are load-bearing. Threads were measured at
+**1.0x** (the CSV parser holds the GIL); processes at **7.6x**.
+
+---
+
+## 8. Questions closed without action
 
 | was | resolution |
 |---|---|

@@ -140,7 +140,7 @@ names — **do not create the left-hand paths**, that would fork the structure i
 9. **Stop at each phase boundary** and hand back the reports. Do not run ahead to modeling.
 10. **Never run a command that takes more than a few minutes.** Hand over the exact command
     instead, with how long it takes and what to check in the output. `scripts/build_dataset.py
-    --all` is ~25 min and is always the owner's to run; single small sources and test subsets
+    --all` is ~4-5 min after the T6 work and is still the owner's to run; single small sources and test subsets
     are fine to execute here.
 11. **Never `git commit` unsolicited.** The owner reviews work as an uncommitted diff;
     committing removes the review surface. Finish, run tests and lint, leave the tree dirty.
@@ -187,6 +187,7 @@ names — **do not create the left-hand paths**, that would fork the structure i
 ```bash
 uv venv --python 3.11 .venv && uv pip install --python .venv -e ".[dev]"
 .venv/bin/python -m pytest -q
+.venv/bin/python scripts/press_pfam.py                     # ONCE per machine, before any build
 .venv/bin/python scripts/build_dataset.py --all            # parse -> validate -> interim
 .venv/bin/python scripts/make_reports.py --source BAR15A    # regenerate reports/
 .venv/bin/python scripts/audit_sources.py                  # invariant sweep, ~4 min

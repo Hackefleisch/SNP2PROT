@@ -6,6 +6,9 @@ rather than real HMM scans so they run without the Pfam files or the raw archive
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pyhmmer
 import pytest
 
 from snp2prot import domains
@@ -162,3 +165,48 @@ def test_lookalike_families_are_not_merged():
     """TF_AP-2 (mammalian) and AP2 (plant) are different domains despite similar names."""
     assert domains.canonical_family("TF_AP-2") == "TF_AP-2"
     assert domains.canonical_family("AP2") == "AP2"
+
+
+# --------------------------------------------------------------------------------------
+# Library loading (TODO.md T6). `scan` now loads an HMM library once per process and holds
+# it, and the project's Pfam-A is pressed into HMMER's binary format. Both are speed
+# changes, so what matters is that neither alters a single domain call.
+# --------------------------------------------------------------------------------------
+
+HOMEODOMAIN_HMM = Path("data/external/pfam/PF00046.hmm")
+ARX = "AGSDSEEGLLKRKQRRYRTTFTSYQLEEQERAFQKTHYPDVFTREELAMRLDLTEARVQVWFQNRRAKWRKREKAGAQTHPPGLPF"
+
+
+@pytest.mark.skipif(not HOMEODOMAIN_HMM.exists(), reason="Pfam HMM not downloaded")
+def test_pressed_and_unpressed_libraries_agree(tmp_path):
+    """Pressing is a storage format, not a scoring change.
+
+    `scripts/press_pfam.py` cuts the library load from 19.5 s to 0.5 s, which is only safe
+    because the calls come out identical. Checked here on one small family rather than the
+    2.2 GB Pfam-A, but it is the same code path.
+    """
+    plain = tmp_path / "plain" / HOMEODOMAIN_HMM.name
+    pressed = tmp_path / "pressed" / HOMEODOMAIN_HMM.name
+    for dest in (plain, pressed):
+        dest.parent.mkdir()
+        dest.write_bytes(HOMEODOMAIN_HMM.read_bytes())
+
+    with pyhmmer.plan7.HMMFile(pressed) as f:
+        pyhmmer.hmmer.hmmpress(f, pressed)
+    with pyhmmer.plan7.HMMFile(pressed) as f:
+        assert f.is_pressed()
+    with pyhmmer.plan7.HMMFile(plain) as f:
+        assert not f.is_pressed()
+
+    before = domains.scan({"ARX": ARX}, hmm_path=plain)
+    after = domains.scan({"ARX": ARX}, hmm_path=pressed)
+    assert before == after
+    assert [h.family for h in after["ARX"]] == ["Homeodomain"]
+
+
+@pytest.mark.skipif(not HOMEODOMAIN_HMM.exists(), reason="Pfam HMM not downloaded")
+def test_library_is_loaded_once_per_path():
+    """The whole saving is that a build reuses one load across all its sources."""
+    a = domains._library(str(HOMEODOMAIN_HMM.resolve()))
+    b = domains._library(str(HOMEODOMAIN_HMM.resolve()))
+    assert a is b

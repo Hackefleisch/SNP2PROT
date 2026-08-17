@@ -9,23 +9,30 @@ Agent working notes and conventions: [CLAUDE.md](CLAUDE.md).
 
 ## Status
 
-**Phase 2 complete.** 18 UniPROBE PBM sources parsed and validator-clean:
+**19 PBM sources parsed and validator-clean** — 18 UniPROBE accessions plus the
+CIS-BP / Weirauch 2014 set:
 
 | property | value |
 |---|---|
-| rows | 17,040,128 |
-| DNA-binding domains | 501 in 437 clusters |
-| Pfam families / organisms | 32 / 24 |
+| rows | 45,495,168 |
+| DNA-binding domains | 1,335 in 1,133 clusters |
+| Pfam families / organisms | 56 / 137 |
 | DNA sites | all 32,896 non-redundant 8-mers, identical in every source |
-| labels | 51,642 binding / 16,713,577 non-binding / 274,909 excluded |
-| negative:positive | 324:1 |
-| `dbd_seq` length | 43-216 aa (median 77) |
+| labels | 95,840 binding / 44,626,532 non-binding / 772,796 excluded |
+| negative:positive | 466:1 |
+| `dbd_seq` length | 30-378 aa (median 77) |
 
-Largest families: Homeodomain 234, Forkhead 54, bHLH 35, zf-C4 28, ETS 23, HMG box 21,
-Zn2Cys6 17, bZIP 13, NAC 11, T-box 11, then 22 further families of ten or fewer.
+`dbd_seq` is the **project-internal canonical domain**: the Pfam envelope ± 10 residues, taken
+from a reference protein where the construct was cloned too short, so one domain is one string
+however much flank a given lab happened to keep. See [docs/DECISIONS.md](docs/DECISIONS.md) §11.
 
-Protein-side depth is concentrated in 28 clusters holding 81 variants; **409 of 437 clusters
-(94%) hold a single domain**.
+Largest families: Homeodomain 440, bHLH 103, bZIP 79, Zn2Cys6 74, Forkhead 72, zf-C4 62,
+Myb 60, AP2 44, GATA 29, ETS 26, HMG box 26, NAC 26. **27 families now hold ten or more
+domains**, against eight before CIS-BP, which is what makes leave-one-family-out meaningful.
+
+Protein-side depth, after canonicalisation and clustering: **122 clusters hold 202 variants**,
+against 28 clusters and 81 variants before. It is also far less homeodomain-bound — 87 of the
+202, against 54 of 81 — with Myb 16, bHLH 15, forkhead 13, AP2 9, zf-C4 7.
 
 **How the dataset was built, in full: [docs/METHODS.md](docs/METHODS.md).**
 **What is open right now: [TODO.md](TODO.md).** What has been settled and why:

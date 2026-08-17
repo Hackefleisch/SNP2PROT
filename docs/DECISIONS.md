@@ -474,3 +474,200 @@ all singletons, so this bought breadth rather than depth.
 
 The protein table was rebuilt with it: 501 domains, canonical UniProt for 462 (92%), domain
 located in the full-length sequence for 354 (71%).
+
+### 2026-08-14 — `weirauch2014` parsed; the corpus nearly triples
+`T1` closed. 29,080,064 rows from 884 domains, validator-clean with no warnings, joined to
+Table S6 on plasmid ID. The corpus goes from 501 domains to **1,364**, 32 families to **56**,
+24 organisms to **138**, and 17,040,128 rows to **46,120,192**.
+
+**What it bought, and what it did not.** Families holding ten or more domains went from 8 to
+**27**, which turns leave-one-family-out from a handful of proteins into a real test and
+largely settles the concern recorded as `#33`. Cross-source duplicate domains went from 17 to
+38, so the label-agreement check of `T4` now has twice the evidence and, for the first time,
+compares two different laboratories rather than two deposits from one. But **protein-axis depth
+is untouched**: all 81 variants still sit in 28 clusters, and 1,293 of 1,321 clusters hold a
+single domain. This was breadth, exactly as predicted before parsing.
+
+**Two costs, both recorded rather than absorbed.** Full-length UniProt coverage fell from 71%
+to 26%, because Table S6 publishes gene and species but no accession (`T2b`). And the source
+carries three construct architectures — 671 with 50 flanking residues, 96 with 15, **265 with
+none** — so its stored domains are systematically shorter than a UniPROBE construct of the
+same protein. That is `T13`'s confound, now present in the data rather than anticipated.
+
+Three pieces of structure came out of the work:
+
+- **`parsers/_pbm.py`.** Everything that depends on the assay rather than the distributor —
+  E-score identification, completeness, binarization, replicate combining, frame assembly —
+  now has one home. `_uniprobe.py` keeps only UniPROBE's file layout and re-exports the rest,
+  and five sources were re-parsed to confirm the extraction is byte-identical.
+- **A latent bug, found by the extraction.** A header naming the E-score column used to
+  return early, skipping the row-count check entirely, so a *headed* but truncated table would
+  have been admitted silently; only headerless sources like `Path10` were ever caught. The
+  check is now uniform. It matters here: GEO's tables are headed.
+- **`build_protein_table.py` is no longer UniPROBE-shaped.** It derives its sources from the
+  parser registry, which was right, but assumed every source publishes HTML detail pages —
+  registering this parser made it raise `FileNotFoundError`. Construct lookup is now per
+  source.
+
+---
+
+## 11. The canonical domain sequence
+
+### 2026-08-17 — `dbd_seq` becomes construct-independent
+Until now `dbd_seq` was the Pfam envelope plus 10 residues, **clipped wherever the assayed
+construct happened to end**. So the same domain from two labs could be stored as two different
+strings — VENTX is 76 aa from BAR15A and 57 aa from CIS-BP's zero-flank construct. That is an
+artefact of cloning, and it reaches the model as if it were biology.
+
+**Decided: the stored sequence is a project-internal canonical form.** Not "canonical" in
+UniProt's sense — a definition local to this dataset, whose defining property is *stability*:
+the same domain in gives the same string out, however truncated the input was. Length still
+varies with the biology, because an insertion or deletion genuinely is a different sequence.
+
+The window is **the Pfam envelope ± 10 residues**, and the padding stays: it is part of the
+canonical definition rather than an addition to it, and now that it is taken from a reference
+it is always fully available instead of surviving by luck. VSX1 G160D mutates 6 residues
+before the Pfam start and currently survives only because BAR15A's construct happens to be
+long enough.
+
+Why the stored residues, not a fixed-width alignment: a match-state-only representation
+**collapses VSX1 G160D onto its own reference** — identical sequence, different label — which
+is the exact failure the padding was introduced to prevent (§2, `#18`).
+
+### 2026-08-17 — A reference is consulted only where the construct falls short
+Measured over 1,477 admitted constructs: **1,120 (76%) already cover envelope ± 10**, and for
+those the window extracted from the construct is provably the string the full-length protein
+would give. 37 canonical windows already come out byte-identical across sources
+(`BAR15A:ARX_REF` = `Cell08:Arx`, 77 aa).
+
+The remaining 357 need an external reference, and every one of them carries an identifier — 68
+a UniProt accession, 289 a CIS-BP Gene ID. Resolution through UniProt cross-references was
+verified working for Ensembl, FlyBase and Araport. Roughly 121 of the CIS-BP identifiers are
+standard cross-references; the rest are assembly-specific and will partly fail.
+
+**Expect to lose on the order of 10%.** That is accepted: a construct that cannot be placed is
+discarded rather than force-fitted, which is the `PP15` rule (§6) — mis-attribution is worse
+than absence.
+
+The reference **extends**, it never replaces. The construct's own residues are kept, carrying
+whatever mutations were engineered into them; the reference supplies only flanking residues the
+construct is missing. So a shorter sequence caused by a real deletion or a true protein
+terminus stays shorter — that is the thing that was assayed.
+
+### 2026-08-17 — Placement is accepted at ≤5 edits outside the envelope
+100% identity is impossible: the corpus is full of deliberate point mutants. Measured on the
+462 constructs where a reference is already held, edits between construct and reference are
+0 at the median and:
+
+| ceiling | accepted | with ≥99% of the construct aligned |
+|---|---:|---:|
+| ≤1 | 94.6% | 92.4% |
+| ≤2 | 96.3% | 94.2% |
+| **≤5** | **97.6%** | **95.2%** |
+| ≤10 | 97.8% | 95.2% |
+
+Five sits at the knee — ten buys 0.2% more. The 11 it rejects are genuinely wrong, not
+marginal: `Hoxc11` at 111 edits over 57% coverage, `Etv4` at 36% coverage.
+
+**Edits are counted outside the Pfam envelope only.** Inside it, mutations are the subject of
+the dataset and are kept unconditionally; outside is where residues are borrowed, so that is
+what must match. A flat ceiling would reject ROG18A's chimeras, which differ from their parent
+by 6-8 substitutions while being perfectly well placed. Mismatches and gaps are counted
+separately: `Mlx` and `Rfx3` show 0-1 mismatches with 25-54 gaps, which is an alternative
+isoform rather than a wrong protein.
+
+### 2026-08-17 — Constructs differing outside the canonical window are discarded, not merged
+Of 54 stored domains produced by more than one construct, 24 come from byte-identical
+constructs and 26 differ only in how much flank each lab cloned — both benign. **Four carry a
+genuine substitution outside the stored window** and were being silently reconciled as
+replicates of one protein:
+
+| substitutions outside | stored | constructs |
+|---:|---:|---|
+| 4 | 76 aa | `Cell09:HLH-25` / `Cell09:HLH-27` — two distinct *C. elegans* genes |
+| 2 | 70 aa | `weirauch2014:pTH8163` / `pTH9718` |
+| 1 | 106 aa | `MAR17A:Foxc1` / `BAR15A:FOXC1_REF` / `weirauch2014:pTH2673` |
+| 1 | 77 aa | `Cell08:Msx3` / `MAR17A:Msx3` |
+
+**Owner's decision: bin them.** A difference the model cannot see, attached to measurements
+that may differ because of it, is a confound — the same reasoning as admission condition 3,
+applied symmetrically. Until now condition 3 was enforced only in `bar15a.py`; in the panel
+and CIS-BP parsers it was vacuous, because `mut_positions` is computed *from* the stored
+sequences and so nothing could fall outside by construction. This makes it a real check
+everywhere.
+
+### 2026-08-17 — Clusters are built on canonical domains, never on reference proteins
+Tempting, since references are construct-independent and a cluster representative need not be
+a dataset row. But DNA-binding domains are conserved while the rest of the protein diverges.
+Among pairs whose domains are within 5 edits, median domain identity is **96%** while median
+full-length identity is **68%**, and the extremes are stark: **Irx3 and Irx4 have 94% identical
+domains and 32% identical proteins.** Any protein-level clustering separates them, after which
+a model trained on Irx3 predicts Irx4 for free — precisely the leakage clusters exist to
+prevent. Also Hoxa10/Hoxd10 at 45%, Vax1/VAX2 at 46%.
+
+The reference's job is to make the domain canonical and to establish protein identity for
+deduplication. It is not the clustering unit.
+
+### 2026-08-17 — CD-HIT greedy incremental is the clustering algorithm
+Not invented here: the published greedy incremental algorithm (Li & Godzik 2006; MMseqs2
+`--cluster-mode 2`). Sort by decreasing length, longest becomes the representative, and each
+remaining sequence is compared **only to representatives**. Three properties earn it the job:
+
+* the longest member becomes the representative, so the least-clipped form is the reference;
+* comparison is never transitive, which kills chaining — single-linkage produced 35-domain
+  blobs at 5 edits, against 8 at 1 edit;
+* every member is within *k* of the representative, which is the invariant `mut_positions`
+  needs (`#45`).
+
+Implemented on `snp2prot.align` rather than by installing MMseqs2: the aligner already has the
+right semantics, including free terminal gaps, and a full pairwise scan of the corpus takes
+16 seconds. Adding a C++ dependency to a 16-second job is not warranted; the algorithm is
+reused, which is the part that matters.
+
+### 2026-08-17 — Built, and the corpus rebuilt on it
+`snp2prot.canonical`, `snp2prot.references` and `snp2prot.clusters`, wired into all three
+parsers, with `scripts/build_clusters.py` assigning `wt_id` corpus-wide.
+
+| | before | after |
+|---|---:|---:|
+| rows | 46,120,192 | **45,495,168** |
+| distinct domains | 1,364 | **1,335** |
+| clusters | 1,321 | **1,133** |
+| clusters holding >1 domain | 28 | **122** |
+| variants | 81 | **202** |
+
+Protein-axis depth roughly tripled, and stopped being a homeodomain story: 87 of 202 variants
+are homeodomain against 54 of 81 before, with Myb 16, bHLH 15, forkhead 13, AP2 9, zf-C4 7,
+SAND 5, RFX 5, TCP 5. That is the corpus finally able to ask whether sensitivity to a single
+residue transfers between folds.
+
+**Engineered constructs keep a short window** (owner, 2026-08-17). ROG18A's FoxJ3/FoxN3
+chimeras are synthetic and cloned as bare domains: no natural protein exists to extend them
+from, and their termini are not truncations. Discarding them cost the corpus its only
+non-homeodomain variant depth, which was the wrong trade. A short entry that duplicates a
+fully-canonical copy of the same domain is dropped at clustering instead, so no two rows
+describe one domain at two lengths.
+
+**Clustering threshold: 5 edits** (owner). 1,133 clusters, largest 8 — against the 35-domain
+blob single-linkage produced at the same threshold, which is CD-HIT's non-transitivity earning
+its place.
+
+Four defects were found and fixed while doing this, each recorded because each was silent:
+
+* **Stale interim output.** `build_dataset.py` left a source's previous Parquet on disk when
+  that source stopped yielding, and it was still being read as part of the corpus. Two
+  accessions were affected. The build now deletes it.
+* **Cluster ids collided.** Naming a cluster after its representative's lineage `wt_id` is
+  readable but not unique — `ROG18A:FoxJ3` names six different representatives, so six
+  clusters collapsed into one, undoing the clustering for exactly the chimeras that had just
+  been rescued. Collisions now take a suffix.
+* **The validator assumed clusters are source-local.** They are not: a `Cell08` variant
+  routinely belongs to a cluster represented by a `BAR15A` domain, which a per-source
+  validator cannot see. It reported every such cluster as a missing reference. Now a warning,
+  with the bounds check done corpus-wide — where it passes for all 202 variants.
+* **An O(rows) alignment.** `build_clusters.py` computed an edit profile per row rather than
+  per distinct domain: 45 million alignments instead of 1,335.
+
+**Known gap:** the protein-side table covers 1,224 of 1,335 domains, because it locates a
+domain by substring within its construct and a reference-extended canonical sequence is no
+longer a substring of it. Tracked as `T18`.

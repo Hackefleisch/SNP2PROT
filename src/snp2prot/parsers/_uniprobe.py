@@ -30,20 +30,43 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from snp2prot import schema
+from snp2prot.parsers._pbm import (
+    ASSAY,
+    DNA_CONTEXT,
+    ESCORE_MAX,
+    ESCORE_MIN,
+    N_NONREDUNDANT_8MERS,
+    SCORE_TYPE,
+    EscoreColumnError,
+    binarize,
+    build_frame,
+    check_complete,
+    combine_replicates,
+    escore_column,
+)
 
-#: A universal PBM E-score is a rank statistic bounded to this interval by construction.
-#: The bound is what lets the E-score column be identified when a file has no header.
-ESCORE_MIN, ESCORE_MAX = -0.5, 0.5
-
-#: A universal PBM scores every one of the non-redundant 8-mers, so a complete table has
-#: exactly this many rows. Fewer means the depositor published only part of it.
-N_NONREDUNDANT_8MERS = 32896
-
-ASSAY = "PBM"
-SCORE_TYPE = "pbm_escore"
-#: A PBM 8-mer score aggregates over many flanking contexts, so no specific flank was observed.
-DNA_CONTEXT = "core_only"
+#: Re-exported so callers and tests keep one import site for this source's machinery. The
+#: definitions live in `_pbm` because they describe the assay, not UniPROBE's file layout.
+__all__ = [
+    "ASSAY",
+    "CONTIG_8MER_RE",
+    "DNA_CONTEXT",
+    "ESCORE_MAX",
+    "ESCORE_MIN",
+    "N_NONREDUNDANT_8MERS",
+    "SCORE_TYPE",
+    "DetailPage",
+    "EscoreColumnError",
+    "binarize",
+    "build_frame",
+    "clean_sequence",
+    "escore_column",
+    "load_details",
+    "parse_detail_page",
+    "read_8mer_table",
+    "reconcile_replicates",
+    "strip_html",
+]
 
 #: Every contiguous-8-mer spelling seen so far. `_8mers_11111111.txt` is the gapped-k-mer
 #: naming for the all-positions-contiguous pattern; `_contig8mers.txt` is Cell08's spelling.
@@ -51,8 +74,6 @@ CONTIG_8MER_RE = re.compile(r"(_8mers(_11111111)?|_contig8mers)\.txt$")
 
 
 #: `<dt>LABEL</dt> <dd> <kbd>SEQUENCE</kbd>` — `<dd>` and `<kbd>` sit on separate lines.
-ESCORE_HEADER_RE = re.compile(r"e[-_ ]?score|enrichment", re.I)
-
 SEQ_BLOCK_RE = re.compile(r"<dt>([^<]*?)</dt>\s*<dd>\s*<kbd>(.*?)</kbd>", re.S)
 FIELD_RE = re.compile(r"<dt>\s*(Domain|Swiss-Prot|Uniprot|Species)\s*</dt>\s*<dd>(.*?)</dd>", re.S)
 
@@ -122,16 +143,16 @@ def load_details(details_dir: Path) -> dict[str, DetailPage]:
     }
 
 
-class EscoreColumnError(ValueError):
-    """Raised when a file's E-score column cannot be identified unambiguously."""
-
-
 def read_8mer_table(z: zipfile.ZipFile, member: str, require_complete: bool = True) -> pd.DataFrame:
     """One experiment's 8-mer table as `dna_seq` + `escore`.
 
-    **The E-score column is identified by its value range, not by position.** Position is not
-    safe across UniPROBE: the column order and count both vary, and at least one accession
-    has no E-score column at all.
+    **The header is detected, never assumed.** EMBO10's first line is data, and skipping it
+    would silently drop the `AAAAAAAA` 8-mer from every experiment in that panel while leaving
+    row counts one short in a way nothing else would catch.
+
+    The E-score column is then identified by `_pbm.escore_column`, because position is not
+    safe across UniPROBE: the column order and count both vary, and at least one accession has
+    no E-score column at all.
 
     | accession | layout |
     |---|---|
@@ -139,16 +160,6 @@ def read_8mer_table(z: zipfile.ZipFile, member: str, require_complete: bool = Tr
     | `Cell08` | 7 cols with a descriptive header, E-score ("enrichment score") at index 2 |
     | `GR09`, `SCI09` | headerless, median intensity at index 2, **E-score at index 3** |
     | `RAD13A` | 4 cols, `8-mer / 8-mer / Median / Z-score` — **no E-score at all** |
-
-    A universal PBM E-score is a rank statistic bounded to [-0.5, 0.5] that always takes
-    negative values across 32,896 8-mers, since most are unbound. Intensities run to
-    hundreds of thousands, z-scores past 1, and p/q-values are non-negative -- so those
-    two properties together single the E-score out. A header naming it wins outright.
-
-    Zero candidates means the file has no E-score; more than one means it concatenates
-    several experiments side by side
-    (SCI09 ships 20-column combined files alongside its 9-column per-replicate ones). Both
-    are errors here rather than a silent guess.
     """
     with z.open(member) as fh:
         first = fh.readline().decode("utf8", errors="ignore")
@@ -159,65 +170,10 @@ def read_8mer_table(z: zipfile.ZipFile, member: str, require_complete: bool = Tr
     if df.shape[1] < 3:
         raise EscoreColumnError(f"{member}: only {df.shape[1]} columns")
 
-    numeric = {}
-    for i in range(1, df.shape[1]):
-        vals = pd.to_numeric(df.iloc[:, i], errors="coerce")
-        if vals.notna().sum() >= len(df) * 0.9:
-            numeric[i] = vals
-
-    # A named column wins outright: Cell08 calls it "enrichment score".
-    if has_header:
-        named = [i for i in numeric if ESCORE_HEADER_RE.search(str(df.columns[i]))]
-        if len(named) == 1:
-            return _finish(df, numeric[named[0]])
-
-    # Otherwise: bounded to [-0.5, 0.5] AND actually taking negative values. The bound alone
-    # is not enough -- p-values and q-values sit in [0, 0.5] too -- but an E-score over 32,896
-    # 8-mers always runs negative, since most 8-mers are not bound, while a probability cannot.
-    candidates = [
-        (i, v)
-        for i, v in numeric.items()
-        if v.min() >= ESCORE_MIN and v.max() <= ESCORE_MAX and v.min() < 0
-    ]
-
-    if not candidates:
-        # Distinguish "no E-score here" from "an E-score column that never goes negative",
-        # which means the depositor published only the enriched end of the table. Path10 is
-        # the case in point: 341-1,391 rows cut at E >= 0.25 instead of the full 32,896.
-        bounded = [
-            (i, v) for i, v in numeric.items() if v.min() >= ESCORE_MIN and v.max() <= ESCORE_MAX
-        ]
-        if bounded:
-            i, v = bounded[0]
-            raise EscoreColumnError(
-                f"{member}: column {i} looks like an E-score but never goes negative "
-                f"(min {v.min():.4f}, {len(df):,} rows). This is a TRUNCATED table listing "
-                f"only enriched 8-mers, not the full {N_NONREDUNDANT_8MERS:,}. Labelling it "
-                f"would call that protein's top hits non-binding"
-            )
-        raise EscoreColumnError(
-            f"{member}: no column lies within [{ESCORE_MIN}, {ESCORE_MAX}] — this file "
-            f"carries no E-score (columns: {list(df.columns)[:6]})"
-        )
-    if len(candidates) > 1:
-        raise EscoreColumnError(
-            f"{member}: {len(candidates)} columns look like E-scores (indices "
-            f"{[i for i, _ in candidates]}); the file probably concatenates experiments"
-        )
-
-    if require_complete and len(df) != N_NONREDUNDANT_8MERS:
-        short = N_NONREDUNDANT_8MERS - len(df)
-        kind = (
-            "truncated to the enriched end"
-            if len(df) < N_NONREDUNDANT_8MERS * 0.5
-            else f"near-complete but {short} 8-mer(s) short"
-        )
-        raise EscoreColumnError(
-            f"{member}: {len(df):,} rows, expected {N_NONREDUNDANT_8MERS:,} — {kind}. The "
-            f"design is fully crossed, so every protein must be scored against every 8-mer; "
-            f"admitting a partial table would give that protein a different DNA axis"
-        )
-    return _finish(df, candidates[0][1])
+    escore = escore_column(df, has_header, member)
+    if require_complete:
+        check_complete(len(df), member)
+    return _finish(df, escore)
 
 
 def _finish(df: pd.DataFrame, escore: pd.Series) -> pd.DataFrame:
@@ -227,88 +183,24 @@ def _finish(df: pd.DataFrame, escore: pd.Series) -> pd.DataFrame:
     return out.dropna(subset=["escore"])
 
 
-def binarize(escores: np.ndarray, pos_cut: float, neg_cut: float) -> np.ndarray:
-    """Per-experiment binarization. Never call this on scores pooled across experiments."""
-    lab = np.full(len(escores), schema.LABEL_GRAY, dtype=np.int8)
-    lab[escores >= pos_cut] = schema.LABEL_BIND
-    lab[escores <= neg_cut] = schema.LABEL_NONBIND
-    return lab
-
-
 def reconcile_replicates(
-    z: zipfile.ZipFile, members: list[str], pos_cut: float, neg_cut: float
-) -> tuple[pd.Series, np.ndarray, np.ndarray]:
-    """Binarize each replicate independently, then combine.
-
-    Replicates can sit on different array designs whose intensity scales differ by an order of
-    magnitude, so E-scores are never averaged *before* thresholding. Replicates that disagree
-    on a given 8-mer fall to the gray band rather than being resolved by majority or by mean.
-
-    Returns `(dna_seq, label, mean_escore)`.
-    """
-    labels, scores, keys = [], [], None
-    skipped: list[str] = []
-    for member in members:
-        try:
-            exp = read_8mer_table(z, member)
-        except EscoreColumnError as exc:
-            # A file we cannot read an E-score from is dropped with its reason, rather than
-            # silently contributing whatever column happened to sit in that position.
-            skipped.append(str(exc))
-            continue
-        exp = exp.sort_values("dna_seq", kind="stable").reset_index(drop=True)
-        if keys is None:
-            keys = exp["dna_seq"]
-        elif not keys.equals(exp["dna_seq"]):
-            raise ValueError(f"{member}: 8-mer set differs from the first replicate")
-        e = exp["escore"].to_numpy(dtype=float)
-        labels.append(binarize(e, pos_cut, neg_cut))
-        scores.append(e)
-
-    if not labels:
-        raise EscoreColumnError("; ".join(skipped) or "no readable replicate")
-
-    stacked = np.vstack(labels)
-    agreed = (stacked == stacked[0]).all(axis=0)
-    label = np.where(agreed, stacked[0], schema.LABEL_GRAY).astype(np.int8)
-    return keys, label, np.vstack(scores).mean(axis=0)
-
-
-def build_frame(
-    *,
-    dna_seq: pd.Series,
-    label: np.ndarray,
-    raw_score: np.ndarray,
-    dbd_seq: str,
-    dbd_family: str,
-    dbd_source: str,
-    wt_id: str,
-    n_mut_from_wt: int,
-    mut_positions: str,
-    protein_id: str,
-    species: str,
+    z: zipfile.ZipFile,
+    members: list[str],
     pos_cut: float,
     neg_cut: float,
-    source_dataset: str,
-    source_file: str,
-) -> pd.DataFrame:
-    """Assemble one experiment's rows. Scalars broadcast, so each string is stored once."""
-    frame = pd.DataFrame({"dna_seq": dna_seq.to_numpy(), "label": label, "raw_score": raw_score})
-    frame["dbd_seq"] = dbd_seq
-    frame["dbd_family"] = dbd_family
-    frame["dbd_source"] = dbd_source
-    frame["wt_id"] = wt_id
-    frame["n_mut_from_wt"] = n_mut_from_wt
-    frame["mut_positions"] = mut_positions
-    frame["protein_id"] = protein_id
-    frame["species"] = species
-    frame["dna_context"] = DNA_CONTEXT
-    frame["score_type"] = SCORE_TYPE
-    frame["threshold_pos"] = pos_cut
-    frame["threshold_neg"] = neg_cut
-    frame["assay"] = ASSAY
-    frame["stringency"] = ""
-    frame["neg_provenance"] = np.where(label == schema.LABEL_NONBIND, "assayed_unbound", None)
-    frame["source_dataset"] = source_dataset
-    frame["source_file"] = source_file
-    return frame
+    require_complete: bool = True,
+) -> tuple[pd.Series, np.ndarray, np.ndarray]:
+    """Read each replicate, then combine them (see `_pbm.combine_replicates`).
+
+    A file we cannot read an E-score from is dropped with its reason rather than silently
+    contributing whatever column happened to sit in that position.
+    """
+    tables, skipped = [], []
+    for member in members:
+        try:
+            tables.append((member, read_8mer_table(z, member, require_complete)))
+        except EscoreColumnError as exc:
+            skipped.append(str(exc))
+    if not tables:
+        raise EscoreColumnError("; ".join(skipped) or "no readable replicate")
+    return combine_replicates(tables, pos_cut, neg_cut)

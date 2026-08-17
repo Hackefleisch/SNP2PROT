@@ -18,8 +18,17 @@ scheme; it is frozen at [`reports/archive/OPEN_ITEMS_2026-08-14.md`](reports/arc
 have mixed assay types are out — which removes the `dna_len` leakage problem entirely, since
 every row is an 8-mer and always will be.
 
-18 UniPROBE accessions parsed and validator-clean: 17,040,128 rows, 501 domains in 437
-clusters, 32 Pfam families, 24 organisms, every protein scored against the same 32,896 8-mers.
+19 PBM sources parsed and validator-clean: **45,495,168 rows, 1,335 domains in 1,133
+clusters, 56 Pfam families, 137 organisms**, every protein scored against the same 32,896
+8-mers.
+
+`dbd_seq` is the **canonical domain** — envelope ± 10, construct-independent
+(`docs/DECISIONS.md` §11) — and `wt_id` comes from CD-HIT clustering at 5 edits, not construct
+lineage.
+
+**The protein axis is no longer the bottleneck it was.** 122 clusters hold 202 variants,
+against 28 and 81 before, and only 87 of the 202 are homeodomain (was 54 of 81): Myb 16,
+bHLH 15, forkhead 13, AP2 9, zf-C4 7. `T11` and `T14` would deepen it further.
 
 `build_dataset.py --all` was ~25 minutes and should now be roughly **4-5**, after the T6 work
 of 2026-08-14 (`docs/DECISIONS.md` §7). **The library must be pressed once per machine —
@@ -44,74 +53,18 @@ outright. See [`docs/DECISIONS.md`](docs/DECISIONS.md) §9.
 
 ## Open tasks
 
-### T1 — Acquire the CIS-BP / Weirauch 2014 PBM set
-**The gate is answered: yes, the assayed construct sequence is published.** Verified
-2026-08-14 end to end (`docs/DECISIONS.md` §10). This is now an acquisition task, and it is
-the largest and cleanest expansion available — bigger than `T11` and, unlike it, on the
-**existing E-score scale**, so no `thresholds.yaml` change and no dataset invalidation.
+### T18 — Reconnect the protein-side table to canonical sequences
+It covers **1,224 of 1,335 domains**. `build_protein_table.py` locates a domain by substring
+within its construct, and a canonical sequence extended from a reference is no longer a
+substring of the construct it came from. Use `canonical.place` instead of `dbd in construct`.
+Also the natural home for `T13`'s architecture covariates, since both touch the same loop.
 
-**The join, verified at every link:**
-
-| link | what it gives | checked |
-|---|---|---|
-| Table S6 `TabS6_DBD_clone_information.xlsx`, sheet *Experimental constructs* | 1,032 rows: `Plasmid ID`, `Insert AA`, `#Flanking AAs`, `Backbone`, `Tag location` | downloaded, 390 KB |
-| GEO `GSE53348` | 2,064 samples titled `pTH####_<HK\|ME>_8mer_<n>` — **the plasmid ID is the first token** | 1,032 constructs x 2 array designs |
-| e.g. `GSM1291226` = `pTH1294_HK_8mer_593` | columns `ID_REF / VALUE / E-Score / Z-Score`, **32,896 rows**, 1.4 MB | matches our completeness rule exactly |
-
-It fits the existing machinery without adaptation: the same E-score statistic and scale (the
-paper itself quotes `E > 0.45` as its significance cutoff, identical to `pbm.positive`), and
-HK/ME dual arrays per plasmid, which is exactly what `per_experiment: true` and
-`reconcile_replicates` already handle.
-
-**Yield through our own policy, measured rather than estimated** — all 1,032 inserts were
-scanned and run through `call_domain`:
-
-- **731 of 1,032 admitted (71%)**; rejections 240 `no_domain`, 49 `repeat_array`, 12 `mixed_families`
-- 722 distinct sequences, of which **677 are new** — the protein axis goes 489 -> ~1,166
-- 45 overlap what we hold (20 byte-identical, 25 the same domain differently clipped): more
-  cross-lab replication of the kind `T4` describes
-- **106 species**, against our 24
-- family breadth where we are thinnest: Myb_DNA-binding 58 (we hold 2), AP2 39 (3), GATA 27
-  (2), WRKY 22 (1), SAND 12 (3), WHD_E2F_TDP 11 (3)
-
-**And it brings cluster depth, which is the point.** Selection strategy 1 in the paper
-deliberately populated nine DBD identity bins from 10-19.99% up to **90-99.99%**, so close
-pairs are by design, not by luck. Within the 677 new domains alone:
-
-| within | pairs | genes | same-species | cross-species |
-|---|---:|---:|---:|---:|
-| ≤1 edit | 18 | 30 | 5 | 13 |
-| ≤3 edits | 61 | 75 | 15 | 46 |
-| ≤5 edits | 103 | 113 | 24 | 79 |
-| ≤10 edits | 185 | 184 | 49 | 136 |
-
-Plus 24 new domains within 1-3 edits of something we already hold, and 69 within 4-10.
-**Myb_DNA-binding leads at ≤5 edits with 41 pairs** — a family where we currently have two
-domains and no variant depth at all, so this attacks `N2` in a way Kock's homeodomain-only
-series cannot.
-
-**ACQUIRED 2026-08-14** as source key `weirauch2014`. All four files are in
-`data/raw/weirauch2014/` with `PROVENANCE.md` rows; see that directory's `README.md` for what
-each one is and the traps. **The parser reads `GSE53348_family.soft.gz`** — the 2.6 GB RAW tar
-is probe-level intensities, not 8-mer tables, which is the easiest mistake to make here.
-
-**Remaining before parsing:**
-1. **`T15` is done** (2026-08-14): the whitelist went 41 -> 65 families and this source now
-   admits **896 of 1,032**, giving 884 distinct domain sequences.
-2. **This is Weirauch 2014's own 1,032 constructs, not all of CIS-BP.** The database
-   aggregates ~2,294 TFs with PBM data, but for aggregated entries the construct sequence
-   belongs to the contributing study — and much of that is UniPROBE we already hold. 1,032 is
-   the verified-attributable subset; Lambert 2019 is the next tranche and needs this same
-   check (`T2`).
-3. Write `src/snp2prot/parsers/weirauch2014.py`. It is not a UniPROBE panel — SOFT blocks, not
-   a zip of per-gene folders — so it does not share `_uniprobe.py`'s archive walking, though
-   it should reuse `reconcile_replicates` for the HK/ME pair.
-
-**It also hands `T13` its covariates for free**: `#Flanking AAs` (671 at 50, 265 at 0, 96 at
-15), `Backbone` and `Tag location` are published per construct. And it makes the confound
-concrete — a `#Flanking AAs = 0` construct yields a 45-95 aa domain where our padded version
-of the same protein runs 73-77 aa. For those 265, condition 3 has **no margin at all**: there
-is no out-of-envelope region for a mutation to fall in.
+### T2b — Resolve UniProt accessions for the CIS-BP domains
+Spun out of `T1`, which is otherwise done. Table S6 gives gene name and species but no UniProt
+accession, so 884 of 1,364 domains have no full-length sequence and `D1` went from 71%
+coverage to 26%. Everything domain-level and construct-level works; only full-protein does
+not. Resolving 124 organisms' gene names against UniProt will not be clean, and a wrong
+mapping is worse than a missing one — the same reasoning that left `PP15` unparsed.
 
 ### T2 — Survey other PBM deposits
 Individual GEO / ArrayExpress submissions and paper supplements. Lower yield per unit effort
@@ -154,31 +107,6 @@ probe already carry Barrera variant series here — `BAR15A:PROP1` (2 variants),
 **Step 3: verify the DNA axis is exact.** ROG18A used the same array design and parsed clean
 at the full 32,896 8-mers, so there is precedent — but GD09 was excluded for being *one*
 8-mer short, and that bar does not move.
-
-### T12 — Cluster by sequence distance, not only by lineage
-**Decided 2026-08-14: merge.** Clusters currently come from construct naming — a gene folder
-and its insert names — so two natural paralogs one substitution apart sit in separate
-singleton clusters. Measured over all 489 domains by pairwise alignment:
-
-| within | pairs of distinct clusters | domains | same-source | cross-source |
-|---|---:|---:|---:|---:|
-| ≤1 edit | 4 | 8 | 1 | 3 |
-| ≤2 edits | 17 | 18 | 3 | 14 |
-| ≤3 edits | 31 | 26 | 8 | 23 |
-| ≤5 edits | 53 | 56 | 21 | 32 |
-| ≤10 edits | 149 | 118 | 64 | 85 |
-
-Worth knowing before implementing: much of the cross-source column is the `T4` duplicates and
-their variant halos rather than new proteins — `BAR15A:CRX` appears five times at distance 2
-only because its own alleles each sit ~2 edits from `Cell08:Crx`. Genuinely new same-source
-paralogs at ≤3 edits come to **8 pairs**; Cell08 contributes `Meis1`/`Mrg1` (1 edit) and
-`Msx1`/`Msx3` (2). At ≤5 edits, 47 of 53 pairs are homeodomain. So this is worth roughly a
-dozen new multi-member clusters — real, and free, but not large.
-
-**Blocked on `D3`** for the two parameters it cannot pick for itself. Then: the rule belongs
-in the `cluster:` block of `configs/thresholds.yaml`, it changes `wt_id` assignment and every
-`mut_positions` frame, and it therefore **invalidates every interim table and report** — a
-full rebuild, not an incremental one.
 
 ### T13 — Record construct architecture in the protein-side table
 **Decided 2026-08-14: side table, not schema columns.** Flank length, affinity tag and
@@ -308,49 +236,38 @@ are derived and need no row of their own, but the row should say the library get
 ## Open decisions
 
 ### D1 — Is 70% full-length coverage enough?
-**Before embedding work.** The protein table maps **354 of 501 domains** onto a canonical
-UniProt sequence; **462** have a full sequence at all. The remainder are clone constructs
+**Before embedding work, and CIS-BP made it sharper.** The protein table maps **354 of 1,364
+domains (26%)** onto a canonical UniProt sequence; **462 (34%)** have a full sequence at all.
+It was 71% before CIS-BP: Table S6 publishes no UniProt accession, so none of its 884 domains
+resolve to one today. Resolving them from gene plus species is possible but is a lookup this
+project has not yet had to do, and for 124 organisms it will not be clean. The remainder are clone constructs
 differing from the canonical isoform, or non-model species with no clean mapping.
 
-Domain-level embeddings work for all 501. Full-protein embeddings work for roughly 71%.
+Domain-level and construct-level embeddings work for all 1,364. Full-protein works for about
+a quarter, and the missing three quarters are almost entirely one source.
 The decision is whether that asymmetry is acceptable or whether full-length becomes a filter.
 
 ### D2 — Drop `MAR17A:Esrrb`?
 **Before structure work.** It carries 2 unresolved `X` residues in an 89 aa zf-C4 domain — the
-only such domain in the corpus, 1 of 501. Harmless to a sequence embedder; a genuine problem
+only such domain in the corpus, 1 of 1,364. Harmless to a sequence embedder; a genuine problem
 for structure prediction and any 3D embedder. Drop it, or carry it and exclude it at
 structure-generation time.
 
-### D3 — Distance threshold and reference choice for merged clusters
-**Blocks `T12`.** Merging by sequence distance was decided; these two parameters were not,
-and neither has a defensible default.
-
-**How many edits?** There is no natural break in the distribution (4 / 17 / 31 / 53 / 149
-pairs at ≤1 / 2 / 3 / 5 / 10). Too tight and this buys almost nothing; too loose and
-unrelated paralogs land in one cluster and leave-one-cluster-out stops testing what it claims
-to. Belongs in the `cluster:` block of `configs/thresholds.yaml`.
-
-**Which member is the reference?** This is the harder one. `n_mut_from_wt` and
-`mut_positions` are defined against a reference, and the validator **errors** on a cluster
-carrying variants with no `n_mut_from_wt == 0` row. For a designed series the reference is
-obvious — the wild type the mutants were made from. For `Meis1`/`Mrg1` at one substitution it
-is not: neither is a mutant of the other, and calling either the reference asserts something
-false about the biology. Options are to pick one arbitrarily and document it, or to let a
-cluster have no reference and relax the validator for that case — which weakens a check that
-exists to catch isoform-offset bugs.
 
 ---
 
 ## Notes
 
 ### N1 — The row count is an exact invariant
-`17,040,128 = 518 x 32,896`, where 518 = 501 distinct domains + the 17 cross-source duplicates
-of `T4`. Every construct contributes exactly one full 8-mer table. If a rebuild's row count is
+`45,495,168 = 1,383 x 32,896`, where 1,383 is 1,335 distinct domains plus 48 measured by more
+than one source. Canonicalisation raised that overlap: domains that used to differ only by how
+much flank a lab cloned are now one string, so they are recognised as the same measurement
+made twice — which is what `T4`'s agreement check needs. Every construct contributes exactly one full 8-mer table. If a rebuild's row count is
 not a clean multiple of 32,896, something dropped or duplicated rows — the fastest single
 sanity check available.
 
 ### N2 — Protein-axis depth, and what it can now answer
-81 point variants across 28 clusters; **409 of 437 clusters (94%) hold a single domain**.
+81 point variants across 28 clusters; **1,293 of 1,321 clusters (98%) hold a single domain**.
 By family: Homeodomain 54, Forkhead 18, zf-C4 5, HLH 3, PAX 1.
 
 This matters for the project's central question — does sensitivity to single-residue change
@@ -377,10 +294,10 @@ Full account in [`docs/DECISIONS.md`](docs/DECISIONS.md). Run
 `scripts/audit_sources.py` (~4 min) after any new source lands — it sweeps every one of these.
 
 ### N4 — Only 8 families are large enough to hold out
-Homeodomain 234, Forkhead 54, HLH 35, zf-C4 28, Ets 23, HMG_box 21, Zn_clus 17, bZIP 13,
-NAM 11, T-box 11. The
-long tail below ~10 domains gives noise under leave-one-family-out. Report LOFO for the viable
-eight and treat the rest as descriptive. Revisit when splits are designed.
+**Largely fixed by CIS-BP: 27 families now hold 10 or more domains, against 8 before.**
+Homeodomain 440, HLH 103, bZIP 79, Zn_clus 74, Forkhead 72, zf-C4 62, Myb_DNA-binding 60,
+AP2 44, GATA 29, Ets 26, HMG_box 26, NAM 26, WRKY 23, TCP 21, Zn_ribbon_Dof 18, ARID 17, and
+eleven more. Leave-one-family-out is now a real test rather than a handful of proteins.
 
 ### N5 — Where the `dna_len` warning went
 The brief warns never to pool sources without checking `dna_len`, because PBM's 8 bp, B1H's

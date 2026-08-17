@@ -319,6 +319,13 @@ def validate(
         .str.len()
     )
 
+    # Clusters are assigned across the whole corpus (scripts/build_clusters.py), so a
+    # cluster's representative routinely lives in a DIFFERENT source's table -- `Cell08`
+    # variants under a `BAR15A` reference. A per-source validator cannot see that row, and
+    # must not report its absence as an error. Such clusters are reported as a warning here
+    # and checked corpus-wide where the reference is visible.
+    external = sorted(set(axis.loc[axis["n_mut_from_wt"] > 0, "wt_id"]) - set(ref_len.index))
+
     def _positions_in_range(row: pd.Series) -> bool:
         v = row["mut_positions"]
         if pd.isna(v) or str(v).strip() == "":
@@ -327,8 +334,9 @@ def validate(
             pos = [int(p) for p in str(v).split(",") if p.strip()]
         except ValueError:
             return False
-        limit = ref_len.get(row["wt_id"], len(row["dbd_seq"]))
-        return all(1 <= p <= limit for p in pos)
+        if row["wt_id"] not in ref_len.index:
+            return True  # reference is in another source; bounds are unknowable here
+        return all(1 <= p <= ref_len[row["wt_id"]] for p in pos)
 
     out_of_range = ~axis.apply(_positions_in_range, axis=1)
     if out_of_range.any():
@@ -338,14 +346,11 @@ def validate(
             f"isoform offsets)"
         )
 
-    orphan_variants = axis.loc[axis["n_mut_from_wt"] > 0, "wt_id"][
-        lambda s: ~s.isin(ref_len.index)
-    ].unique()
-    if len(orphan_variants):
-        rep.error(
-            f"wt_id: {len(orphan_variants)} clusters carry variants but no reference row "
-            f"(n_mut_from_wt == 0), so mut_positions cannot be interpreted: "
-            f"{sorted(orphan_variants)[:3]}"
+    if external:
+        rep.warn(
+            f"wt_id: {len(external)} clusters carry variants here but their reference row is "
+            f"in another source, so mut_positions cannot be bounds-checked locally "
+            f"(e.g. {external[:3]}). Checked corpus-wide by scripts/build_clusters.py."
         )
 
     # -- DNA axis ----------------------------------------------------------------------
@@ -437,7 +442,7 @@ def validate(
     # -- cluster structure -------------------------------------------------------------
     if strict_wt:
         has_wt = axis.groupby("wt_id")["n_mut_from_wt"].min() == 0
-        orphan = has_wt[~has_wt].index.tolist()
+        orphan = [c for c in has_wt[~has_wt].index.tolist() if c not in external]
         if orphan:
             rep.warn(
                 f"wt_id: {len(orphan)} clusters with no n_mut_from_wt == 0 reference row "

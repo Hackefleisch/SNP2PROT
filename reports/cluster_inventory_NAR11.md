@@ -37,4 +37,4 @@ A family above 40% of rows is flagged: it can be memorized instead of learned.
 
 | wt_id | family | distinct DBDs | rows | reference present |
 |---|---|---:|---:|:-:|
-| `NAR11:HLH-1` | `HLH` | 4 | 131,584 | yes |
+| `C:NAR11:HLH-1` | `HLH` | 4 | 131,584 | yes |

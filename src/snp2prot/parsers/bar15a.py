@@ -33,7 +33,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from snp2prot import align, domains, schema, thresholds
+from snp2prot import align, canonical, domains, schema, thresholds
 from snp2prot.config import raw_dir
 from snp2prot.parsers import _uniprobe
 
@@ -173,8 +173,20 @@ def parse(genes: list[str] | None = None, threshold_path: str | Path | None = No
                     f"domain [{call.start}-{call.end}]"
                 )
                 continue
-            dbd_seq = insert[call.start - 1 : call.end]
-            mut_positions = ",".join(str(p) for p in domains.rebase_positions(call, positions))
+            # The stored sequence is canonical (envelope +/- padding), not the construct's own
+            # clipped window, so this domain is one string regardless of how much flank
+            # Barrera cloned relative to any other source assaying the same protein.
+            h = call.hits[0]
+            cc = canonical.canonicalise(insert, h.start, h.end, pad=canonical.padding(domain_cfg))
+            if not cc.ok:
+                rejected[allele_full] = f"not canonicalisable: {cc.rejection}"
+                continue
+            dbd_seq = cc.sequence
+            # Positions were rebased onto the old window; shift them into the canonical frame.
+            shift = call.start - (h.start - canonical.padding(domain_cfg))
+            mut_positions = ",".join(
+                str(p + shift) for p in domains.rebase_positions(call, positions)
+            )
 
             dna_seq, label, raw_score = _uniprobe.reconcile_replicates(z, members, pos_cut, neg_cut)
             frames.append(

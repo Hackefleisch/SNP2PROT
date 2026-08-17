@@ -137,11 +137,26 @@ def test_mut_positions_are_bounded_by_the_reference_not_the_variant(good_frame):
     assert rep.ok, str(rep)
 
 
-def test_variants_without_a_reference_row_are_rejected(good_frame):
-    """mut_positions is meaningless without the reference that defines the frame."""
+def test_variants_whose_reference_lives_elsewhere_are_reported_not_failed(good_frame):
+    """Clusters are corpus-wide, so a reference routinely sits in another source's table.
+
+    `Cell08` variants can belong to a cluster represented by a `BAR15A` domain. A per-source
+    validator cannot see that row, so the absence is a warning to be checked corpus-wide —
+    not an error. It used to be an error, which made every cross-source cluster unbuildable.
+    """
     df = good_frame[good_frame["n_mut_from_wt"] > 0].copy()
     rep = schema.validate(df, source="TESTSRC")
-    assert any("no reference row" in e for e in rep.errors)
+    assert rep.ok, rep.errors
+    assert any("reference row is in another source" in w for w in rep.warnings)
+
+
+def test_mut_positions_are_still_bounds_checked_when_the_reference_is_present(good_frame):
+    """The check that catches isoform off-by-ones must keep working within a source."""
+    df = good_frame.copy()
+    df.loc[df["n_mut_from_wt"] > 0, "mut_positions"] = "9999"
+    df = schema.coerce(df.drop(columns=["pair_id"]))
+    rep = schema.validate(df, source="TESTSRC")
+    assert any("positions outside" in e for e in rep.errors), rep.errors
 
 
 def test_lowercase_dbd_is_rejected(good_frame):

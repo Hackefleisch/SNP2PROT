@@ -36,5 +36,5 @@ A family above 40% of rows is flagged: it can be memorized instead of learned.
 
 | wt_id | family | distinct DBDs | rows | reference present |
 |---|---|---:|---:|:-:|
-| `LIU18B:AncBcd` | `Homeodomain` | 1 | 32,896 | yes |
-| `LIU18B:AncZB` | `Homeodomain` | 1 | 32,896 | yes |
+| `C:LIU18B:AncBcd` | `Homeodomain` | 1 | 32,896 | yes |
+| `C:LIU18B:AncZB` | `Homeodomain` | 1 | 32,896 | yes |

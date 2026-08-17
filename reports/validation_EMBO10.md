@@ -16,7 +16,7 @@ No errors or warnings.
 | `n_gray` | 10,938 |
 | `pos_rate` | 0.004889 |
 | `neg_per_pos` | 200.46 |
-| `n_clusters` | 22 |
+| `n_clusters` | 20 |
 | `n_dbd` | 22 |
 | `n_dna` | 32,896 |
 | `dna_len` | [8] |

@@ -17,10 +17,12 @@ owner's brief, stored verbatim. **Read it before touching anything under `src/sn
 Where it and this file disagree about *paths*, this file wins (see the mapping below); where
 they disagree about *intent*, the brief wins.
 
-**Current phase: 2 complete. 18 UniPROBE PBM sources parsed and validator-clean —
-17,040,128 rows, 501 domains in 437 clusters, 32 Pfam families, 24 organisms, every protein
-scored against the same 32,896 8-mers. Phases 3-5 are DROPPED or deferred; the dataset is now
-PBM-only and grows by extending PBM coverage. See [TODO.md](TODO.md).**
+**Current state: 19 PBM sources parsed and validator-clean — 45,495,168 rows, 1,335 domains
+in 1,133 clusters, 56 Pfam families, 137 organisms, every protein scored against the same
+32,896 8-mers. `dbd_seq` is the canonical domain (`snp2prot.canonical`) and `wt_id` comes from
+CD-HIT clustering (`scripts/build_clusters.py`), not from construct lineage. 18 UniPROBE accessions plus CIS-BP / Weirauch 2014 (`weirauch2014`, GEO
+GSE53348). Phases 3-5 are DROPPED or deferred; the dataset is PBM-only and grows by extending
+PBM coverage. See [TODO.md](TODO.md).**
 
 **Read [docs/METHODS.md](docs/METHODS.md) first** — it records how the dataset was built and
 why, in enough detail to reimplement. [docs/DOMAIN_POLICY.md](docs/DOMAIN_POLICY.md) states
@@ -83,9 +85,14 @@ src/snp2prot/
   thresholds.py   reads configs/thresholds.yaml
   config.py       every path in the project; nothing builds a path by hand
   domains.py      Pfam/HMMER annotation + the three-condition admission policy
+  canonical.py    the project-internal canonical domain sequence  <- READ BEFORE dbd_seq
+  references.py   identifier -> reference protein, cached; only used when a construct is short
+  clusters.py     CD-HIT greedy incremental clustering, for splits only
   proteins.py     the protein-side companion table (bare/padded domain, construct, full-length)
   parsers/        one module per source, each exposing parse() -> pd.DataFrame
-    _uniprobe.py  machinery shared by every UniPROBE accession (formats differ per accession)
+    _pbm.py       assay-level machinery shared by ALL universal-PBM sources
+    _uniprobe.py  UniPROBE file layout on top of _pbm (formats differ per accession)
+    weirauch2014.py  CIS-BP / Weirauch 2014: GEO SOFT + Table S6, joined on plasmid ID
   metadata/       CIS-BP / Pfam+HMMER / UniProt lookups shared by all parsers
   reports.py      binarization summary, cluster inventory, overlap report
   splits.py       leave-one-variant / -cluster / -family out

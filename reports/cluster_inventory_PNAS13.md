@@ -36,22 +36,22 @@ A family above 40% of rows is flagged: it can be memorized instead of learned.
 
 | wt_id | family | distinct DBDs | rows | reference present |
 |---|---|---:|---:|:-:|
-| `PNAS13:AEL327Wp` | `Forkhead` | 1 | 32,896 | yes |
-| `PNAS13:AMAG_00796` | `Forkhead` | 1 | 32,896 | yes |
-| `PNAS13:AMAG_02766` | `Forkhead` | 1 | 32,896 | yes |
-| `PNAS13:ANID_04521` | `Forkhead` | 1 | 32,896 | yes |
-| `PNAS13:ANID_04985` | `Forkhead` | 1 | 32,896 | yes |
-| `PNAS13:CHES-1-like` | `Forkhead` | 1 | 32,896 | yes |
-| `PNAS13:FOXN2` | `Forkhead` | 1 | 32,896 | yes |
-| `PNAS13:FOXN4` | `Forkhead` | 1 | 32,896 | yes |
-| `PNAS13:FOXR1` | `Forkhead` | 1 | 32,896 | yes |
-| `PNAS13:Fox3_Mgra` | `Forkhead` | 1 | 32,896 | yes |
-| `PNAS13:Fox3_Tmel` | `Forkhead` | 1 | 32,896 | yes |
-| `PNAS13:FoxM_Spur` | `Forkhead` | 1 | 32,896 | yes |
-| `PNAS13:FoxN1-4_Mbre` | `Forkhead` | 1 | 32,896 | yes |
-| `PNAS13:FoxN2-3_Nvec` | `Forkhead` | 1 | 32,896 | yes |
-| `PNAS13:FoxN2-3_Tadh` | `Forkhead` | 1 | 32,896 | yes |
-| `PNAS13:Foxm1` | `Forkhead` | 1 | 32,896 | yes |
-| `PNAS13:Foxn1` | `Forkhead` | 1 | 32,896 | yes |
-| `PNAS13:Jumeau` | `Forkhead` | 1 | 32,896 | yes |
-| `PNAS13:KLLA0F08206p` | `Forkhead` | 1 | 32,896 | yes |
+| `C:MAR17A:Foxm1` | `Forkhead` | 1 | 32,896 | yes |
+| `C:PNAS13:AEL327Wp` | `Forkhead` | 1 | 32,896 | yes |
+| `C:PNAS13:AMAG_00796` | `Forkhead` | 1 | 32,896 | yes |
+| `C:PNAS13:AMAG_02766` | `Forkhead` | 1 | 32,896 | yes |
+| `C:PNAS13:ANID_04521` | `Forkhead` | 1 | 32,896 | yes |
+| `C:PNAS13:ANID_04985` | `Forkhead` | 1 | 32,896 | yes |
+| `C:PNAS13:CHES-1-like` | `Forkhead` | 1 | 32,896 | yes |
+| `C:PNAS13:FOXN2` | `Forkhead` | 1 | 32,896 | yes |
+| `C:PNAS13:FOXN4` | `Forkhead` | 1 | 32,896 | yes |
+| `C:PNAS13:FOXR1` | `Forkhead` | 1 | 32,896 | yes |
+| `C:PNAS13:Fox3_Mgra` | `Forkhead` | 1 | 32,896 | yes |
+| `C:PNAS13:Fox3_Tmel` | `Forkhead` | 1 | 32,896 | yes |
+| `C:PNAS13:FoxM_Spur` | `Forkhead` | 1 | 32,896 | yes |
+| `C:PNAS13:FoxN1-4_Mbre` | `Forkhead` | 1 | 32,896 | yes |
+| `C:PNAS13:FoxN2-3_Nvec` | `Forkhead` | 1 | 32,896 | yes |
+| `C:PNAS13:FoxN2-3_Tadh` | `Forkhead` | 1 | 32,896 | yes |
+| `C:PNAS13:Foxn1` | `Forkhead` | 1 | 32,896 | yes |
+| `C:PNAS13:Jumeau` | `Forkhead` | 1 | 32,896 | yes |
+| `C:PNAS13:KLLA0F08206p` | `Forkhead` | 1 | 32,896 | yes |

@@ -14,12 +14,13 @@ from __future__ import annotations
 import time
 import urllib.error
 import urllib.request
+from collections import namedtuple
 
 import pandas as pd
 
 from snp2prot import proteins, thresholds
 from snp2prot.config import EXTERNAL_DIR, INTERIM_DIR, interim_table, raw_dir
-from snp2prot.parsers import REGISTRY, _uniprobe
+from snp2prot.parsers import REGISTRY, _uniprobe, weirauch2014
 
 #: Derived from the parser registry rather than hand-listed: a fixed list silently went
 #: stale when the corpus grew from 9 sources to 18, so the protein table covered only half
@@ -27,6 +28,34 @@ from snp2prot.parsers import REGISTRY, _uniprobe
 SOURCES = sorted(REGISTRY)
 CACHE = EXTERNAL_DIR / "uniprot"
 UNIPROT = "https://rest.uniprot.org/uniprotkb/{}.fasta"
+
+
+#: One assayed construct, however its source happens to publish it.
+Construct = namedtuple("Construct", "name sequence protein_id species")
+
+
+def constructs_for(source: str) -> list[Construct]:
+    """Every construct a source assayed, with whatever identity it publishes.
+
+    Sources do not agree on where this lives. UniPROBE puts the clone insert on a per-gene
+    HTML detail page; CIS-BP/Weirauch puts it in a supplementary spreadsheet keyed by plasmid.
+    Deriving `SOURCES` from the parser registry is right, but it means a new source of a
+    different shape lands here and must be handled rather than assumed away — before this
+    existed, registering `weirauch2014` made this script raise `FileNotFoundError` looking for
+    detail pages that were never going to exist.
+    """
+    if source == weirauch2014.SOURCE:
+        clones = weirauch2014.load_constructs(raw_dir(source) / weirauch2014.CLONES_FILE)
+        # Table S6 publishes no UniProt accession, so full-length mapping is unavailable for
+        # this source until one is resolved from gene and species. Left empty, not guessed.
+        return [Construct(c.gene, c.insert_aa, "", c.species) for c in clones.values()]
+
+    pages = _uniprobe.load_details(raw_dir(source) / "details")
+    return [
+        Construct(name, seq, page.protein_id, page.species)
+        for page in pages.values()
+        for name, seq in page.inserts.items()
+    ]
 
 
 def fetch_uniprot(accession: str) -> str | None:
@@ -72,23 +101,19 @@ def main() -> None:
         corpus = pd.read_parquet(
             table, columns=["dbd_seq", "dbd_family", "protein_id", "species"]
         ).drop_duplicates("dbd_seq")
-        pages = _uniprobe.load_details(raw_dir(source) / "details")
-        # construct sequence -> the page it came from, for locating a stored domain
-        constructs = [
-            (name, seq, page) for page in pages.values() for name, seq in page.inserts.items()
-        ]
+        constructs = constructs_for(source)
 
         for _, row in corpus.iterrows():
             dbd = row["dbd_seq"]
             stats["rows"] += 1
-            hit = next(((n, c, pg) for n, c, pg in constructs if dbd in c), None)
+            hit = next((c for c in constructs if dbd in c.sequence), None)
             if hit is None:
                 stats["no_construct"] += 1
                 continue
-            name, construct, page = hit
+            name, construct = hit.name, hit.sequence
             start = construct.index(dbd) + 1
             end = start + len(dbd) - 1
-            full = fetch_uniprot(page.protein_id)
+            full = fetch_uniprot(hit.protein_id) if hit.protein_id else None
             if full:
                 stats["uniprot_ok"] += 1
             span = proteins.locate_in_protein(construct, full or "", start, end)
@@ -110,7 +135,7 @@ def main() -> None:
                     full_seq=full,
                     dbd_start_protein=span[0] if span else None,
                     dbd_end_protein=span[1] if span else None,
-                    protein_id=page.protein_id,
+                    protein_id=hit.protein_id,
                     gene=name,
                     species=row["species"],
                     source_dataset=source,

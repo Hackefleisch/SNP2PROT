@@ -36,13 +36,13 @@ A family above 40% of rows is flagged: it can be memorized instead of learned.
 
 | wt_id | family | distinct DBDs | rows | reference present |
 |---|---|---:|---:|:-:|
-| `DEV12:Abd-B` | `Homeodomain` | 1 | 32,896 | yes |
-| `DEV12:Bap` | `Homeodomain` | 1 | 32,896 | yes |
-| `DEV12:Eve` | `Homeodomain` | 1 | 32,896 | yes |
-| `DEV12:Lbl` | `Homeodomain` | 1 | 32,896 | yes |
-| `DEV12:Msh` | `Homeodomain` | 1 | 32,896 | yes |
-| `DEV12:Ptx1` | `Homeodomain` | 1 | 32,896 | yes |
-| `DEV12:Six4` | `Homeodomain` | 1 | 32,896 | yes |
-| `DEV12:Slou` | `Homeodomain` | 1 | 32,896 | yes |
-| `DEV12:Tin` | `Homeodomain` | 1 | 32,896 | yes |
-| `DEV12:Ubx` | `Homeodomain` | 1 | 32,896 | yes |
+| `C:DEV12:Abd-B` | `Homeodomain` | 1 | 32,896 | yes |
+| `C:DEV12:Bap` | `Homeodomain` | 1 | 32,896 | yes |
+| `C:DEV12:Eve` | `Homeodomain` | 1 | 32,896 | yes |
+| `C:DEV12:Lbl` | `Homeodomain` | 1 | 32,896 | yes |
+| `C:DEV12:Msh` | `Homeodomain` | 1 | 32,896 | yes |
+| `C:DEV12:Ptx1` | `Homeodomain` | 1 | 32,896 | yes |
+| `C:DEV12:Six4` | `Homeodomain` | 1 | 32,896 | yes |
+| `C:DEV12:Slou` | `Homeodomain` | 1 | 32,896 | yes |
+| `C:DEV12:Tin` | `Homeodomain` | 1 | 32,896 | yes |
+| `C:DEV12:Ubx` | `Homeodomain` | 1 | 32,896 | yes |

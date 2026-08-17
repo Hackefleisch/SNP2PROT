@@ -22,10 +22,11 @@ from collections.abc import Callable
 
 import pandas as pd
 
-from snp2prot.parsers import bar15a, uniprobe_panels
+from snp2prot.parsers import bar15a, uniprobe_panels, weirauch2014
 
 #: source_dataset -> zero-argument parse function. Populated in Phases 1-4.
 REGISTRY: dict[str, Callable[[], pd.DataFrame]] = {
     bar15a.SOURCE: bar15a.parse,
+    weirauch2014.SOURCE: weirauch2014.parse,
     **{acc: uniprobe_panels.make_parser(acc) for acc in uniprobe_panels.PANELS},
 }

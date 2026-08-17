@@ -49,6 +49,13 @@ def main() -> None:
         except Exception as exc:  # noqa: BLE001 - reported, not swallowed
             failed.append((src, f"{type(exc).__name__}: {exc}"))
             print(f"SKIPPED {src}: {exc}")
+            # A source that stops yielding must not leave last build's output behind. Two
+            # accessions went to zero when canonicalisation landed, and their stale Parquet
+            # was still being read as part of the corpus.
+            stale = interim_table(src)
+            if stale.exists():
+                stale.unlink()
+                print(f"  removed stale {stale}")
         if not args.all:
             raise SystemExit(0)
 

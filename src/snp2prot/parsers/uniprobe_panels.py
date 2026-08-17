@@ -36,7 +36,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from snp2prot import align, domains, schema, thresholds
+# `references` is aliased: the name is already taken inside parse_panel by the
+# gene -> reference-sequence map used for clustering variants.
+from snp2prot import align, canonical, domains, schema, thresholds
+from snp2prot import references as reference_db
 from snp2prot.config import raw_dir
 from snp2prot.parsers import _uniprobe
 
@@ -174,6 +177,7 @@ def parse_panel(
     # sequence, so they are reconciled exactly like replicates. Keeping only the first would
     # discard real data and, worse, hide whether the two agree.
     domain_cfg = thresholds.load(threshold_path)["domain"]
+    pad = canonical.padding(domain_cfg)
     # Every construct on every detail page, not one per gene: a gene folder can hold several
     # distinct engineered proteins.
     constructs = {
@@ -212,21 +216,55 @@ def parse_panel(
         for construct, cmembers in by_construct.items():
             # The construct that was on the array is what gets annotated -- never the
             # protein's own domain annotation, which describes the full-length protein.
-            call = domains.call_domain(page.inserts[construct], hits[construct], domain_cfg)
+            insert = page.inserts[construct]
+            call = domains.call_domain(insert, hits[construct], domain_cfg)
             if not call.ok:
                 skipped.append(
                     SkippedProtein(construct, f"rejected: {call.rejection} ({call.family})")
                 )
                 continue
+            # Stored sequence is canonical, so the same domain is one string however much
+            # flank this particular lab happened to clone.
+            h = call.hits[0]
+            ref = (
+                None
+                if canonical.covers(insert, h.start, h.end, pad)
+                else reference_db.resolve(page.protein_id)
+            )
+            cc = canonical.canonicalise(insert, h.start, h.end, reference=ref, pad=pad)
+            if not cc.ok:
+                skipped.append(SkippedProtein(construct, f"not canonicalisable: {cc.rejection}"))
+                continue
             g = groups.setdefault(
-                call.sequence,
-                {"genes": [], "members": [], "call": call, "page": page, "gene": gene},
+                cc.sequence,
+                {
+                    "genes": [],
+                    "members": [],
+                    "call": call,
+                    "page": page,
+                    "gene": gene,
+                    "inserts": {},
+                },
             )
             g["genes"].append(construct)
             g["members"].extend(cmembers)
+            g["inserts"][construct] = insert
 
     for u in unmatched:
         skipped.append(SkippedProtein("<unmatched>", u))
+
+    # Constructs sharing a canonical domain but differing OUTSIDE it carry a signal the model
+    # can never see -- `Cell09:HLH-25` and `HLH-27` are distinct genes with identical 76 aa
+    # domains and four substitutions just beyond. Bin the group.
+    for dbd in [d for d, g in groups.items() if len(g["inserts"]) > 1]:
+        if canonical.conflicting_constructs(groups[dbd]["inserts"]):
+            skipped.append(
+                SkippedProtein(
+                    "/".join(sorted(groups[dbd]["inserts"])),
+                    "constructs share a canonical domain but differ outside it; discarded",
+                )
+            )
+            del groups[dbd]
 
     # Cluster engineered variants with their reference. A gene folder holding several
     # constructs is a variant series: NAR11's HLH-1 carries L13R/L13T/L13V, ROG18A's FoxN3

@@ -252,7 +252,7 @@ across sources, and that no cluster is a size outlier.
 
 ## 9. Dataset composition
 
-### 9.1 Acquisition and attrition
+### 9.1 Acquisition and attrition — UniPROBE
 
 The UniPROBE download index lists 36 accessions. Two advertise a contiguous 8-mer archive the
 server does not hold, and one further accession provides no detail pages, leaving **33
@@ -280,35 +280,67 @@ the difference is constructs that resolve to an identical stored sequence, chief
 whose domains are invariant and separate array designs of one protein. These are reconciled
 rather than deduplicated (§6).
 
-### 9.2 The dataset as it stands
+### 9.2 A second distributor: CIS-BP / Weirauch 2014
 
-Build of 2026-08-14, from 18 contributing accessions.
+UniPROBE is not the only repository of universal-PBM data. Weirauch et al. (2014) cloned and
+assayed 1,032 DNA-binding domains across 124 organisms, depositing the measurements in GEO
+(`GSE53348`, 2,064 samples) and the **assayed insert sequences** in a supplementary
+spreadsheet (Table S6). That spreadsheet is what makes the source admissible: attributability
+requires the sequence physically on the array, and each GEO sample is titled
+`<plasmid>_<HK|ME>_8mer_<n>`, so the plasmid identifier joins measurement to sequence. The
+join is exhaustive — 1,032 plasmids on each side, none unmatched.
+
+Its measurements need no special treatment: the same Wilcoxon E-score on the same
+[-0.5, 0.5] scale, and the paper adopts `E > 0.45` as its own significance threshold, which is
+the cutoff already in use here. The two array designs (HK, ME) carry different probe sequences
+and are treated as replicates under §6.
+
+Two properties do differ and are recorded rather than absorbed. Constructs come in **three
+architectures** — 671 with 50 endogenous flanking residues, 96 with 15, and 265 with none —
+so a zero-flank construct yields a shorter stored domain than a UniPROBE construct of the same
+protein, because the padding of §3.3 is clipped by the construct. And the positive rate is
+lower (0.16% against 0.31%), which is expected: this panel reaches far more organisms and more
+weakly-binding factors.
+
+Of its 1,032 constructs, 896 satisfy the admission policy, giving 884 distinct domain
+sequences of which 21 were already held from UniPROBE.
+
+### 9.3 The dataset as it stands
+
+Build of 2026-08-14, from 19 contributing sources.
 
 | property | value |
 |---|---|
-| rows | 17,040,128 |
-| distinct DNA-binding domains | 501 |
-| clusters | 437 |
-| Pfam families | 32 |
-| source organisms | 24 |
+| rows | 46,120,192 |
+| distinct DNA-binding domains | 1,364 |
+| clusters | 1,321 |
+| Pfam families | 56 |
+| source organisms | 138 |
 | distinct 8-mers | 32,896 (identical in every source) |
-| binding / non-binding / excluded | 51,642 / 16,713,577 / 274,909 |
-| negative:positive ratio | 324:1 |
-| `dbd_seq` length | 43-216 aa (median 77) |
+| binding / non-binding / excluded | 97,320 / 45,238,991 / 783,881 |
+| negative:positive ratio | 465:1 |
+| `dbd_seq` length | 30-377 aa (median 76) |
+
+The length range is set by the domains themselves, not by an error: the shortest are AT-hooks,
+a ~10-residue motif that the padding of §3.3 extends to about 30, and the longest is a plant
+GRAS domain of ~350 residues. A 30-residue AT-hook is a motif rather than a fold, which is
+worth knowing before it reaches a structure predictor.
 
 Composition by family:
 
 | family | domains | family | domains |
 |---|---:|---|---:|
-| Homeodomain | 234 | T-box | 11 |
-| Forkhead | 54 | IRF | 6 |
-| bHLH (`HLH`) | 35 | ARID, zf-C2H2, RFX, TF-AP-2 | 4 each |
-| zf-C4 | 28 | PAX, E2F-TDP, HSF, SAND, AP2 | 3 each |
-| ETS | 23 | GATA, SRF-TF, KilA-N, TEA, Myb | 2 each |
-| HMG box | 21 | AFT, BrkDBD, GCM, MH1, TBP, WRKY, zf-BED | 1 each |
-| Zn2Cys6 | 17 | | |
-| bZIP | 13 | | |
-| NAC (`NAM`) | 11 | | |
+| Homeodomain | 440 | GATA | 29 |
+| bHLH (`HLH`) | 103 | ETS | 26 |
+| bZIP | 79 | HMG box | 26 |
+| Zn2Cys6 (`Zn_clus`) | 74 | NAC (`NAM`) | 26 |
+| Forkhead | 72 | WRKY | 23 |
+| zf-C4 | 62 | TCP | 21 |
+| Myb | 60 | Dof (`Zn_ribbon_Dof`) | 18 |
+| AP2 | 44 | ARID | 17 |
+
+**27 families hold ten or more domains**, against eight before this source, with a further 29
+below that. Leave-one-family-out is a real test on 27 of them rather than on a handful.
 
 Protein-side depth remains concentrated. Each row below is one cluster *size*: how many
 clusters contain exactly that many domains, and how those domains divide into references and
@@ -316,7 +348,7 @@ variants.
 
 | domains per cluster | clusters of this size | domains in them | references | variants |
 |---:|---:|---:|---:|---:|
-| 1 | 409 | 409 | 409 | 0 |
+| 1 | 1,293 | 1,293 | 1,293 | 0 |
 | 2 | 8 | 16 | 8 | 8 |
 | 3 | 6 | 18 | 6 | 12 |
 | 4 | 5 | 20 | 5 | 15 |
@@ -324,11 +356,11 @@ variants.
 | 6 | 2 | 12 | 2 | 10 |
 | 7 | 1 | 7 | 1 | 6 |
 | 8 | 2 | 16 | 2 | 14 |
-| | **437** | **518** | **437** | **81** |
+| | **1,321** | **1,402** | **1,321** | **81** |
 
 The columns are related exactly. *Domains in them* is simply the size times the number of
 clusters — the six clusters of size three account for 18 domains. Every cluster contains
-**exactly one reference** (verified: all 437), so *references* equals the cluster count and
+**exactly one reference** (verified: all 1,321), so *references* equals the cluster count and
 *variants* is the remainder:
 
 > variants = domains − clusters
@@ -336,22 +368,27 @@ clusters — the six clusters of size three account for 18 domains. Every cluste
 Hence a cluster of size 1 is a reference with nothing to compare it to and contributes no
 variants, while the two clusters of size 8 contribute 7 variants each.
 
-**94% of clusters hold a single domain.** The 81 variants sit in the 28 clusters of size two
+**98% of clusters hold a single domain.** The 81 variants sit in the 28 clusters of size two
 or more, and half of them in the eight clusters of size five or more. The largest are
 `BAR15A:HOXD13` and `ROG18A:FoxJ3` at eight domains each, then `BAR15A:FOXC1` at seven.
 
-Domains covered (518) exceeds distinct domains (501) because 17 domains appear in more than
-one cluster: the same sequence assayed by two studies enters each study's cluster
-independently, which is what makes the cross-source label agreement in `overlap.md` measurable.
+Domains covered (1,402) exceeds distinct domains (1,364) because 38 domains appear in more
+than one cluster: the same sequence assayed by two studies enters each study's cluster
+independently, which is what makes the cross-source label agreement in `overlap.md`
+measurable. Adding CIS-BP raised that from 17 to 38, so the agreement check now has more than
+twice the evidence — and for the first time it compares two different laboratories rather than
+two deposits from the same one.
 
 Variants are predominantly homeodomain (54), then forkhead (18), zf-C4 (5), bHLH (3) and
 paired domain (1). Two of the three families carrying variants outside the homeodomain arose
 only once distinct constructs sharing a gene directory were separated (§4): a bHLH
 point-mutant series and a set of forkhead chimeras.
 
-The companion protein table carries all 501 domains. A canonical UniProt sequence resolves for
-92%, and the domain can be located within that full-length sequence for 71%; the remainder are
-clone constructs differing from the canonical isoform, or non-model organisms.
+The companion protein table carries all 1,364 domains, each located inside the construct it
+was cut from. Full-length coverage is now the exception rather than the rule: Table S6
+publishes no UniProt accession, so a canonical sequence resolves for 462 domains (34%) and the
+domain is located within it for 354 (26%). Domain-level and construct-level representations
+are available for every one; full-protein for about a third.
 
 ## 10. Reproducibility
 

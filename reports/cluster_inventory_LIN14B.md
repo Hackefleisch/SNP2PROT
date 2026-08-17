@@ -37,15 +37,15 @@ A family above 40% of rows is flagged: it can be memorized instead of learned.
 
 | wt_id | family | distinct DBDs | rows | reference present |
 |---|---|---:|---:|:-:|
-| `LIN14B:ANAC019` | `NAM` | 1 | 32,896 | yes |
-| `LIN14B:ANAC055` | `NAM` | 1 | 32,896 | yes |
-| `LIN14B:ANAC092_DBD/ANAC092_FL` | `NAM` | 1 | 32,896 | yes |
-| `LIN14B:ATAF1` | `NAM` | 1 | 32,896 | yes |
-| `LIN14B:NAP` | `NAM` | 1 | 32,896 | yes |
-| `LIN14B:NST2` | `NAM` | 1 | 32,896 | yes |
-| `LIN14B:NTL6` | `NAM` | 1 | 32,896 | yes |
-| `LIN14B:NTL8` | `NAM` | 1 | 32,896 | yes |
-| `LIN14B:SND1` | `NAM` | 1 | 32,896 | yes |
-| `LIN14B:VND3` | `NAM` | 1 | 32,896 | yes |
-| `LIN14B:VND7` | `NAM` | 1 | 32,896 | yes |
-| `LIN14B:WRKY1` | `WRKY` | 1 | 32,896 | yes |
+| `C:LIN14B:ANAC019` | `NAM` | 1 | 32,896 | yes |
+| `C:LIN14B:ANAC055` | `NAM` | 1 | 32,896 | yes |
+| `C:LIN14B:ANAC092_DBD/ANAC092_FL` | `NAM` | 1 | 32,896 | yes |
+| `C:LIN14B:ATAF1` | `NAM` | 1 | 32,896 | yes |
+| `C:LIN14B:NAP` | `NAM` | 1 | 32,896 | yes |
+| `C:LIN14B:NST2` | `NAM` | 1 | 32,896 | yes |
+| `C:LIN14B:NTL6` | `NAM` | 1 | 32,896 | yes |
+| `C:LIN14B:NTL8` | `NAM` | 1 | 32,896 | yes |
+| `C:LIN14B:SND1` | `NAM` | 1 | 32,896 | yes |
+| `C:LIN14B:VND3` | `NAM` | 1 | 32,896 | yes |
+| `C:LIN14B:VND7` | `NAM` | 1 | 32,896 | yes |
+| `C:LIN14B:WRKY1` | `WRKY` | 1 | 32,896 | yes |

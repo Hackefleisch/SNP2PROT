@@ -36,5 +36,5 @@ A family above 40% of rows is flagged: it can be memorized instead of learned.
 
 | wt_id | family | distinct DBDs | rows | reference present |
 |---|---|---:|---:|:-:|
-| `MBE14:PmTbr` | `T-box` | 1 | 32,896 | yes |
-| `MBE14:SpTbr` | `T-box` | 1 | 32,896 | yes |
+| `C:MBE14:PmTbr` | `T-box` | 1 | 32,896 | yes |
+| `C:MBE14:SpTbr` | `T-box` | 1 | 32,896 | yes |

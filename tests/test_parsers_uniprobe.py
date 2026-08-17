@@ -11,10 +11,11 @@ import io
 import zipfile
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from snp2prot import schema
-from snp2prot.parsers import _uniprobe
+from snp2prot.parsers import _pbm, _uniprobe
 
 BODY = "AAAAAAAA\tTTTTTTTT\t0.49\t100.0\t3.0\nAAAAAAAC\tGTTTTTTT\t-0.10\t50.0\t1.0\n"
 HEADED = "8-mer\t8-mer\tE-score\tMedian\tZ-score\n" + BODY
@@ -124,13 +125,19 @@ def test_binarize_bands():
     ]
 
 
+def _table(pairs):
+    return pd.DataFrame({"dna_seq": [k for k, _ in pairs], "escore": [v for _, v in pairs]})
+
+
 def test_replicate_disagreement_falls_to_gray():
     """Replicates may sit on different array designs; disagreement is not averaged away."""
-    a = "8-mer\t8-mer\tE-score\tM\tZ\nAAAAAAAA\tT\t0.49\t1\t1\nAAAAAAAC\tG\t0.49\t1\t1\n"
-    b = "8-mer\t8-mer\tE-score\tM\tZ\nAAAAAAAA\tT\t0.48\t1\t1\nAAAAAAAC\tG\t0.10\t1\t1\n"
-    z = _zip({"G/R1_8mers.txt": a, "G/R2_8mers.txt": b})
-    keys, label, mean = _uniprobe.reconcile_replicates(
-        z, ["G/R1_8mers.txt", "G/R2_8mers.txt"], 0.45, 0.35
+    keys, label, mean = _pbm.combine_replicates(
+        [
+            ("R1", _table([("AAAAAAAA", 0.49), ("AAAAAAAC", 0.49)])),
+            ("R2", _table([("AAAAAAAA", 0.48), ("AAAAAAAC", 0.10)])),
+        ],
+        0.45,
+        0.35,
     )
     assert keys.tolist() == ["AAAAAAAA", "AAAAAAAC"]
     assert label.tolist() == [schema.LABEL_BIND, schema.LABEL_GRAY]
@@ -138,11 +145,25 @@ def test_replicate_disagreement_falls_to_gray():
 
 
 def test_replicates_must_cover_the_same_8mers():
-    a = "8-mer\t8-mer\tE-score\tM\tZ\nAAAAAAAA\tT\t0.49\t1\t1\n"
-    b = "8-mer\t8-mer\tE-score\tM\tZ\nAAAAAAAC\tG\t0.49\t1\t1\n"
-    z = _zip({"G/R1_8mers.txt": a, "G/R2_8mers.txt": b})
     with pytest.raises(ValueError, match="differs from the first replicate"):
-        _uniprobe.reconcile_replicates(z, ["G/R1_8mers.txt", "G/R2_8mers.txt"], 0.45, 0.35)
+        _pbm.combine_replicates(
+            [("R1", _table([("AAAAAAAA", 0.49)])), ("R2", _table([("AAAAAAAC", 0.49)]))],
+            0.45,
+            0.35,
+        )
+
+
+def test_a_headed_but_truncated_table_is_still_rejected():
+    """Completeness is checked independently of how the E-score column was identified.
+
+    It was not always: naming the column in a header used to return early and skip the row
+    count entirely, so only headerless sources like Path10 were caught. A depositor shipping a
+    *headed* table truncated to its enriched end would have been admitted silently.
+    """
+    rows = "".join(f"AAAAAA{a}{b}\tT\t0.49\t1\t1\n" for a in "ACGT" for b in "ACGT")
+    z = _zip({"G/G_8mers.txt": "8-mer\t8-mer\tE-score\tM\tZ\n" + rows})
+    with pytest.raises(_uniprobe.EscoreColumnError, match="expected 32,896"):
+        _uniprobe.read_8mer_table(z, "G/G_8mers.txt")
 
 
 def test_clean_sequence_strips_numbering_and_markup():

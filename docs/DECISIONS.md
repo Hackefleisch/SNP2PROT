@@ -72,7 +72,15 @@ modeller condition on the covariate or hold it out.
 
 Noted at the time: the confound is already partly live. `dbd_seq` is the padded envelope
 clipped where the construct ends, so flank length is readable off `dbd_seq` length today —
-ROG18A's bare domains run 83-85 aa against 95-105 aa for the padded ones. Tracked as `T13`.
+ROG18A's bare domains run 83-85 aa against 95-105 aa for the padded ones.
+
+**Closed 2026-08-17 as recorded rather than as fully built.** `data/interim/proteins/` carries
+`construct_seq` with `dbd_start` / `dbd_end` marking the padded envelope inside it, so the
+flank actually present on each side is exact and derivable per construct — the part of the
+covariate that varies within a source and is therefore the part worth having. Affinity tag and
+expression system are *not* recorded and are not planned: both are constant within a source
+and would be read off `source_dataset` anyway, so a column would restate the source name with
+extra steps. If a source ever varies its tag across constructs, this reopens.
 
 ### 2026-08-14 — Cluster-size restriction is a training decision, not a dataset one
 Was `#2`: whether to admit only DBDs with ≥5 variants. **The dataset stores everything; the
@@ -80,6 +88,21 @@ modeller filters.** Only 9 of 425 clusters hold 5 or more domains, so the rule w
 the protein axis to almost nothing — but that is beside the point, which is that a dataset
 should not bake in a training-set choice. What remains is the convenience of filtering by
 cluster size cheaply: `TODO.md` `T3`.
+
+### 2026-08-17 — PBM acquisition closes after Kock; `T2` and `T2b` dropped
+**Decided by the owner.** Extending PBM coverage ends with `T11` (Kock et al. 2024). Two
+tasks go with it:
+
+- **`T2` — survey other PBM deposits.** Individual GEO / ArrayExpress submissions and paper
+  supplements, always subject to the same gate as everything else: does the deposit publish
+  the assayed construct sequence? Dropped as not worth the yield now that CIS-BP has landed
+  868 domains and the corpus spans 56 families.
+- **`T2b` — resolve UniProt accessions for the CIS-BP domains.** Table S6 publishes gene name
+  and species but no accession, so 884 domains have no full-length sequence. Resolving them
+  from gene plus species across 124 organisms would not be clean, and a wrong mapping is worse
+  than a missing one — the reasoning that left `PP15` unparsed. Dropped; the consequence is
+  that full-length coverage stays at about a quarter of the corpus, which is what `D1` is
+  about. Domain-level and construct-level representations are unaffected and complete.
 
 ### Earlier — B1H and C2H2 arrays dropped on structural grounds
 `#1`, `#4`, `#19`, `#20`. Persikov's B1H varies a different subunit than the one that binds,
@@ -129,6 +152,43 @@ larger defect, `#39` below.
 ---
 
 ## 3. Composition decisions
+
+### 2026-08-17 — `T4` closed: the label noise floor is measured, and it is not small
+Forty-seven domains are stored by more than one source — 48 duplicate constructs, 49 source
+pairs of one protein against one 32,896-8-mer set. The task had two jobs and both are now
+discharged.
+
+**Job 1, a shared split group, fell out of clustering.** These pairs are distance 0, so CD-HIT
+puts them in one `wt_id` by construction and no split can separate them. Nothing further to do.
+
+**Job 2, label agreement, is measured** by `reports.overlap_report`, regenerated into
+[`reports/overlap.md`](../reports/overlap.md) by `scripts/make_overlap_report.py`. Two passes
+over the interim tables, because only ~3M of 45M rows are replicated.
+
+The number that matters is not the one that looks reassuring:
+
+| measure | value |
+|---|---|
+| pooled hard-label agreement | 99.98% (300 of 1,572,985 calls differ) |
+| **median positive-call Jaccard** | **0.458** |
+| pooled positives agreed on | 2,863 of 5,816 (49.2%) |
+| median E-score rank correlation | 0.608 |
+
+Positives are under 0.5% of an 8-mer table, so agreeing on the negatives holds pooled
+agreement near 100% however badly two labs agree about binding. Against the within-source
+figures already in `METHODS.md` §6 — 70.4% and 72.2% positive-set Jaccard for byte-identical
+distinct genes and for technical replicates — cross-laboratory agreement is some 25 points
+worse. **A model that reproduces held-out positives much past this is reproducing a source.**
+
+Nine pairs are flagged below Jaccard 0.20 or rho 0.30, reported and not repaired. One is not
+noise on any reading: `C:LIN14B:NAP` — *Arabidopsis* ANAC092 / O49255, an identical 144 aa
+stored domain in both `LIN14B` and `weirauch2014` — shares **zero** positive calls between the
+two deposits, at rho 0.068. Twelve positives against 126, disjoint. Open as `D4`.
+
+A second, smaller inconsistency surfaced with it: the domain shared by `Cell08` and
+`weirauch2014` under `C:Cell08:Tlx2` is byte-identical but carries `species` as *Mus musculus*
+in one source and *Homo sapiens* in the other. Metadata only, no label affected, folded into
+`T5`.
 
 ### `#9` — The 318:1 negative:positive ratio stays in the stored table
 Controlled when sampling training batches, not by discarding rows. A PBM low-E-score negative

@@ -9,7 +9,8 @@ how the dataset changed.
 | `binarization_summary_<source>.md` | Phase 1-4 | n_pos / n_neg / n_gray, positive rate, score distribution vs. applied cutoffs |
 | `cluster_inventory_<source>.md` | Phase 1-4 | variants per `wt_id`, `n_mut_from_wt` distribution, clusters per family, dominance flags |
 | `cluster_inventory.md` | Phase 5 | the same, for the merged table |
-| `overlap.md` | Phase 5 | cross-source duplicate pairs and label agreement |
+| `overlap.md` | 2026-08-17 | the 47 domains stored by two sources, and how far their labels agree — the label noise floor |
+| `clusters.md` | 2026-08-17 | corpus-wide cluster inventory from `build_clusters.py` |
 | `validation_<source>.md` | Phase 1-4 | schema validator output |
 | `archive/` | — | superseded hand-maintained files, frozen; see `TODO.md` for what replaced them |
 

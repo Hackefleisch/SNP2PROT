@@ -200,6 +200,7 @@ uv venv --python 3.11 .venv && uv pip install --python .venv -e ".[dev]"
 .venv/bin/python scripts/make_reports.py --source BAR15A    # regenerate reports/
 .venv/bin/python scripts/audit_sources.py                  # invariant sweep, ~4 min
 .venv/bin/python scripts/build_protein_table.py            # protein-side companion table
+.venv/bin/python scripts/make_overlap_report.py            # cross-source label agreement, ~5 s
 .venv/bin/python -m ruff check . && .venv/bin/python -m ruff format .
 .venv/bin/python scripts/record_provenance.py data/raw/<source>/<file> --url ... --desc ...
 ```

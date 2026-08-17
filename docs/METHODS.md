@@ -214,6 +214,33 @@ arise from recent gene duplication, where the domain is invariant while the flan
 has diverged. Their agreement is comparable to that of technical replicates of a single gene
 (median positive-set Jaccard 70.4% against 72.2%), supporting the treatment.
 
+### 6.1 Cross-source replicates and the label noise floor
+
+Reconciliation above operates within a source. Forty-seven domains are stored by more than one
+distributor, giving 49 pairs in which two laboratories assayed the same padded domain against
+the same 32,896 8-mers. These are not reconciled — each source's rows are retained as
+deposited — but they are measured, because the rate at which two independent measurements of
+one protein disagree is the noise floor against which any model's accuracy has to be read.
+
+Pooled hard-label agreement is 99.98% (300 of 1,572,985 calls). That figure is uninformative:
+positives are under 0.5% of an 8-mer table, so agreeing on the negatives dominates it. On the
+calls the dataset exists to make, agreement is far weaker — the median pair agrees on 45.8% of
+the 8-mers either of them called positive, the pooled figure is 49.2%, and the median Spearman
+correlation between the two laboratories' E-scores is 0.61.
+
+The comparison with §6 is the point: within a source, byte-identical domains and technical
+replicates agree at 70.4% and 72.2% positive-set Jaccard. Across sources the same quantity is
+45.8%. Agreement falls by some 25 points when the two measurements come from different
+laboratories rather than from one, so a substantial share of the disagreement tracks
+laboratory and array design rather than the protein — and a model that reproduces held-out
+positives much beyond this level is reproducing a source, not a binding preference.
+
+Nine pairs fall below a positive-set Jaccard of 0.20 or a rank correlation of 0.30 and are
+flagged rather than corrected; one — the *Arabidopsis* NAC domain ANAC092, stored by both
+Lindemose et al. 2014 and CIS-BP — shares no positive call at all between the two deposits
+(Jaccard 0.000, rho 0.07) despite an identical stored domain. Per-pair figures are regenerated
+into `reports/overlap.md`.
+
 ## 7. Cluster construction
 
 A cluster (`wt_id`) is a reference domain together with its variants, and is the unit at which

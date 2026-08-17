@@ -106,7 +106,7 @@ data/interim/proteins/   protein table: domain at 4 levels + UniProt full-length
 data/external/pfam/      Pfam HMMs for boundary annotation
 data/external/uniprot/   cached canonical sequences
 data/processed/          merged training table              (git-ignored)
-data/testsets/           Tier 4 held-out sets, kept physically apart  (git-ignored)
+data/testsets/           held-out sets, kept physically apart; empty  (git-ignored)
 ```
 
 ### Path mapping vs. the brief
@@ -120,7 +120,7 @@ names — **do not create the left-hand paths**, that would fork the structure i
 | `src/parsers/<source>.py` | `src/snp2prot/parsers/<source>.py` |
 | `src/splits.py` | `src/snp2prot/splits.py` |
 | `src/baselines/nn_lookup.py` | `src/snp2prot/baselines/nn_lookup.py` |
-| Tier 4 "separate directory" | `data/testsets/` |
+| Tier 4 "separate directory" | `data/testsets/` (Tier 4 dropped; the path stands) |
 
 ## Rules that are not negotiable
 
@@ -155,6 +155,8 @@ names — **do not create the left-hand paths**, that would fork the structure i
 
 ## Conventions
 
+- **`configs/thresholds.yaml` holds only live blocks** — `pbm:`, `domain:`, `cluster:`.
+  `b1h:`, `snp_selex:` and `tier4:` were removed on 2026-08-17 with the phases they configured.
 - **One config file: `configs/thresholds.yaml`.** There is no `default.yaml` and no per-run
   config, because at this stage a "run" *is* a dataset build and the thresholds are the only
   thing that varies. When modeling arrives (post-Phase 6) its hyperparameters get their own
@@ -219,7 +221,7 @@ Use `uv` (already installed at `~/.local/bin/uv`).
 | 4 | ~~SNP-SELEX, trimmed to a 19 bp window~~ | **DROPPED 2026-08-14** — the dataset is PBM only, so every row is an 8-mer and the `dna_len` leak cannot occur |
 | 5 | merge, overlap report, splits, NN baseline | **deferred** — happens after PBM coverage is extended, not before |
 | — | **extend PBM coverage beyond UniPROBE** | **next** — CIS-BP first; the gate is whether it publishes the assayed construct sequence. See `TODO.md` T1 |
-| 6 | Tier 4 test sets, in `data/testsets/` | still wanted — bHLH dimers; a heterodimer fails condition 1, and MAX substitutions are "in and around" the DBD, so condition 3 needs checking per variant |
+| 6 | ~~Tier 4 test sets, in `data/testsets/`~~ | **DROPPED 2026-08-17** — the owner no longer wants the bHLH dimer sets. `data/testsets/` stays as empty scaffolding for any future held-out set |
 
 ## Deferred to the owner — flag, do not resolve
 

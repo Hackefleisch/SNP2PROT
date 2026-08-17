@@ -35,6 +35,7 @@ import pandas as pd
 
 from snp2prot import align, canonical, domains, schema, thresholds
 from snp2prot.config import raw_dir
+from snp2prot.metadata import organism
 from snp2prot.parsers import _uniprobe
 
 SOURCE = "BAR15A"
@@ -201,7 +202,7 @@ def parse(genes: list[str] | None = None, threshold_path: str | Path | None = No
                     n_mut_from_wt=n_mut,
                     mut_positions=mut_positions,
                     protein_id=page.protein_id,
-                    species=page.species,
+                    species=organism.resolve(page.species, page.protein_id),
                     pos_cut=pos_cut,
                     neg_cut=neg_cut,
                     source_dataset=SOURCE,

@@ -89,6 +89,92 @@ the protein axis to almost nothing — but that is beside the point, which is th
 should not bake in a training-set choice. What remains is the convenience of filtering by
 cluster size cheaply: `TODO.md` `T3`.
 
+### 2026-08-17 — `T5b` done: one organism convention, enumerated not inferred
+The convention is the **UniProt-style binomial** — `Genus species`, no strain, no
+abbreviation, no hybrid marker — and anything that is not an organism is stored as the empty
+string rather than as a word that looks like one. Corpus-wide: **137 distinct strings down to
+132**, and 21 constructs now hold an empty organism where seven different placeholders used to
+sit.
+
+Handled in `snp2prot.metadata.organism`, wired into all three parser families
+(`uniprobe_panels`, `bar15a`, `weirauch2014`):
+
+| was | is | why |
+|---|---|---|
+| `C. elegans` (NAR11, 4) | `Caenorhabditis elegans` | abbreviated genus; every other deposit writes it out |
+| `Acyrtosiphon pisum` (1) | `Acyrthosiphon pisum` | transposed `h`; the corpus carried both spellings for one organism |
+| `Malus x domestica` (2) | `Malus domestica` | hybrid marker; UniProt and NCBI both index it without |
+| `Chimera` (ROG18A, 12) | *empty* | engineered chimeras have no source organism |
+| `N/A` (LIU18B, 2) | *empty* | reconstructed ancestors, likewise |
+| `PBM CONSTRUCTS` (3) | *empty* | a stray heading from CIS-BP Table S6 |
+| `None Available` | *empty* | UniPROBE's own missing-value string |
+
+**The corrections are enumerated, not inferred from a pattern.** An alias table with a reason
+per entry can be reviewed; a rule that rewrites any string of a given shape will eventually
+rewrite a name that was correct. Every entry was found by surveying the distinct values
+actually present.
+
+Three names are deliberately left alone, and the tests pin each: `Sarsia sp. Long Island
+Sound` is a genuinely unnamed species rather than a formatting variant, and trimming it to a
+binomial would assert a species nobody has assigned; `Acanthamoeba polyphaga mimivirus` is a
+virus, correctly named in three words; `Physcomitrella patens` is *Physcomitrium patens* under
+current taxonomy, which is a revision of the name rather than a disagreement about how to
+write it, and following it would put this module in the business of tracking taxonomy.
+
+**Not fixed, because it is not a naming problem:** the domain shared by `Cell08` and
+`weirauch2014` is byte-identical and stored as *Mus musculus* by one and *Homo sapiens* by the
+other. One of them is wrong about the protein, and no normalisation can decide which.
+
+### 2026-08-17 — Tier 4 dropped; `T7` discarded
+**Decided by the owner.** The bHLH dimer held-out sets are no longer wanted. The two problems
+`T7` was opened to resolve go with it, unresolved and now moot: a heterodimer is two chains
+forming one binding unit and so fails admission condition 1, and MAX's substitutions are "in
+and around" the DBD so condition 3 needed checking per variant.
+
+Consequences: step 4 of the plan is gone, and the `tier4:` block in `configs/thresholds.yaml`
+became dead config and was removed with the others (below). `data/testsets/` and
+`config.TESTSET_DIR` are kept as empty scaffolding — any future held-out set belongs there
+whatever it measures, and the directory costs nothing.
+
+### 2026-08-17 — `T8` done: the dead threshold blocks are gone
+`b1h:`, `snp_selex:` and `tier4:` are deleted outright from `configs/thresholds.yaml` — no
+tombstone comments, no test asserting their absence. They configured phases 3, 4 and Tier 4,
+all dropped; they carried null cutoffs and `TODO` markers for work that will not happen, which
+reads as unfinished configuration rather than as deleted scope.
+
+Safe because `thresholds.for_assay` looks blocks up by key and no caller asked for any of the
+three. This file is where the removal is recorded; git history is where the content is. The
+config file is the owner's control surface and should show only what is live.
+
+### 2026-08-17 — `T5` done: unresolved organisms recovered from UniProt, or left empty
+All 17 constructs carrying the literal `$species` were in `Cell09`, all with a Swiss-Prot
+accession. `snp2prot.metadata.organism` reads the organism from the `OS=` field of the
+canonical FASTA already cached under `data/external/uniprot/`: **13 resolve to *Caenorhabditis
+elegans*, 4 do not** — their accessions are cached as zero-byte, UniProt's negative cache for
+an entry it no longer serves — and those are stored as empty. Metadata only; no label, cluster
+or boundary moved.
+
+Two choices inside this worth stating:
+
+- **Nothing here fetches.** The lookup is a local read of an existing cache, so parsing stays
+  offline and a cold cache degrades to an empty organism rather than to a network call inside
+  a parser.
+- **The study's scope is not used as evidence.** Every affected construct is from one
+  *C. elegans* panel, so filling the remaining 4 from the paper would be right today — and
+  would be a rule that invents an organism the next time a mixed-species deposit has the same
+  template defect. Rule 1 covers accessions and URLs; the same reasoning applies here.
+
+Rebuild cost: `Cell09` alone (4 s), then `build_clusters.py` corpus-wide (79 s) because a
+single-source rebuild resets that source's `wt_id` to its lineage form and desynchronises it
+from the cluster ids everything else carries. **That is a general trap, not a one-off** — any
+single-source rebuild needs the cluster pass after it. Verified identical afterwards: 1,335
+domains, 1,133 clusters, 122 multi-member, largest 8.
+
+What this does **not** fix is the other half of `T5`: `species` still mixes `C. elegans` with
+full binomials across sources, and `reports/overlap.md` found one domain stored as *Mus
+musculus* by `Cell08` and *Homo sapiens* by `weirauch2014`. Normalisation was not asked for
+and was not done.
+
 ### 2026-08-17 — PBM acquisition closes after Kock; `T2` and `T2b` dropped
 **Decided by the owner.** Extending PBM coverage ends with `T11` (Kock et al. 2024). Two
 tasks go with it:
@@ -329,7 +415,7 @@ unparsed deliberately.
 complexes (PO10). Two or three chains form one binding unit, so none can satisfy admission
 condition 1. UniPROBE publishes no sequence for them, so they were already excluded — but by
 accident. Now an explicit rejection category in [`DOMAIN_POLICY.md`](DOMAIN_POLICY.md).
-**Directly relevant to Tier 4**, which is bHLH dimers: `TODO.md` `T7`.
+This was the reasoning that made Tier 4 (bHLH dimers) doubtful; Tier 4 was dropped outright on 2026-08-17 (§1).
 
 ### `#53` — 10 genes have a detail page with no sequence
 Cell08 4, MAR17A 5, GR09 1 — Hoxa3, Nkx3-1, Six6, Arid5b, Cebpa, E4f1, Xbp1 among them.

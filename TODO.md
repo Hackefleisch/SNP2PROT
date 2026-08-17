@@ -52,8 +52,7 @@ of 2026-08-14 (`docs/DECISIONS.md` §7). **The library must be pressed once per 
 | 1 | **Extend PBM coverage** beyond UniPROBE | **closes with `T11`** (Kock), plus `T14`; `T2`/`T2b` dropped 2026-08-17 |
 | 2 | **Deepen the protein axis in what we already hold** | **done 2026-08-17** — clustering by sequence distance shipped |
 | 3 | **Merge**: single table, splits, NN baseline | after step 1 — the overlap report is already done (`T4`) |
-| 4 | **Tier 4 held-out sets** in `data/testsets/` | wanted — `T7` |
-| 5 | **Modelling** | after step 3 |
+| 4 | **Modelling** | after step 3 |
 
 A research sweep on 2026-08-14 surveyed the literature for PBM sources with designed protein
 variation. Its verdict, after screening against the admission policy: **Kock 2024 is the one
@@ -121,6 +120,14 @@ Small, but it is ancestral reconstruction, so every sequence is stated explicitl
 no accession chasing. Reconstructed-ancestor series are also the one place where designed
 protein-axis depth exists outside homeodomain point mutants.
 
+### T15 — One domain is two different proteins, depending on the source
+Left over from `T5b`, which fixed how organism names are *written* and could not fix this. The
+domain under `C:Cell08:Tlx2` is byte-identical in `Cell08` and `weirauch2014`, and is stored
+as *Mus musculus* by one and *Homo sapiens* by the other. A byte-identical homeodomain across
+mouse and human is entirely possible, so this may be two correct records — but their labels
+disagree (Jaccard 0.097, `reports/overlap.md`), and one deposit having the wrong protein would
+explain both facts at once. Related: `D4`.
+
 ### T3 — Make cluster size cheap to filter on
 Whether to require ≥5 variants per DBD is a **training-time** choice, not a dataset one
 (`D-2026-08-14-clusters`). What the dataset owes the modeller is the ability to select on it
@@ -136,30 +143,6 @@ pushdown but touches `schema.py` and every parser's output; a small `wt_id -> si
 or a helper in `snp2prot.splits` costs nothing and stays out of the 22-column schema. Second
 is likely right, and the cluster rebuild is now the obvious place to emit it — flag before
 implementing.
-
-### T5 — Resolve the 17 `$species` placeholders
-Seventeen constructs carry `species` as the literal string `$species` — an unsubstituted template
-placeholder on some UniPROBE detail pages, not a fault on our side. Metadata only, affects no
-label. Resolve from UniProt (which carries the organism) or normalise to null. Related: the
-field mixes `C. elegans` with full binomials, so organism names are not consistently
-formatted. `reports/overlap.md` added a third case: the domain under `C:Cell08:Tlx2` is
-byte-identical in `Cell08` and `weirauch2014` but is *Mus musculus* in one and *Homo sapiens*
-in the other.
-
-### T7 — Screen Tier 4 per construct
-Tier 4 is bHLH dimers, and it needs a per-construct call rather than a wholesale one:
-- a heterodimer is two chains forming one binding unit, which is exactly what admission
-  condition 1 rejects (see the 22 complexes already excluded on those grounds);
-- MAX's substitutions are described as "in and around" the DBD, so condition 3 — the variation
-  lies inside the stored region — has to be checked for **every variant**, not assumed.
-
-Kd / dG stay continuous at parse time and are thresholded only at evaluation, with the cutoff
-swept (`tier4.binarize_at_parse: false`).
-
-### T8 — Retire the dead config blocks
-`configs/thresholds.yaml` still carries `b1h:` and `snp_selex:` blocks with `null` cutoffs and
-TODOs for phases that no longer exist. Harmless but misleading. Remove or comment as dropped —
-check `snp2prot.thresholds` does not require the keys before deleting.
 
 ### T9 — Parallelise the build
 Deferred deliberately after the T6 work (see [`docs/DECISIONS.md`](docs/DECISIONS.md) §7):
@@ -248,6 +231,33 @@ much flank a lab cloned are now one string, so they are recognised as the same m
 made twice — which is what `T4`'s agreement check needs. Every construct contributes exactly one full 8-mer table. If a rebuild's row count is
 not a clean multiple of 32,896, something dropped or duplicated rows — the fastest single
 sanity check available.
+
+### N6 — A single-source rebuild must be followed by the cluster pass
+`build_dataset.py --source X` writes `wt_id` in its lineage form (`Cell09:HLH-1`), while every
+other source on disk carries the cluster form (`C:NAR11:HLH-1`) that `build_clusters.py`
+rewrote. Rebuilding one source therefore desynchronises it from the corpus silently — the
+table validates, the row count is right, and the domain simply leaves its cluster.
+
+**Always run `scripts/build_clusters.py` after any single-source rebuild.** It is corpus-wide
+and idempotent (it strips the `C:` prefix to recover the lineage name underneath), takes
+**79-84 s**, and reports the domain and cluster counts so a mismatch is visible: 1,335 / 1,133
+/ 122 multi-member / largest 8 as of 2026-08-17.
+
+**That is necessary but it is not sufficient, and the ROG18A rebuild of 2026-08-17 showed
+why.** Rebuilding a source replaces what is on disk with what the *current* parser produces,
+and the rest of the corpus still holds what the parser produced whenever it was last built. If
+the two differ, the mixture validates cleanly and the row-count invariant still holds — the
+only visible symptom is a report diff. Rebuilding `ROG18A` regrouped its 15 chimeras from
+`{8, 5, 1, 1}` clusters to three pairs and nine singletons. **The new grouping is the correct
+one**: the pairwise edit distances were checked directly against `align.edit_profile`, and
+under the 5-edit rule exactly three pairs qualify. The committed table simply predated a
+parser change. `docs/DECISIONS.md` `#30` — "ROG18A's engineered chimeras cluster with their
+parents" — describes the old grouping and needs revisiting.
+
+The corpus is currently a mixture: `Cell09`, `NAR11`, `ROG18A`, `LIU18B` and `weirauch2014`
+were rebuilt on 2026-08-17, the other 14 sources were not. **`build_dataset.py --all` followed
+by `build_clusters.py` is the way to make it self-consistent again**, and it is the owner's to
+run (rule 10).
 
 ### N3 — Checklist for any new PBM source
 Every one of these was caught by a distribution looking wrong, never by an error or a failing

@@ -38,6 +38,7 @@ import pandas as pd
 
 from snp2prot import canonical, domains, references, schema, thresholds
 from snp2prot.config import raw_dir
+from snp2prot.metadata import organism
 from snp2prot.parsers import _pbm
 
 SOURCE = "weirauch2014"
@@ -286,7 +287,7 @@ def parse_source(
                     # Table S6 gives no UniProt accession; the protein table resolves one from the
                     # gene and species, and inventing one here would be a guess.
                     protein_id="",
-                    species=c.species,
+                    species=organism.resolve(c.species),
                     pos_cut=pos_cut,
                     neg_cut=neg_cut,
                     source_dataset=SOURCE,

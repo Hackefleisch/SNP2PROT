@@ -87,30 +87,3 @@ pbm:
   # Applied PER EXPERIMENT, never on pooled values: HK and ME array designs shift
   # E-scores relative to one another, so a pooled cutoff silently reweights arrays.
   per_experiment: true
-
-b1h:
-  score_type: b1h_sscore
-  # Recovery-based, using the two 3-AT stringencies as natural cutpoints.
-  # NOTE: provisional — must be checked against the paper's own treatment before Phase 3
-  # is considered done. Phase 3 was dropped; this block is dead config (TODO.md T8).
-  positive_stringency: 10mM_3AT   # recovered here -> label 1
-  negative_stringency: 2mM_3AT    # NOT recovered even here -> label 0
-  # recovered at 2 mM but not 10 mM -> label -1
-  # Najafabadi s-score fallback, used only where recovery calls are unavailable:
-  sscore_positive: null           # TODO Phase 3: set from the score distribution
-  sscore_negative: null
-
-snp_selex:
-  score_type: snpselex_obs
-  positive: null          # TODO Phase 4: set on OBS once the score distribution is seen
-  negative: null
-  # PBS is the allele-difference signal and is NOT used for the bound call; it is carried
-  # alongside as a separate score for later analysis.
-  trim_window: 19         # +/-9 around the variant position, from the 40 bp oligo
-  keep_pbs: true
-
-# Tier 4 is never binarized at parse time. Kd / dG stay continuous in the stored table and
-# are thresholded only at evaluation, with the cutoff swept.
-tier4:
-  binarize_at_parse: false
-  score_types: [dG_kcal, Kd_nM]

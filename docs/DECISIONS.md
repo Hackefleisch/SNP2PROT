@@ -17,6 +17,43 @@ older commit messages and code comments still resolve.
 
 ## 1. Scope
 
+### 2026-08-18 — `D1`, `T18`, `T22`: the protein table reconnected, and its limits labelled
+**`D1` decided by the owner: 25-34% full-length coverage is acceptable.** The domain sequence
+is the representation this dataset is for; a full-length protein is a bonus where it resolves
+and never a filter. Domain-level and construct-level work covers all 1,334 domains.
+
+**`T18` — the protein table lost 111 domains to a substring test.** `build_protein_table.py`
+located a stored domain inside its construct with `dbd in construct`, which fails by
+construction for any canonical sequence that borrowed flank from a reference protein
+(`snp2prot.canonical`). Those are now placed by alignment, with the span read off the
+alignment so an indel cannot shift the window. The same fallback was added to
+`proteins.locate_in_protein`, which had the same defect one level up: an engineered variant
+appears verbatim in no wild-type protein, so **every variant** was failing to map onto its
+full-length sequence.
+
+| | before | after |
+|---|---:|---:|
+| domains with a protein record | 1,223 of 1,334 (92%) | **1,303 (98%)** |
+| located by substring / by alignment | 1,223 / 0 | 1,223 / **80** |
+| domains with a full-length sequence | 439 | 453 |
+| domains located inside that sequence | 363 | **445** |
+
+The 31 that remain unlocated are constructs whose stored domain matches nothing their source
+publishes: 27 in CIS-BP, plus 2 `PNAS08` AP2, 1 `SCI09` GCM and 1 `SHO18A` bZIP.
+
+**`T22` — `BAR15A:SIX6` pointed at the wrong protein, and it is not alone.** The stored
+accession was `Q6P051`, a 305 aa TrEMBL entry titled *"SIX6 protein (Fragment)"* from a cDNA
+clone; reviewed `SIX6_HUMAN` is `O95475` at 246 aa. The stored `SIX6_REF` domain is a
+substring of both, at offset 182 in the TrEMBL entry and **123** in the reviewed one — exactly
+the 59-residue shift by which our numbering disagreed with the literature. Corrected through
+`ACCESSION_OVERRIDES` in `build_protein_table.py`, a corrections map that carries the evidence
+for each entry and holds this one alone.
+
+The audit `T22` asked for found the general case: **41 of the accessions the deposits publish
+are unreviewed (TrEMBL) and 9 are flagged fragments.** Rather than chase them, the protein
+table now records `uniprot_reviewed` and `uniprot_fragment` per row, so a full-length sequence
+carries its own provenance and nothing downstream has to assume Swiss-Prot.
+
 ### 2026-08-18 — `D3`: the reference is the medoid, and it is not the seed
 **Decided by the owner.** A cluster now carries two named domains instead of one. The **seed**
 is what greedy assignment compared candidates against — longest first, and it decides
@@ -68,8 +105,11 @@ any padded window containing a character outside the 20 standard residues
 `dbd_seq` outright, mirroring the non-ACGT check on `dna_seq`. `MAR17A:Esrrb` was the only
 domain in the corpus affected; any future one is caught at parse time with a reason.
 
-Corpus after the rebuild: **1,334 domains, 1,382 records, 45,462,272 rows** (= 1,382 × 32,896),
-1,161 clusters. Variant counts are untouched — it was a singleton.
+Corpus after the single-source rebuild: 1,334 domains, 1,382 records, 45,462,272 rows. The
+full rebuild later the same day settled at **1,338 domains, 1,386 records, 45,593,856 rows** in
+1,165 clusters (`docs/METHODS.md` §9.3) — the difference is the 13 stale sources catching up
+with the current parsers, not this decision. Variant counts are untouched: `Esrrb` was a
+singleton.
 
 **The rebuild also exposed a stale table, which is worth recording.** `MAR17A` on disk
 predated a parser change: re-running it dropped `Esrrb` *and added* `MAR17A:Mlx` (HLH, 78 aa),

@@ -18,7 +18,7 @@ from collections import namedtuple
 
 import pandas as pd
 
-from snp2prot import proteins, thresholds
+from snp2prot import canonical, proteins, thresholds
 from snp2prot.config import EXTERNAL_DIR, INTERIM_DIR, interim_table, raw_dir
 from snp2prot.parsers import REGISTRY, _uniprobe, weirauch2014
 
@@ -28,6 +28,15 @@ from snp2prot.parsers import REGISTRY, _uniprobe, weirauch2014
 SOURCES = sorted(REGISTRY)
 CACHE = EXTERNAL_DIR / "uniprot"
 UNIPROT = "https://rest.uniprot.org/uniprotkb/{}.fasta"
+
+#: Accessions a deposit publishes that do not name the protein it assayed. Corrections only,
+#: each with the evidence that settles it, never a guess (rule 1).
+#:
+#: `Q6P051` is a 305 aa TrEMBL entry, "SIX6 protein (Fragment)", from a cDNA clone; reviewed
+#: `SIX6_HUMAN` is `O95475` at 246 aa. The stored `SIX6_REF` domain is a substring of **both**,
+#: at offset 182 in the TrEMBL entry and 123 in the reviewed one — a 59-residue shift, which is
+#: exactly the offset by which our `mut_positions` disagreed with the literature (`T22`).
+ACCESSION_OVERRIDES = {"Q6P051": "O95475"}
 
 
 #: One assayed construct, however its source happens to publish it.
@@ -58,8 +67,13 @@ def constructs_for(source: str) -> list[Construct]:
     ]
 
 
-def fetch_uniprot(accession: str) -> str | None:
-    """Canonical sequence for one accession, cached on disk. None if it does not resolve."""
+def fetch_uniprot(accession: str) -> tuple[str, bool, bool] | None:
+    """`(sequence, reviewed, fragment)` for one accession, cached on disk.
+
+    `reviewed` distinguishes Swiss-Prot from TrEMBL and `fragment` reads the header's own
+    flag, because neither is a property a full-length sequence can be trusted without: 39 of
+    the accessions the deposits publish are unreviewed and 10 say "(Fragment)".
+    """
     if not accession or " " in accession:
         return None
     CACHE.mkdir(parents=True, exist_ok=True)
@@ -72,8 +86,42 @@ def fetch_uniprot(accession: str) -> str | None:
             return None
         time.sleep(0.2)
     text = path.read_text()
-    seq = "".join(line.strip() for line in text.splitlines() if not line.startswith(">"))
-    return seq or None
+    lines = text.splitlines()
+    if not lines:
+        return None
+    header = lines[0]
+    seq = "".join(line.strip() for line in lines if not line.startswith(">"))
+    return (seq, header.startswith(">sp|"), "(Fragment)" in header) if seq else None
+
+
+def locate(dbd: str, constructs: list[Construct]) -> tuple[Construct, int, int, str] | None:
+    """Find the construct a stored domain came from, and where it sits inside it.
+
+    A stored `dbd_seq` is usually a literal slice of its construct, and a substring search
+    answers in microseconds. It is **not** a slice when the canonical sequence borrowed flank
+    from a reference protein because the construct stopped short of the padding
+    (`snp2prot.canonical`) — 111 domains of 1,334, which the substring test simply lost. Those
+    are placed by alignment instead, and the domain's span is read off the alignment rather
+    than assumed, so an indel between construct and canonical form cannot shift the window.
+    """
+    for c in constructs:
+        if dbd in c.sequence:
+            start = c.sequence.index(dbd) + 1
+            return c, start, start + len(dbd) - 1, "substring"
+
+    best: tuple[float, Construct, int, int] | None = None
+    for c in constructs:
+        # The stored domain plays the "construct" and the assayed construct the "reference":
+        # `place` returns where the first argument sits inside the second. The envelope is the
+        # whole domain, so every residue counts toward coverage.
+        p = canonical.place(dbd, c.sequence, 1, len(dbd))
+        if p is None or p.coverage < canonical.MIN_COVERAGE:
+            continue
+        if best is None or p.coverage > best[0]:
+            best = (p.coverage, c, p.ref_start + 1, p.ref_end + 1)
+    if best is None:
+        return None
+    return best[1], best[2], best[3], "aligned"
 
 
 def main() -> None:
@@ -92,7 +140,8 @@ def main() -> None:
     cfg = thresholds.load()["domain"]
     pad = int(cfg["padding_aa"])
     records: list[proteins.ProteinRecord] = []
-    stats = {"rows": 0, "no_construct": 0, "uniprot_ok": 0, "mapped": 0}
+    stats = {"rows": 0, "no_construct": 0, "uniprot_ok": 0, "mapped": 0,
+             "substring": 0, "aligned": 0}  # fmt: skip
 
     for source in SOURCES:
         table = interim_table(source)
@@ -106,14 +155,16 @@ def main() -> None:
         for _, row in corpus.iterrows():
             dbd = row["dbd_seq"]
             stats["rows"] += 1
-            hit = next((c for c in constructs if dbd in c.sequence), None)
-            if hit is None:
+            located = locate(dbd, constructs)
+            if located is None:
                 stats["no_construct"] += 1
                 continue
+            hit, start, end, how = located
+            stats[how] += 1
             name, construct = hit.name, hit.sequence
-            start = construct.index(dbd) + 1
-            end = start + len(dbd) - 1
-            full = fetch_uniprot(hit.protein_id) if hit.protein_id else None
+            accession = ACCESSION_OVERRIDES.get(hit.protein_id, hit.protein_id)
+            resolved = fetch_uniprot(accession) if accession else None
+            full, reviewed, fragment = resolved if resolved else (None, None, None)
             if full:
                 stats["uniprot_ok"] += 1
             span = proteins.locate_in_protein(construct, full or "", start, end)
@@ -135,10 +186,13 @@ def main() -> None:
                     full_seq=full,
                     dbd_start_protein=span[0] if span else None,
                     dbd_end_protein=span[1] if span else None,
-                    protein_id=hit.protein_id,
+                    protein_id=accession,
                     gene=name,
                     species=row["species"],
                     source_dataset=source,
+                    placement=how,
+                    uniprot_reviewed=reviewed,
+                    uniprot_fragment=fragment,
                 )
             )
         print(f"  {source}: {len(records)} records so far", flush=True)

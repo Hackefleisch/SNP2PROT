@@ -12,7 +12,7 @@ filter a frame with `label_health.usable(df)`.
 
 | verdict | meaning | records |
 |---|---|---:|
-| `ok` | at least one 8-mer at or above the cutoff | 1,328 |
+| `ok` | at least one 8-mer at or above the cutoff | 1,332 |
 | `dead_variant` | no positives, but another record of the same cluster **and source** has them — its own series is the control | 20 |
 | `no_evidence` | no positives and no such control: indistinguishable from an experiment too weak to see anything | 34 |
 
@@ -31,7 +31,7 @@ supporting figure because a source full of dead variants drags its own median do
 | `LIU18B` | 2 | 50% | 0.468 | 0.0015% | 0 | 1 |
 | `BAR15A` | 90 | 20% | 0.495 | 0.2742% | 18 | 0 |
 | `LIN14B` | 12 | 8% | 0.484 | 0.0859% | 0 | 1 |
-| `weirauch2014` | 868 | 3% | 0.495 | 0.1559% | 2 | 20 |
+| `weirauch2014` | 872 | 3% | 0.495 | 0.1561% | 2 | 20 |
 | `Cell08` | 147 | 0% | 0.498 | 0.4439% | 0 | 0 |
 | `CB11` | 1 | 0% | 0.487 | 0.0365% | 0 | 0 |
 | `GR09` | 37 | 0% | 0.493 | 0.3000% | 0 | 0 |
@@ -66,8 +66,8 @@ answers, not blind experiments, and they are why `n_at_cutoff` sits beside `n_po
 | `FOXC1_P79L` | `BAR15A` | `C:BAR15A:FOXC1` | Forkhead | 0.342 | 0 | 0 | `dead_variant` |
 | `FOXC1_S131L` | `BAR15A` | `C:BAR15A:FOXC1` | Forkhead | 0.350 | 0 | 1 | `dead_variant` |
 | `HESX1_R160C` | `BAR15A` | `C:BAR15A:HESX1` | Homeodomain | 0.391 | 0 | 13 | `dead_variant` |
-| `HOXB7_M190L` | `BAR15A` | `C:Cell08:Hoxb7` | Homeodomain | 0.436 | 0 | 228 | `dead_variant` |
-| `HOXB7_R189C` | `BAR15A` | `C:Cell08:Hoxb7` | Homeodomain | 0.431 | 0 | 72 | `dead_variant` |
+| `HOXB7_M190L` | `BAR15A` | `C:BAR15A:HOXB7` | Homeodomain | 0.436 | 0 | 228 | `dead_variant` |
+| `HOXB7_R189C` | `BAR15A` | `C:BAR15A:HOXB7` | Homeodomain | 0.431 | 0 | 72 | `dead_variant` |
 | `NR1H4_C144R` | `BAR15A` | `C:BAR15A:NR1H4` | zf-C4 | 0.408 | 0 | 72 | `dead_variant` |
 | `NR2E3_R76Q` | `BAR15A` | `C:BAR15A:NR2E3` | zf-C4 | 0.370 | 0 | 5 | `dead_variant` |
 | `NR2E3_R76W` | `BAR15A` | `C:BAR15A:NR2E3` | zf-C4 | 0.381 | 0 | 2 | `dead_variant` |
@@ -81,27 +81,27 @@ answers, not blind experiments, and they are why `n_at_cutoff` sits beside `n_po
 | `CND-1` | `Cell09` | `C:Cell09:CND-1` | HLH | 0.428 | 0 | 5 | `no_evidence` |
 | `HLH-1` | `Cell09` | `C:NAR11:HLH-1` | HLH | 0.438 | 0 | 20 | `no_evidence` |
 | `HLH-10` | `Cell09` | `C:Cell09:HLH-10` | HLH | 0.353 | 0 | 1 | `no_evidence` |
+| `HLH-14` | `Cell09` | `C:Cell09:HLH-14` | HLH | 0.402 | 0 | 18 | `no_evidence` |
 | `HLH-15` | `Cell09` | `C:Cell09:HLH-15` | HLH | 0.428 | 0 | 80 | `no_evidence` |
+| `HLH-19` | `Cell09` | `C:Cell09:HLH-19` | HLH | 0.408 | 0 | 94 | `no_evidence` |
 | `HLH-2` | `Cell09` | `C:Cell09:HLH-2` | HLH | 0.415 | 0 | 103 | `no_evidence` |
 | `HLH-3` | `Cell09` | `C:Cell09:HLH-3` | HLH | 0.393 | 0 | 5 | `no_evidence` |
+| `HLH-4` | `Cell09` | `C:Cell09:HLH-4` | HLH | 0.433 | 0 | 6 | `no_evidence` |
 | `HLH-8` | `Cell09` | `C:Cell09:HLH-8` | HLH | 0.437 | 0 | 49 | `no_evidence` |
 | `MDL-1` | `Cell09` | `C:Cell09:MDL-1` | HLH | 0.405 | 0 | 51 | `no_evidence` |
 | `MXL-1` | `Cell09` | `C:Cell09:MXL-1` | HLH | 0.420 | 0 | 22 | `no_evidence` |
-| `P34555` | `Cell09` | `C:Cell09:HLH-4` | HLH | 0.433 | 0 | 6 | `no_evidence` |
-| `Q09961` | `Cell09` | `C:Cell09:HLH-14` | HLH | 0.402 | 0 | 18 | `no_evidence` |
-| `Q20941` | `Cell09` | `C:Cell09:HLH-19` | HLH | 0.408 | 0 | 94 | `no_evidence` |
 | `NTL6` | `LIN14B` | `C:LIN14B:NTL6` | NAM | 0.457 | 2 | 427 | `no_evidence` |
 | `AncBcd` | `LIU18B` | `C:LIU18B:AncBcd` | Homeodomain | 0.468 | 7 | 1,766 | `no_evidence` |
-| `(unnamed)` | `weirauch2014` | `C:weirauch2014:Npas2` | HLH | 0.469 | 3 | 112 | `no_evidence` |
-| `(unnamed)` | `weirauch2014` | `C:weirauch2014:ATHB22` | Homeodomain | 0.444 | 0 | 624 | `no_evidence` |
-| `(unnamed)` | `weirauch2014` | `C:weirauch2014:Rhox8` | Homeodomain | 0.456 | 3 | 288 | `no_evidence` |
-| `(unnamed)` | `weirauch2014` | `C:weirauch2014:antpC` | Homeodomain | 0.444 | 0 | 269 | `no_evidence` |
 | `600010132` | `weirauch2014` | `C:weirauch2014:600010132` | Myb_DNA-binding | 0.441 | 0 | 291 | `no_evidence` |
+| `ANIA_07513` | `weirauch2014` | `C:weirauch2014:ATHB22` | Homeodomain | 0.444 | 0 | 624 | `no_evidence` |
 | `ATGRP2B` | `weirauch2014` | `C:weirauch2014:ATGRP2B` | CSD | 0.447 | 0 | 494 | `no_evidence` |
+| `BEE2` | `weirauch2014` | `C:weirauch2014:Rhox8` | Homeodomain | 0.456 | 3 | 288 | `no_evidence` |
+| `Clock` | `weirauch2014` | `C:weirauch2014:Npas2` | HLH | 0.469 | 3 | 112 | `no_evidence` |
 | `DMRT2` | `weirauch2014` | `C:weirauch2014:DMRT2` | DM | 0.441 | 0 | 528 | `no_evidence` |
 | `ERF1` | `weirauch2014` | `C:weirauch2014:ERF1` | AP2 | 0.458 | 2 | 39 | `no_evidence` |
 | `LBD4` | `weirauch2014` | `C:weirauch2014:LBD4` | LOB | 0.441 | 0 | 407 | `no_evidence` |
 | `LOC_Os05g41760` | `weirauch2014` | `C:weirauch2014:LOC_Os05g41760` | AP2 | 0.448 | 0 | 57 | `no_evidence` |
+| `Mlxip` | `weirauch2014` | `C:weirauch2014:antpC` | Homeodomain | 0.444 | 0 | 269 | `no_evidence` |
 | `NAC2` | `weirauch2014` | `C:weirauch2014:NAC2` | NAM | 0.441 | 0 | 202 | `no_evidence` |
 | `NCU02307` | `weirauch2014` | `C:weirauch2014:NCU02307` | Zn_clus | 0.464 | 4 | 1,264 | `no_evidence` |
 | `NCU02752` | `weirauch2014` | `C:weirauch2014:NCU02752` | Zn_clus | 0.460 | 8 | 328 | `no_evidence` |

@@ -50,7 +50,7 @@ A family above 40% of rows is flagged: it can be memorized instead of learned.
 | wt_id | family | distinct DBDs | rows | reference present |
 |---|---|---:|---:|:-:|
 | `C:BAR15A:FOXC1` | `Forkhead` | 1 | 32,896 | yes |
-| `C:Cell08:Msx1` | `Homeodomain` | 1 | 32,896 | NO |
+| `C:BAR15A:MSX2` | `Homeodomain` | 1 | 32,896 | NO |
 | `C:MAR17A:Ar` | `zf-C4` | 1 | 32,896 | yes |
 | `C:MAR17A:Atf3` | `bZIP` | 1 | 32,896 | yes |
 | `C:MAR17A:Cebpb` | `bZIP` | 1 | 32,896 | yes |
@@ -59,7 +59,6 @@ A family above 40% of rows is flagged: it can be memorized instead of learned.
 | `C:MAR17A:Foxa3` | `Forkhead` | 1 | 32,896 | yes |
 | `C:MAR17A:Foxb1` | `Forkhead` | 1 | 32,896 | yes |
 | `C:MAR17A:Foxc2` | `Forkhead` | 1 | 32,896 | yes |
-| `C:MAR17A:Foxg1` | `Forkhead` | 1 | 32,896 | NO |
 | `C:MAR17A:Foxj2` | `Forkhead` | 1 | 32,896 | yes |
 | `C:MAR17A:Foxm1` | `Forkhead` | 1 | 32,896 | yes |
 | `C:MAR17A:Foxo3` | `Forkhead` | 1 | 32,896 | yes |
@@ -85,5 +84,6 @@ A family above 40% of rows is flagged: it can be memorized instead of learned.
 | `C:MAR17A:Tef` | `bZIP` | 1 | 32,896 | yes |
 | `C:MAR17A:Tfap2a` | `TF_AP-2` | 1 | 32,896 | yes |
 | `C:MAR17A:Xbp1` | `bZIP` | 1 | 32,896 | yes |
+| `C:weirauch2014:FOXG1_pTH5501` | `Forkhead` | 1 | 32,896 | NO |
 | `C:weirauch2014:NR2F6` | `zf-C4` | 1 | 32,896 | NO |
-| `C:weirauch2014:RFX1_pTH9385` | `RFX_DNA_binding` | 1 | 32,896 | NO |
+| `C:weirauch2014:RFX1_pTH9223` | `RFX_DNA_binding` | 1 | 32,896 | NO |

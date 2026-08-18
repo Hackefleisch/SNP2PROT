@@ -27,6 +27,8 @@ from dataclasses import asdict, dataclass
 
 import pandas as pd
 
+from snp2prot import canonical
+
 COLUMNS = (
     "dbd_seq",
     "dbd_bare",
@@ -43,6 +45,9 @@ COLUMNS = (
     "gene",
     "species",
     "source_dataset",
+    "placement",
+    "uniprot_reviewed",
+    "uniprot_fragment",
 )
 
 
@@ -63,15 +68,26 @@ class ProteinRecord:
     gene: str
     species: str
     source_dataset: str
+    #: How the stored domain was located inside its construct: "substring" when it is a
+    #: literal slice, "aligned" when it had to be placed by alignment because the canonical
+    #: sequence borrowed flank from a reference and is no longer a substring (`TODO.md` T18).
+    placement: str = "substring"
+    #: Whether the UniProt entry behind `full_seq` is reviewed (Swiss-Prot) and whether it is
+    #: flagged a fragment. 39 accessions the deposits point at are unreviewed and 10 are
+    #: fragments, so `full_seq` is not always the canonical protein — `T22`.
+    uniprot_reviewed: bool | None = None
+    uniprot_fragment: bool | None = None
 
 
 def locate_in_protein(construct: str, full: str, start: int, end: int) -> tuple[int, int] | None:
     """Map a construct-relative span onto the full-length protein.
 
-    Exact substring match only. Clone constructs routinely carry vector-derived residues at
-    their termini that are absent from the canonical sequence, so a partial match is
-    attempted from the domain outwards; if even that fails the mapping is left null rather
-    than guessed at.
+    Three routes, tried in order. The construct as a literal substring; the stored domain as
+    a literal substring, since clone constructs routinely carry vector-derived residues at
+    their termini that are absent from the canonical sequence; and finally an alignment,
+    which is what a *variant* needs — an engineered substitution means the domain appears in
+    no wild-type protein verbatim, and substring matching lost every one of them. Positions
+    are read off the alignment, so an isoform indel cannot shift the window.
     """
     if not full:
         return None
@@ -83,6 +99,10 @@ def locate_in_protein(construct: str, full: str, start: int, end: int) -> tuple[
     offset = full.find(domain)
     if offset >= 0:
         return offset + 1, offset + len(domain)
+
+    placement = canonical.place(domain, full, 1, len(domain))
+    if placement is not None and placement.coverage >= canonical.MIN_COVERAGE:
+        return placement.ref_start + 1, placement.ref_end + 1
     return None
 
 

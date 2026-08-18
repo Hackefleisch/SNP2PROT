@@ -18,8 +18,8 @@ scheme; it is frozen at [`reports/archive/OPEN_ITEMS_2026-08-14.md`](reports/arc
 have mixed assay types are out — which removes the `dna_len` leakage problem entirely, since
 every row is an 8-mer and always will be.
 
-19 PBM sources parsed and validator-clean: **45,462,272 rows, 1,334 domains in 1,161
-clusters, 56 Pfam families, 137 organisms**, every protein scored against the same 32,896
+19 PBM sources parsed and validator-clean: **45,593,856 rows, 1,338 domains in 1,165
+clusters, 56 Pfam families, 131 organisms**, every protein scored against the same 32,896
 8-mers.
 
 `dbd_seq` is the **canonical domain** — envelope ± 10, construct-independent
@@ -54,15 +54,19 @@ rejected: it would turn negatives into a ranking artifact and invent ~100 positi
 differing 1.6x in positive count on one protein — is now recorded in `docs/METHODS.md` §5.1
 instead.
 
+**The merged table exists** (`reports/merge.md`, `reports/RESULTS.md`): 44,014,848 rows, one
+record per domain, 48 duplicate records dropped. `RESULTS.md` is generated from the tables and
+is the thing to read first.
+
 **Records with no positive evidence are flagged, not re-binarized** (`reports/label_health.md`,
-`T21` closed 2026-08-18). 54 of 1,382 records have no positive 8-mer: 20 are variants that
+`T21` closed 2026-08-18). 54 of 1,386 records have no positive 8-mer: 20 are variants that
 measurably lost binding, with a control in their own series, and 34 have nothing to compare
 against — 2.5% of the corpus, dropped at training time with `label_health.usable(df)`, not at
 parse time.
 
-**Timings are measured, from the full rebuild of 2026-08-17.** `build_dataset.py --all` is
-**7 min 28 s** — the "4-5 min" figure carried here since 2026-08-14 was optimistic — and the
-whole pipeline (build, cluster, protein table, reports, overlap, audit) is **13 minutes**.
+**Timings are measured, from the full rebuild of 2026-08-18.** `build_dataset.py --all` is
+about **7.5 minutes** and the whole pipeline — parse, cluster, protein table, label health,
+reports, overlap, merge, results, audit — is **~15 minutes**.
 Per-step timings and the order to run them in are `docs/METHODS.md` §10.2. **The library must
 be pressed once per machine — `python scripts/press_pfam.py`** — or every source pays 19.5 s to
 re-read 2.2 GB of text.
@@ -73,7 +77,7 @@ re-read 2.2 GB of text.
 |---|---|---|
 | 1 | **Extend PBM coverage** beyond UniPROBE | **closed 2026-08-18** — Kock 2024 screened and excluded ([`reports/kock2024_excluded.md`](reports/kock2024_excluded.md)); `T2`/`T2b` dropped 2026-08-17. `T14` is the one small lead left open |
 | 2 | **Deepen the protein axis in what we already hold** | **done 2026-08-17** — clustering by sequence distance, and the cluster inventory (`T3`) with it |
-| 3 | **Merge**: single table, splits, NN baseline | **next** — step 1 is closed; the overlap report is already done (`T4`) |
+| 3 | **Merge**: single table, splits, NN baseline | **merge done 2026-08-18** — `data/processed/training.parquet`, 44,014,848 rows = 1,338 x 32,896. Splits and the NN baseline are still docstring stubs |
 | 4 | **Modelling** | after step 3 |
 
 A research sweep on 2026-08-14 surveyed the literature for PBM sources with designed protein
@@ -86,23 +90,6 @@ were already parsed and one fails condition 2 outright. See
 ---
 
 ## Open tasks
-
-### T18 — Reconnect the protein-side table to canonical sequences
-It covers **1,223 of 1,334 domains**. `build_protein_table.py` locates a domain by substring
-within its construct, and a canonical sequence extended from a reference is no longer a
-substring of the construct it came from. Use `canonical.place` instead of `dbd in construct`.
-Note the construct-architecture covariate (`T13`, closed 2026-08-17) rides on the same
-columns: flank length is `dbd_start` and `len(construct_seq) - dbd_end`, so whatever fixes the
-placement fixes that too.
-
-### T22 — `BAR15A:SIX6` carries the wrong full-length protein
-`protein_id` is `Q6P051`, a 305 aa TrEMBL *"SIX6 protein (Fragment)"* from a cDNA clone, not
-reviewed `SIX6_HUMAN` `O95475` (246 aa). Consequence: our `full_seq` frame runs **59 residues**
-off the literature's numbering, which is how it was caught — Kock's `SIX6-H141N` lands at 200
-in our frame. Every other gene checked exactly (17 variants across CRX, HESX1, MSX2, NKX2-5,
-PITX2, PROP1, VENTX, all delta 0). Affects the protein table only; `dbd_seq` is unchanged.
-Fix the accession, rebuild the protein table, and check whether `references.py` resolved it
-from a stale mapping — if so, other TrEMBL fragment entries may be doing the same thing.
 
 ### T23 — Do stored domains match the reference proteome inside the padding?
 Kock's `HOXD13` clone carries `T` where `P35453` carries `D`, at protein position 261 — six
@@ -199,17 +186,7 @@ are derived and need no row of their own, but the row should say the library get
 
 ## Open decisions
 
-### D1 — Is 70% full-length coverage enough?
-**Before embedding work, and CIS-BP made it sharper.** The protein table maps **349 of 1,334
-domains (25%)** onto a canonical UniProt sequence; **439 (33%)** have a full sequence at all.
-It was 71% before CIS-BP: Table S6 publishes no UniProt accession, so none of its 884 domains
-resolve to one today. Resolving them from gene plus species is possible but is a lookup this
-project has not yet had to do, and for 124 organisms it will not be clean. The remainder are clone constructs
-differing from the canonical isoform, or non-model species with no clean mapping.
-
-Domain-level and construct-level embeddings work for all 1,334. Full-protein works for about
-a quarter, and the missing three quarters are almost entirely one source.
-The decision is whether that asymmetry is acceptable or whether full-length becomes a filter.
+_None open._
 
 ---
 
@@ -241,7 +218,7 @@ Two of its columns name domains and they are not the same one: `seed` is what me
 decided against, `reference` is the medoid and the frame `mut_positions` uses (`D3`).
 
 ### N1 — The row count is an exact invariant
-`45,462,272 = 1,382 x 32,896`, where 1,382 is 1,334 distinct domains plus 48 measured by more
+`45,593,856 = 1,386 x 32,896`, where 1,386 is 1,338 distinct domains plus 48 measured by more
 than one source. Canonicalisation raised that overlap: domains that used to differ only by how
 much flank a lab cloned are now one string, so they are recognised as the same measurement
 made twice — which is what `T4`'s agreement check needs. Every construct contributes exactly one full 8-mer table. If a rebuild's row count is
@@ -256,7 +233,7 @@ table validates, the row count is right, and the domain simply leaves its cluste
 
 **Always run `scripts/build_clusters.py` after any single-source rebuild.** It is corpus-wide
 and idempotent (it strips the `C:` prefix to recover the lineage name underneath), takes
-**79-84 s**, and reports the domain and cluster counts so a mismatch is visible: 1,334 / 1,161
+**79-84 s**, and reports the domain and cluster counts so a mismatch is visible: 1,338 / 1,165
 / 122 multi-member / largest 8 as of 2026-08-17.
 
 **That is necessary but it is not sufficient, and the ROG18A rebuild of 2026-08-17 showed

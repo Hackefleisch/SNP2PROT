@@ -44,14 +44,15 @@ One record per domain reaches `data/processed/`: **the one with more positives**
 | `C:BAR15A:ARX` | `Homeodomain` | BAR15A | 188 | Cell08 | 206 | series |
 | `C:BAR15A:FOXC1` | `Forkhead` | BAR15A | 68 | MAR17A, weirauch2014 | 72, 11 | series |
 | `C:BAR15A:HOXD13` | `Homeodomain` | BAR15A | 117 | Cell08 | 89 | positives |
+| `C:BAR15A:MSX2` | `Homeodomain` | BAR15A | 175 | Cell08 | 169 | positives |
+| `C:BAR15A:MSX2` | `Homeodomain` | Cell08 | 185 | MAR17A | 187 | series |
 | `C:BAR15A:PHOX2B` | `Homeodomain` | BAR15A | 37 | Cell08 | 179 | series |
 | `C:BAR15A:PITX2` | `Homeodomain` | BAR15A | 96 | Cell08 | 163 | series |
+| `C:BAR15A:SIX6` | `Homeodomain` | BAR15A | 95 | SCI09 | 60 | positives |
 | `C:BAR15A:VENTX` | `Homeodomain` | BAR15A | 48 | weirauch2014 | 54 | series |
 | `C:Cell08:Hoxa2` | `Homeodomain` | Cell08 | 165 | weirauch2014 | 17 | positives |
 | `C:Cell08:Lhx2` | `Homeodomain` | Cell08 | 205 | weirauch2014 | 74 | positives |
 | `C:Cell08:Lhx6` | `Homeodomain` | Cell08 | 202 | weirauch2014 | 156 | positives |
-| `C:Cell08:Msx1` | `Homeodomain` | BAR15A | 175 | Cell08 | 169 | positives |
-| `C:Cell08:Msx1` | `Homeodomain` | Cell08 | 185 | MAR17A | 187 | series |
 | `C:Cell08:Rhox11` | `Homeodomain` | Cell08 | 95 | weirauch2014 | 31 | positives |
 | `C:Cell08:Tlx2` | `Homeodomain` | Cell08 | 20 | weirauch2014 | 14 | positives |
 | `C:Cell08:Vax1` | `Homeodomain` | Cell08 | 173 | BAR15A | 139 | positives |
@@ -80,14 +81,13 @@ One record per domain reaches `data/processed/`: **the one with more positives**
 | `C:MAR17A:Tfap2a` | `TF_AP-2` | SCI09 | 58 | MAR17A | 16 | positives |
 | `C:MAR17A:Xbp1` | `bZIP` | MAR17A | 84 | weirauch2014 | 22 | positives |
 | `C:PNAS13:FOXN2` | `Forkhead` | PNAS13 | 171 | ROG18A | 167 | positives |
-| `C:SCI09:Arid3a` | `ARID` | weirauch2014 | 156 | SCI09 | 38 | positives |
 | `C:SCI09:Atf1` | `bZIP` | weirauch2014 | 96 | SCI09 | 13 | positives |
 | `C:SCI09:Bhlhb2` | `HLH` | SCI09 | 115 | weirauch2014 | 87 | positives |
 | `C:SCI09:Jundm2` | `bZIP` | SCI09 | 54 | weirauch2014 | 17 | positives |
 | `C:SCI09:Max` | `HLH` | weirauch2014 | 122 | SCI09 | 56 | positives |
 | `C:SCI09:Myf6` | `HLH` | SCI09 | 23 | weirauch2014 | 7 | positives |
 | `C:SHO18A:Retn` | `ARID` | weirauch2014 | 58 | SHO18A | 18 | positives |
-| `C:weirauch2014:six3` | `Homeodomain` | BAR15A | 95 | SCI09 | 60 | positives |
+| `C:weirauch2014:ARID3A_pTH9214` | `ARID` | weirauch2014 | 156 | SCI09 | 38 | positives |
 
 6 of them are decided by the series rule against the positive count: the kept record has fewer positives but sits beside the variants of its own cluster, measured by the same lab on the same array design.
 
@@ -107,7 +107,7 @@ Sorted by positive-call agreement, worst first.
 | `C:SCI09:Myf6` | `HLH` | SCI09 | weirauch2014 | 32,896 | 32,345 | 99.994% | 23 | 7 | 5 | 0.200 | 0.200 |
 | `C:BAR15A:PHOX2B` | `Homeodomain` | BAR15A | Cell08 | 32,896 | 32,050 | 99.944% | 37 | 179 | 37 | 0.207 | 0.588 |
 | `C:MAR17A:Atf3` | `bZIP` | MAR17A | weirauch2014 | 32,896 | 32,384 | 99.988% | 72 | 27 | 17 | 0.207 | 0.554 |
-| `C:SCI09:Arid3a` | `ARID` | SCI09 | weirauch2014 | 32,896 | 31,426 | 100.000% | 38 | 156 | 38 | 0.244 | 0.755 |
+| `C:weirauch2014:ARID3A_pTH9214` | `ARID` | SCI09 | weirauch2014 | 32,896 | 31,426 | 100.000% | 38 | 156 | 38 | 0.244 | 0.755 |
 | `C:SHO18A:Retn` | `ARID` | SHO18A | weirauch2014 | 32,896 | 31,676 | 99.975% | 18 | 58 | 15 | 0.246 | 0.592 |
 | `C:MAR17A:Xbp1` | `bZIP` | MAR17A | weirauch2014 | 32,896 | 32,354 | 99.988% | 84 | 22 | 21 | 0.247 | 0.523 |
 | `C:Cell08:Rhox11` | `Homeodomain` | Cell08 | weirauch2014 | 32,896 | 31,641 | 99.997% | 95 | 31 | 27 | 0.273 | 0.708 |
@@ -123,7 +123,7 @@ Sorted by positive-call agreement, worst first.
 | `C:BAR15A:VENTX` | `Homeodomain` | BAR15A | weirauch2014 | 32,896 | 31,873 | 100.000% | 48 | 54 | 30 | 0.417 | 0.596 |
 | `C:BAR15A:FOXC1` | `Forkhead` | BAR15A | MAR17A | 32,896 | 32,350 | 99.994% | 68 | 72 | 44 | 0.458 | 0.558 |
 | `C:SCI09:Max` | `HLH` | SCI09 | weirauch2014 | 32,896 | 31,760 | 100.000% | 56 | 122 | 56 | 0.459 | 0.511 |
-| `C:weirauch2014:six3` | `Homeodomain` | BAR15A | SCI09 | 32,896 | 31,741 | 100.000% | 95 | 60 | 49 | 0.462 | 0.818 |
+| `C:BAR15A:SIX6` | `Homeodomain` | BAR15A | SCI09 | 32,896 | 31,741 | 100.000% | 95 | 60 | 49 | 0.462 | 0.818 |
 | `C:DEV12:Ptx1` | `Homeodomain` | DEV12 | weirauch2014 | 32,896 | 32,342 | 99.994% | 136 | 75 | 73 | 0.529 | 0.745 |
 | `C:MAR17A:Foxb1` | `Forkhead` | MAR17A | weirauch2014 | 32,896 | 32,494 | 100.000% | 17 | 9 | 9 | 0.529 | 0.590 |
 | `C:MAR17A:Rarg` | `zf-C4` | MAR17A | weirauch2014 | 32,896 | 32,445 | 100.000% | 129 | 73 | 70 | 0.530 | 0.367 |
@@ -141,8 +141,8 @@ Sorted by positive-call agreement, worst first.
 | `C:EMBO10:Ehf` | `Ets` | EMBO10 | SCI09 | 32,896 | 32,182 | 100.000% | 199 | 135 | 135 | 0.678 | 0.790 |
 | `C:Cell08:Vax1` | `Homeodomain` | BAR15A | Cell08 | 32,896 | 31,830 | 100.000% | 139 | 173 | 127 | 0.686 | 0.858 |
 | `C:EMBO10:Spdef` | `Ets` | EMBO10 | SCI09 | 32,896 | 32,091 | 100.000% | 145 | 109 | 109 | 0.752 | 0.874 |
-| `C:Cell08:Msx1` | `Homeodomain` | BAR15A | Cell08 | 32,896 | 31,857 | 100.000% | 175 | 169 | 152 | 0.792 | 0.834 |
+| `C:BAR15A:MSX2` | `Homeodomain` | BAR15A | Cell08 | 32,896 | 31,857 | 100.000% | 175 | 169 | 152 | 0.792 | 0.834 |
 | `C:PNAS13:FOXN2` | `Forkhead` | PNAS13 | ROG18A | 32,896 | 32,376 | 100.000% | 171 | 167 | 150 | 0.798 | 0.894 |
 | `C:BAR15A:ARX` | `Homeodomain` | BAR15A | Cell08 | 32,896 | 31,935 | 100.000% | 188 | 206 | 175 | 0.799 | 0.810 |
-| `C:Cell08:Msx1` | `Homeodomain` | Cell08 | MAR17A | 32,896 | 32,022 | 100.000% | 185 | 187 | 177 | 0.908 | 0.928 |
+| `C:BAR15A:MSX2` | `Homeodomain` | Cell08 | MAR17A | 32,896 | 32,022 | 100.000% | 185 | 187 | 177 | 0.908 | 0.928 |
 | `C:EMBO10:Gabpa` | `Ets` | EMBO10 | SCI09 | 32,896 | 32,385 | 100.000% | 83 | 81 | 81 | 0.976 | 0.799 |

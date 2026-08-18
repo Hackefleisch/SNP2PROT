@@ -390,7 +390,7 @@ turn a negative into "outside this experiment's top N" rather than measured non-
 fixed cutoff was kept for that reason (`docs/DECISIONS.md`, 2026-08-18); the asymmetry is
 recorded here as a property of the data rather than removed by definition.
 
-**At the extreme, an experiment sees nothing at all.** 54 of 1,382 domain records have no
+**At the extreme, an experiment sees nothing at all.** 54 of 1,386 domain records have no
 positive 8-mer. They are of two kinds, and the difference matters because the second kind is
 the signal this dataset exists to carry:
 
@@ -547,7 +547,7 @@ both correct and a large saving.
 
 **The threshold is 5 edits** (`cluster.max_edits`, owner's decision), **and a membership must
 also align over at least 60% of the shorter sequence** (`cluster.min_overlap`). Together they
-give 1,161 clusters with a largest of 8 domains.
+give 1,165 clusters with a largest of 8 domains.
 
 The overlap floor exists because free terminal gaps, unguarded, stop measuring distance
 between two domains at all: an arbitrarily long prefix of one and suffix of the other can be
@@ -604,7 +604,7 @@ Selecting on cluster size — "train only on DBDs with at least five variants" �
 training-time choice, not a dataset one: the dataset stores everything and the modeller
 filters. What the dataset owes the modeller is the ability to make that selection cheaply.
 Answering it from the row tables means grouping 45 million rows and counting distinct
-sequences, roughly a minute of work to learn 1,161 numbers.
+sequences, roughly a minute of work to learn 1,165 numbers.
 
 A per-cluster side table (`data/interim/clusters/clusters.parquet`, one row per cluster:
 family, seed, reference, domain count, variant count, maximum edit distance, contributing
@@ -703,20 +703,20 @@ sequence belongs to the contributing study, and much of that is UniPROBE, alread
 
 ### 9.3 The dataset as it stands
 
-Build of **2026-08-17**, from 19 contributing sources.
+Build of **2026-08-18**, from 19 contributing sources.
 
 | property | value |
 |---|---|
-| rows | 45,462,272 |
-| constructs | 1,382 |
-| distinct DNA-binding domains | 1,334 |
-| clusters | 1,161 |
+| rows | 45,593,856 |
+| constructs | 1,386 |
+| distinct DNA-binding domains | 1,338 |
+| clusters | 1,165 |
 | Pfam families | 56 |
 | distinct 8-mers | 32,896 (identical in every source) |
-| binding / non-binding / no call | 95,791 / 44,593,791 / 772,690 |
-| negative:positive ratio | 466:1 (positive rate 0.214% of calls made) |
+| binding / non-binding / no call | 96,044 / 44,722,843 / 774,969 |
+| negative:positive ratio | 465:1 (positive rate 0.214% of calls made) |
 | `dbd_seq` length | 30–378 aa (median 77) |
-| source organisms | 132, plus 21 constructs with none recorded |
+| source organisms | 131, plus 21 constructs with none recorded |
 
 The high negative:positive ratio is a property of the assay and is retained deliberately.
 Universal PBM scores every protein against every 8-mer, and a transcription factor binds a
@@ -729,7 +729,7 @@ A 30-residue AT-hook is a motif rather than a fold, which is worth knowing befor
 structure predictor. The 21 constructs without an organism are reconstructed ancestors,
 engineered chimeras, and accessions UniProt no longer serves — none of which has one.
 
-**The row count is an exact invariant.** 45,462,272 = 1,382 × 32,896: every construct
+**The row count is an exact invariant.** 45,593,856 = 1,386 × 32,896: every construct
 contributes exactly one full 8-mer table. If a rebuild's row count is not a clean multiple of
 32,896, rows were dropped or duplicated. It is the fastest single sanity check available.
 
@@ -752,7 +752,7 @@ domains, and how those domains divide into references and variants.
 
 | domains per cluster | clusters | domains in them | references | variants |
 |---:|---:|---:|---:|---:|
-| 1 | 1,053 | 1,053 | 1,053 | 0 |
+| 1 | 1,057 | 1,057 | 1,057 | 0 |
 | 2 | 80 | 160 | 80 | 80 |
 | 3 | 11 | 33 | 11 | 22 |
 | 4 | 6 | 24 | 6 | 18 |
@@ -760,7 +760,7 @@ domains, and how those domains divide into references and variants.
 | 6 | 2 | 12 | 2 | 10 |
 | 7 | 2 | 14 | 2 | 12 |
 | 8 | 1 | 8 | 1 | 7 |
-| | **1,161** | **1,334** | **1,161** | **173** |
+| | **1,165** | **1,338** | **1,165** | **173** |
 
 The columns are related exactly. Every cluster contains **exactly one reference**, so
 *references* equals the cluster count and
@@ -780,11 +780,44 @@ though only ten carry more than three. It is thin, and thinner than it looked be
 overlap floor of §7.3 removed 29 spurious variants — a correction that fell hardest on Myb
 (16 to 4) and AP2 (9 to 1), which were the two families the earlier breadth claim leant on.
 
-The companion protein table covers **1,223 of 1,334 domains**, each located inside the
-construct it was cut from. Full-length coverage is the exception rather than the rule:
-Table S6 publishes no UniProt accession, so a canonical full-length sequence resolves for 439
-domains (33%) and the domain is located within it for 333 (25%). Domain-level and
-construct-level representations are available for every domain; full-protein for about a third.
+The companion protein table covers **1,307 of 1,338 domains**, each located inside the
+construct it was cut from — 1,227 as a literal substring and 80 by alignment, which is what a
+canonical sequence needs once it has borrowed flank from a reference protein. Full-length
+coverage is the exception rather than the rule: Table S6 publishes no UniProt accession, so a
+canonical sequence resolves for **453 domains (34%)** and the domain is located within it for
+**445**. Each carries its own provenance — `uniprot_reviewed` (412 are Swiss-Prot) and
+`uniprot_fragment` (9 are flagged fragments) — because a deposit's accession is not always the
+reviewed entry for the protein it assayed. Domain-level and construct-level representations
+are available for every domain; full-protein for about a third, which the owner accepted on
+2026-08-18 as a bonus rather than a filter.
+
+---
+
+### 9.4 The merge
+
+The parsers produce one schema-conforming table per source and are forbidden to know about
+each other, so everything that needs to see two sources at once happens in one place
+(`scripts/build_merged.py`). It does exactly one thing to the data: **it keeps one record per
+domain.**
+
+47 domains are measured by more than one source, 95 records in all. Their labels do not agree
+— the median pair on 46% of the 8-mers either called positive (§6.1) — so keeping both would
+present a model with identical input under two different labels, inside a single cluster where
+no split can separate them. The record with **more positives** wins, on the grounds that a PBM
+fails by missing binding rather than inventing it (§5.1); the exception is a record belonging
+to a **variant series**, which wins regardless, because a wild type must be measured by the
+same lab and array design as the variants it is the reference for. 48 records are dropped,
+1,579,008 rows, and every resolution is listed in `reports/overlap.md`.
+
+Nothing else changes. No label, threshold or score is touched; no-call rows are kept; and
+records with no positive evidence are kept and left flagged, because excluding them is a
+training decision applied at featurization through `label_health.usable` rather than a
+property of the dataset (§5.1).
+
+The result is `data/processed/training.parquet`: **44,014,848 rows = 1,338 domains × 32,896
+8-mers**, in the same 22 columns every source table uses, one file, zstd-compressed to under a
+gigabyte. `reports/RESULTS.md` describes what is in it, generated from the tables so it cannot
+drift.
 
 ---
 
@@ -815,25 +848,33 @@ Three properties were verified rather than assumed on the 2026-08-17 rebuild:
 
 Measured on the reference machine (24 threads, 62 GB RAM) for the 2026-08-17 build.
 
+**The order is not arbitrary.** Each step reads what the one before it wrote: clustering needs
+every source parsed before it can see which domains are near-neighbours, the label-health table
+needs the clusters (its `dead_variant` verdict asks whether a *cluster sibling from the same
+source* has positives), and the merge needs the label-health table (its duplicate rule ranks
+records by positive count and by whether they belong to a variant series).
+
 | # | command | time | produces |
 |---|---|---:|---|
 | 0 | `python scripts/press_pfam.py` | once per machine | binary Pfam index; without it every source pays ~20 s re-reading 2.2 GB of text |
-| 1 | `python scripts/build_dataset.py --all` | **7 min 28 s** | `data/interim/<source>/`, 19 of 31 registered sources |
-| 2 | `python scripts/build_clusters.py` | **1 min 27 s** | `wt_id`, `n_mut_from_wt`, `mut_positions` corpus-wide; cluster inventory; `reports/clusters.md` |
-| 3 | `python scripts/build_protein_table.py` | 4 s | `data/interim/proteins/` (warm UniProt cache) |
-| 4 | `python scripts/make_reports.py --source <S>` ×19 | 1 min 33 s | per-source binarization, cluster inventory, validation |
-| 5 | `python scripts/make_overlap_report.py` | 6 s | `reports/overlap.md` |
-| 5b | `python scripts/build_label_health.py` | 12 s | `data/interim/label_health/`, `reports/label_health.md` |
-| 6 | `python scripts/audit_sources.py` | 2 min 22 s | cross-source invariant sweep |
+| 1 | `python scripts/build_dataset.py --all` | **7 min 28 s** | `data/interim/<source>/` — parse, annotate domains, apply the admission policy, binarize per experiment, reconcile replicates, validate |
+| 2 | `python scripts/build_clusters.py` | **1 min 27 s** | `wt_id`, `n_mut_from_wt`, `mut_positions` corpus-wide; the cluster inventory; `reports/clusters.md` |
+| 3 | `python scripts/build_protein_table.py` | 30 s | `data/interim/proteins/` — the domain at four levels, with UniProt provenance (warm cache) |
+| 4 | `python scripts/build_label_health.py` | 12 s | `data/interim/label_health/`, `reports/label_health.md` |
+| 5 | `python scripts/make_reports.py --source <S>` ×19 | 1 min 33 s | per-source binarization, cluster inventory, validation |
+| 6 | `python scripts/make_overlap_report.py` | 6 s | `reports/overlap.md`, including which record survives the merge |
+| 7 | `python scripts/build_merged.py` | 1 min 10 s | `data/processed/training.parquet` (0.97 GB), `reports/merge.md` |
+| 8 | `python scripts/make_results.py` | 5 s | `reports/RESULTS.md` |
+| 9 | `python scripts/audit_sources.py` | 2 min 22 s | cross-source invariant sweep |
 
-Steps 1–6 total about **13 minutes**. Step 1 is dominated by CIS-BP, which is 29 of the 45.5
+Steps 1–9 total about **15 minutes**. Step 1 is dominated by CIS-BP, which is 29 of the 45.5
 million rows; within it, one source (2.3 GB of text) is the critical path, so parallelising
 across sources alone cannot go below what that one source costs. The build is currently serial;
 processes give ~7.6× on this workload where threads give nothing, because the CSV parser holds
 the interpreter lock.
 
 Software: Python 3.11.13, pandas 3.0.5, pyarrow 25.0.1, pyhmmer 0.12.1 (HMMER3), Biopython
-1.88. Test suite: `python -m pytest -q`, 169 tests, under a second.
+1.88. Test suite: `python -m pytest -q`, 183 tests, under a second.
 
 ### 10.3 Consistency assertions after a build
 
@@ -851,29 +892,35 @@ Stated because a user of the dataset needs them, not because they are open work 
    same 8-mers agree on 45.8% of their positive calls (§6.1). This bounds what any evaluation
    on this data can mean.
 2. **One replicate pair is irreconcilable.** ANAC092 (§6.1) shares no positive call between its
-   two deposits, and both rows sit in one cluster.
+   two deposits. Only one of them reaches the merged table (§9.4) — the deeper measurement, by
+   126 positives to 12 — so the contradiction no longer reaches a model, but it is not
+   *resolved*: one of the two deposits is probably attached to the wrong construct and there is
+   no evidence in the data saying which.
 3. **Protein-axis depth is thin and homeodomain-heavy.** 173 variant domains across 108
-   clusters; 1,053 of 1,161 clusters hold a single domain, and 84 of the 173 variants are
+   clusters; 1,057 of 1,165 clusters hold a single domain, and 84 of the 173 variants are
    homeodomain.
 4. **Full-length protein sequence is available for about a third of domains** (§9.3), almost
    entirely because one source publishes no UniProt accession. Domain-level and
    construct-level work is unaffected; full-protein embeddings are not.
-5. **One domain is two different organisms depending on the source.** Organism *spelling* is
-   normalised (§4), but the domain under `C:Cell08:Tlx2` is byte-identical in two sources and
-   stored as *Mus musculus* by one and *Homo sapiens* by the other. A homeodomain identical
-   across mouse and human is entirely possible, so these may be two correct records — but their
-   labels also disagree (Jaccard 0.097), and one deposit holding the wrong protein would
-   explain both facts at once. Unresolved.
+5. **One domain is two different organisms depending on the source.** The domain under
+   `C:Cell08:Tlx2` is byte-identical in two sources and stored as *Mus musculus* by one and
+   *Homo sapiens* by the other, with labels that also disagree (Jaccard 0.097). Only the
+   `Cell08` record reaches the merged table (§9.4), so the species conflict does not reach a
+   model — but which deposit is right remains unknown.
 6. ~~One domain carries two unresolved `X` residues.~~ **Fixed 2026-08-18** — a domain whose
    padded window contains anything outside the 20 standard residues is now rejected
    (`unresolved_residue`) and the validator refuses it as well. `MAR17A:Esrrb` was the only
-   one, 1 of 1,335, and is excluded.
+   one, and is excluded.
 7. **The canonicalisation route is not recorded per row.** Whether a stored domain came from
    its construct, from a reference extension, or was left short is known at parse time but is
    not a stored column; `dbd_source` records the annotation *method*, not the route.
 8. **Cluster membership is order-dependent by construction.** Greedy clustering assigns a
-   sequence to the first seed it matches, not the best. Deterministic, but not the
-   unique optimal partition.
+   sequence to the first seed it matches, not the best. Measured consequence: **13 pairs of
+   near-identical domains sit in different clusters** across the four families swept — 1 to 5
+   edits apart at full overlap, `BAR15A:VAX2`/`Cell08:Vax1` being the closest. Leave-one-cluster-out
+   therefore leaves a close relative of a held-out domain in training. Group clusters by
+   connected component at evaluation time if that matters (`TODO.md` `T27`). The partition is
+   deterministic and reproducible, but it is not the unique optimal one.
 
 ---
 

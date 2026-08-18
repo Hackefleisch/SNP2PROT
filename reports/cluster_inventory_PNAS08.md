@@ -36,5 +36,5 @@ A family above 40% of rows is flagged: it can be memorized instead of learned.
 
 | wt_id | family | distinct DBDs | rows | reference present |
 |---|---|---:|---:|:-:|
-| `C:PNAS08:PF14_0633#3` | `AP2` | 1 | 32,896 | yes |
-| `C:weirauch2014:LOC_Os02g45450#2` | `AP2` | 1 | 32,896 | yes |
+| `C:PNAS08:Cgd2_3490` | `AP2` | 1 | 32,896 | yes |
+| `C:PNAS08:PF14_0633` | `AP2` | 1 | 32,896 | yes |

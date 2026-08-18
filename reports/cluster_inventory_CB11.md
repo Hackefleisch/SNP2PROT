@@ -36,4 +36,4 @@ A family above 40% of rows is flagged: it can be memorized instead of learned.
 
 | wt_id | family | distinct DBDs | rows | reference present |
 |---|---|---:|---:|:-:|
-| `C:weirauch2014:NCU03416#2` | `Myb_DNA-binding` | 1 | 32,896 | yes |
+| `C:CB11:LUX` | `Myb_DNA-binding` | 1 | 32,896 | yes |

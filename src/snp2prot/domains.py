@@ -49,6 +49,14 @@ class Rejection(str):
 MIXED_FAMILIES = Rejection("mixed_families")
 REPEAT_ARRAY = Rejection("repeat_array")
 NO_DOMAIN = Rejection("no_domain")
+UNRESOLVED_RESIDUE = Rejection("unresolved_residue")
+
+#: The 20 standard residues. Anything else in a stored `dbd_seq` is an unresolved position
+#: from the depositor's own record, not a property of the protein: `X`, `B`, `Z` and `U` say
+#: "not determined". One domain in the corpus carried two (`MAR17A:Esrrb`, 89 aa zf-C4) and
+#: was excluded on 2026-08-18 (`docs/DECISIONS.md`, `D2`) — a sequence model would embed the
+#: ambiguity as a token and a structure predictor cannot place the residue at all.
+STANDARD_RESIDUES = frozenset("ACDEFGHIKLMNPQRSTVWY")
 
 
 @dataclass(frozen=True)
@@ -264,7 +272,11 @@ def call_domain(
 
     lo = max(1, min(h.start for h in hits) - pad)
     hi = min(len(sequence), max(h.end for h in hits) + pad)
-    return DomainCall(sequence[lo - 1 : hi], next(iter(families)), lo, hi, tuple(hits), None, other)
+    window = sequence[lo - 1 : hi]
+    family = next(iter(families))
+    if set(window) - STANDARD_RESIDUES:
+        return DomainCall(None, family, 0, 0, tuple(hits), UNRESOLVED_RESIDUE, other)
+    return DomainCall(window, family, lo, hi, tuple(hits), None, other)
 
 
 def audit_variant_positions(call: DomainCall, mut_positions: list[int]) -> list[int]:

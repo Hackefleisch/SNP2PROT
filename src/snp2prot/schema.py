@@ -40,6 +40,9 @@ AA_ALPHABET = frozenset("ACDEFGHIKLMNPQRSTVWYX")
 #: Bases permitted in `dna_seq`. Strictly unambiguous — degenerate codes and pad characters
 #: are a parse error, not something to tolerate silently (brief §3, "no padding characters").
 DNA_ALPHABET = frozenset("ACGT")
+#: The 20 standard residues; `X`/`B`/`Z`/`U` mean "not determined" and must not reach a
+#: stored domain (`docs/DECISIONS.md`, `D2`).
+PROTEIN_ALPHABET = frozenset("ACDEFGHIKLMNPQRSTVWY")
 
 #: Hard cap from the brief: nothing longer than 20 bp reaches the stored table.
 MAX_DNA_LEN = 20
@@ -351,6 +354,17 @@ def validate(
             f"wt_id: {len(external)} clusters carry variants here but their reference row is "
             f"in another source, so mut_positions cannot be bounds-checked locally "
             f"(e.g. {external[:3]}). Checked corpus-wide by scripts/build_clusters.py."
+        )
+
+    dbd_counts = df["dbd_seq"].astype("string").value_counts(dropna=False)
+    uniq_dbd = pd.Series(dbd_counts.index, dtype="string")
+    bad_res = uniq_dbd.map(lambda s: bool(set(s) - PROTEIN_ALPHABET) if pd.notna(s) else False)
+    if bad_res.any():
+        n_bad = int(dbd_counts.to_numpy()[bad_res.to_numpy(dtype=bool)].sum())
+        rep.error(
+            f"dbd_seq: {n_bad:,} rows with non-standard residues "
+            f"(e.g. {_examples(uniq_dbd, bad_res)}) — an unresolved position is the "
+            f"depositor's uncertainty, not a property of the protein; drop the construct"
         )
 
     # -- DNA axis ----------------------------------------------------------------------

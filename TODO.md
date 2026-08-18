@@ -18,7 +18,7 @@ scheme; it is frozen at [`reports/archive/OPEN_ITEMS_2026-08-14.md`](reports/arc
 have mixed assay types are out — which removes the `dna_len` leakage problem entirely, since
 every row is an 8-mer and always will be.
 
-19 PBM sources parsed and validator-clean: **45,495,168 rows, 1,335 domains in 1,162
+19 PBM sources parsed and validator-clean: **45,462,272 rows, 1,334 domains in 1,161
 clusters, 56 Pfam families, 137 organisms**, every protein scored against the same 32,896
 8-mers.
 
@@ -55,7 +55,7 @@ differing 1.6x in positive count on one protein — is now recorded in `docs/MET
 instead.
 
 **Records with no positive evidence are flagged, not re-binarized** (`reports/label_health.md`,
-`T21` closed 2026-08-18). 54 of 1,383 records have no positive 8-mer: 20 are variants that
+`T21` closed 2026-08-18). 54 of 1,382 records have no positive 8-mer: 20 are variants that
 measurably lost binding, with a control in their own series, and 34 have nothing to compare
 against — 2.5% of the corpus, dropped at training time with `label_health.usable(df)`, not at
 parse time.
@@ -88,7 +88,7 @@ were already parsed and one fails condition 2 outright. See
 ## Open tasks
 
 ### T18 — Reconnect the protein-side table to canonical sequences
-It covers **1,224 of 1,335 domains**. `build_protein_table.py` locates a domain by substring
+It covers **1,223 of 1,334 domains**. `build_protein_table.py` locates a domain by substring
 within its construct, and a canonical sequence extended from a reference is no longer a
 substring of the construct it came from. Use `canonical.place` instead of `dbd in construct`.
 Note the construct-architecture covariate (`T13`, closed 2026-08-17) rides on the same
@@ -126,9 +126,9 @@ protein-axis depth exists outside homeodomain point mutants.
 
 ### T27 — Near-identical domains can sit in different clusters
 Surfaced by the `T25` sweep, and **not caused by it** — this is the greedy algorithm's known
-order dependence, now measured for the first time. A domain joins the *first* representative
+order dependence, now measured for the first time. A domain joins the *first* seed
 within 5 edits, not the best, so two paralogues that are 1-5 edits apart can end up in separate
-clusters if one of them matched an earlier representative first.
+clusters if one of them matched an earlier seed first.
 
 **13 such pairs exist** across the four families swept (Homeodomain, Myb, AP2, HLH), all at
 full overlap: `BAR15A:VAX2`/`Cell08:Vax1` at 1 edit, `BAR15A:HOXC4`/`Cell08:Hoxb4` at 1-2,
@@ -137,7 +137,7 @@ and `Cell08:Irx4`/`Irx6` and `BAR15A:PITX2`/`Cell08:Pitx3` at 5.
 
 **This is leakage in leave-one-cluster-out**: hold out one cluster and a near-identical
 sequence remains in training. Options are a post-pass that merges clusters whose
-representatives are within the threshold (reintroducing some chaining, which single-linkage
+seeds are within the threshold (reintroducing some chaining, which single-linkage
 was rejected for), a stricter split regime that groups clusters by connected component at
 evaluation time only, or accepting and reporting it. The last is cheapest and honest, and the
 split code is not written yet — decide it there rather than in the clustering.
@@ -200,29 +200,16 @@ are derived and need no row of their own, but the row should say the library get
 ## Open decisions
 
 ### D1 — Is 70% full-length coverage enough?
-**Before embedding work, and CIS-BP made it sharper.** The protein table maps **333 of 1,335
+**Before embedding work, and CIS-BP made it sharper.** The protein table maps **349 of 1,334
 domains (25%)** onto a canonical UniProt sequence; **439 (33%)** have a full sequence at all.
 It was 71% before CIS-BP: Table S6 publishes no UniProt accession, so none of its 884 domains
 resolve to one today. Resolving them from gene plus species is possible but is a lookup this
 project has not yet had to do, and for 124 organisms it will not be clean. The remainder are clone constructs
 differing from the canonical isoform, or non-model species with no clean mapping.
 
-Domain-level and construct-level embeddings work for all 1,335. Full-protein works for about
+Domain-level and construct-level embeddings work for all 1,334. Full-protein works for about
 a quarter, and the missing three quarters are almost entirely one source.
 The decision is whether that asymmetry is acceptable or whether full-length becomes a filter.
-
-### D2 — Drop `MAR17A:Esrrb`?
-**Before structure work.** It carries 2 unresolved `X` residues in an 89 aa zf-C4 domain — the
-only such domain in the corpus, 1 of 1,335. Harmless to a sequence embedder; a genuine problem
-for structure prediction and any 3D embedder. Drop it, or carry it and exclude it at
-structure-generation time.
-
-### D3 — Which member of a merged paralogue pair is the reference?
-Referenced by [`docs/DECISIONS.md`](docs/DECISIONS.md) §2 but never written down here.
-Clustering by sequence distance merges two natural paralogues that construct lineage kept
-apart, and `mut_positions` is expressed in the reference's frame — so the merge has to pick
-one, and neither has a claim. The **threshold** half of this decision is settled (5 edits,
-owner); the reference-choice half is not.
 
 ---
 
@@ -248,10 +235,13 @@ the report specifies it.
 Read it with `snp2prot.clusters.load` / `ids_with_at_least(n)` / `select(df, n)` rather than
 grouping the row tables — and note that **size means distinct canonical domains**, not rows and
 not constructs, so a domain assayed by two labs counts once. Today: 108 clusters hold more than
-one domain, 34 hold three or more, 14 hold five or more.
+one domain, 28 hold three or more, 11 hold five or more.
+
+Two of its columns name domains and they are not the same one: `seed` is what membership was
+decided against, `reference` is the medoid and the frame `mut_positions` uses (`D3`).
 
 ### N1 — The row count is an exact invariant
-`45,495,168 = 1,383 x 32,896`, where 1,383 is 1,335 distinct domains plus 48 measured by more
+`45,462,272 = 1,382 x 32,896`, where 1,382 is 1,334 distinct domains plus 48 measured by more
 than one source. Canonicalisation raised that overlap: domains that used to differ only by how
 much flank a lab cloned are now one string, so they are recognised as the same measurement
 made twice — which is what `T4`'s agreement check needs. Every construct contributes exactly one full 8-mer table. If a rebuild's row count is
@@ -266,7 +256,7 @@ table validates, the row count is right, and the domain simply leaves its cluste
 
 **Always run `scripts/build_clusters.py` after any single-source rebuild.** It is corpus-wide
 and idempotent (it strips the `C:` prefix to recover the lineage name underneath), takes
-**79-84 s**, and reports the domain and cluster counts so a mismatch is visible: 1,335 / 1,162
+**79-84 s**, and reports the domain and cluster counts so a mismatch is visible: 1,334 / 1,161
 / 122 multi-member / largest 8 as of 2026-08-17.
 
 **That is necessary but it is not sufficient, and the ROG18A rebuild of 2026-08-17 showed
@@ -281,7 +271,9 @@ parser change. `docs/DECISIONS.md` `#30` — "ROG18A's engineered chimeras clust
 parents" — describes the old grouping and needs revisiting.
 
 The corpus is currently a mixture: `Cell09`, `NAR11`, `ROG18A`, `LIU18B` and `weirauch2014`
-were rebuilt on 2026-08-17, the other 14 sources were not. **`build_dataset.py --all` followed
+were rebuilt on 2026-08-17 and `MAR17A` on 2026-08-18, the other 13 sources were not — and
+`MAR17A` showed what that costs: re-running it dropped `Esrrb` as intended **and added
+`MAR17A:Mlx`**, a domain the current parser admits and the committed table never had. **`build_dataset.py --all` followed
 by `build_clusters.py` is the way to make it self-consistent again**, and it is the owner's to
 run (rule 10).
 

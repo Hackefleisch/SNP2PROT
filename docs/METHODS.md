@@ -390,7 +390,7 @@ turn a negative into "outside this experiment's top N" rather than measured non-
 fixed cutoff was kept for that reason (`docs/DECISIONS.md`, 2026-08-18); the asymmetry is
 recorded here as a property of the data rather than removed by definition.
 
-**At the extreme, an experiment sees nothing at all.** 54 of 1,383 domain records have no
+**At the extreme, an experiment sees nothing at all.** 54 of 1,382 domain records have no
 positive 8-mer. They are of two kinds, and the difference matters because the second kind is
 the signal this dataset exists to carry:
 
@@ -527,26 +527,27 @@ past its own length.
 **CD-HIT greedy incremental clustering** (Li & Godzik 2006; equivalently MMseqs2
 `--cluster-mode 2`), reimplemented on the project's aligner rather than by adding a C++
 dependency to a job that takes 16 seconds. Sequences are sorted by decreasing length, the
-longest becomes a cluster representative, and each remaining sequence is compared **only to
-representatives**, joining the first it is close enough to or founding a new cluster.
+longest becomes a cluster **seed**, and each remaining sequence is compared **only to
+seeds**, joining the first it is close enough to or founding a new cluster.
 
 Three properties earn it the job:
 
-* the longest member becomes the representative, so the least-clipped form is the reference;
+* the longest member seeds, so a clipped copy is matched against the least-clipped form,
+  which is the direction the padding artefact runs;
 * **comparison is never transitive**, which kills chaining. Single-linkage at the same
   threshold produced a 35-domain blob — A near B near C, with A and C unrelated, is not a
   cluster;
-* every member is within *k* of the representative, which is exactly the invariant
+* every member is within *k* of the seed, which is exactly the invariant
   `mut_positions` needs.
 
-Its known weakness is order dependence: a sequence joins the first representative it matches
+Its known weakness is order dependence: a sequence joins the first seed it matches
 rather than its best. Ties are broken deterministically by length then sequence, so a rebuild
 reproduces the same clusters. Only sequences of the same Pfam family are compared, which is
 both correct and a large saving.
 
 **The threshold is 5 edits** (`cluster.max_edits`, owner's decision), **and a membership must
 also align over at least 60% of the shorter sequence** (`cluster.min_overlap`). Together they
-give 1,162 clusters with a largest of 8 domains.
+give 1,161 clusters with a largest of 8 domains.
 
 The overlap floor exists because free terminal gaps, unguarded, stop measuring distance
 between two domains at all: an arbitrarily long prefix of one and suffix of the other can be
@@ -556,25 +557,57 @@ alignment with terminal gaps charged reports 59. **31 of 202 memberships had bee
 way**, aligning over 3-10% of the shorter sequence. The floor is not a tuned parameter:
 genuine members align at ≥90% and the spurious ones at ≤10%, with nothing in between.
 
-### 7.4 Cluster identity
+### 7.4 The seed and the reference are different domains
 
-A cluster is named after its representative's own lineage name, so it stays recognisable —
+Greedy assignment needs a **seed**: the domain a candidate is compared against, longest first.
+The description of a cluster needs a **reference**: the coordinate frame every member's
+`mut_positions` is expressed in. These were one field until 2026-08-18, and the consequences
+were not cosmetic. Inside a variant series every member is the same padded length, so the seed
+was settled by the alphabetical order of the amino-acid string. In `C:BAR15A:HOXD13` that made
+`HOXD13_S316C` the frame: the wild type was recorded as carrying one mutation, each of the
+seven disease variants as carrying two, and position 50 — S316C's own substitution — appeared
+in all seven `mut_positions`. Across a paralogue merge the effect is the same in a different
+guise: BAR15A's human HOXB7 series was framed against `Cell08`'s mouse copy, so each disease
+variant read three edits, two of them mouse-human differences.
+
+**The reference is now the medoid** — the member with the smallest total distance to the
+others, ties broken by length then sequence. For a wild type plus *k* single substitutions it
+provably selects the wild type, which sits one edit from each while any variant sits two from
+the rest. It needs no naming convention: `_REF` is one source's habit, not a corpus property.
+26 of 108 multi-member clusters took a new reference, 113 domains changed their
+`n_mut_from_wt` and `mut_positions`, and the total edits reported across cluster members fell
+from 480 to **398 — 17% of what was recorded were artefacts of the frame**.
+
+The seed is retained in the inventory, because it is what membership was actually decided
+against and a cluster should be traceable to the pass that formed it.
+
+**One invariant weakens and is therefore checked.** Members are within `max_edits` of the seed
+by construction; of the reference only within `2 × max_edits`, by the triangle inequality.
+Measured over the corpus the worst case is 5 of 5 and no cluster exceeds it;
+`build_clusters.py` reports any that do rather than assuming.
+
+A reference is a coordinate frame, not a claim about ancestry. For a cluster of genuine
+paralogues there is no wild type, and the medoid is simply the most central member.
+
+### 7.5 Cluster identity
+
+A cluster is named after its reference's own lineage name, so it stays recognisable —
 `C:BAR15A:HOXD13`, with the `C:` prefix marking it cluster-derived rather than
 construct-derived. That name is **not unique**: one gene directory held six engineered chimeras
 that now sit in six different clusters, all of which would otherwise carry the id
 `ROG18A:FoxJ3` and collapse back into one, undoing the clustering for precisely the constructs
 it matters most for. Collisions take a numeric suffix; the 2026-08-17 build has 8 such ids.
 
-### 7.5 The cluster inventory
+### 7.6 The cluster inventory
 
 Selecting on cluster size — "train only on DBDs with at least five variants" — is a
 training-time choice, not a dataset one: the dataset stores everything and the modeller
 filters. What the dataset owes the modeller is the ability to make that selection cheaply.
 Answering it from the row tables means grouping 45 million rows and counting distinct
-sequences, roughly a minute of work to learn 1,162 numbers.
+sequences, roughly a minute of work to learn 1,161 numbers.
 
 A per-cluster side table (`data/interim/clusters/clusters.parquet`, one row per cluster:
-family, representative, domain count, variant count, maximum edit distance, contributing
+family, seed, reference, domain count, variant count, maximum edit distance, contributing
 sources, construct and row counts) is therefore written by the same pass that assigns the
 cluster ids, and read through `snp2prot.clusters.load` / `ids_with_at_least` / `select`.
 
@@ -674,16 +707,16 @@ Build of **2026-08-17**, from 19 contributing sources.
 
 | property | value |
 |---|---|
-| rows | 45,495,168 |
-| constructs | 1,383 |
-| distinct DNA-binding domains | 1,335 |
-| clusters | 1,162 |
+| rows | 45,462,272 |
+| constructs | 1,382 |
+| distinct DNA-binding domains | 1,334 |
+| clusters | 1,161 |
 | Pfam families | 56 |
 | distinct 8-mers | 32,896 (identical in every source) |
-| binding / non-binding / no call | 95,840 / 44,626,532 / 772,796 |
+| binding / non-binding / no call | 95,791 / 44,593,791 / 772,690 |
 | negative:positive ratio | 466:1 (positive rate 0.214% of calls made) |
 | `dbd_seq` length | 30–378 aa (median 77) |
-| source organisms | 131, plus 21 constructs with none recorded |
+| source organisms | 132, plus 21 constructs with none recorded |
 
 The high negative:positive ratio is a property of the assay and is retained deliberately.
 Universal PBM scores every protein against every 8-mer, and a transcription factor binds a
@@ -696,7 +729,7 @@ A 30-residue AT-hook is a motif rather than a fold, which is worth knowing befor
 structure predictor. The 21 constructs without an organism are reconstructed ancestors,
 engineered chimeras, and accessions UniProt no longer serves — none of which has one.
 
-**The row count is an exact invariant.** 45,495,168 = 1,383 × 32,896: every construct
+**The row count is an exact invariant.** 45,462,272 = 1,382 × 32,896: every construct
 contributes exactly one full 8-mer table. If a rebuild's row count is not a clean multiple of
 32,896, rows were dropped or duplicated. It is the fastest single sanity check available.
 
@@ -719,15 +752,15 @@ domains, and how those domains divide into references and variants.
 
 | domains per cluster | clusters | domains in them | references | variants |
 |---:|---:|---:|---:|---:|
-| 1 | 1,011 | 1,011 | 1,011 | 0 |
-| 2 | 88 | 176 | 88 | 88 |
+| 1 | 1,053 | 1,053 | 1,053 | 0 |
+| 2 | 80 | 160 | 80 | 80 |
 | 3 | 11 | 33 | 11 | 22 |
 | 4 | 6 | 24 | 6 | 18 |
 | 5 | 6 | 30 | 6 | 24 |
 | 6 | 2 | 12 | 2 | 10 |
 | 7 | 2 | 14 | 2 | 12 |
 | 8 | 1 | 8 | 1 | 7 |
-| | **1,162** | **1,335** | **1,162** | **173** |
+| | **1,161** | **1,334** | **1,161** | **173** |
 
 The columns are related exactly. Every cluster contains **exactly one reference**, so
 *references* equals the cluster count and
@@ -747,7 +780,7 @@ though only ten carry more than three. It is thin, and thinner than it looked be
 overlap floor of §7.3 removed 29 spurious variants — a correction that fell hardest on Myb
 (16 to 4) and AP2 (9 to 1), which were the two families the earlier breadth claim leant on.
 
-The companion protein table covers **1,224 of 1,335 domains**, each located inside the
+The companion protein table covers **1,223 of 1,334 domains**, each located inside the
 construct it was cut from. Full-length coverage is the exception rather than the rule:
 Table S6 publishes no UniProt accession, so a canonical full-length sequence resolves for 439
 domains (33%) and the domain is located within it for 333 (25%). Domain-level and
@@ -820,7 +853,7 @@ Stated because a user of the dataset needs them, not because they are open work 
 2. **One replicate pair is irreconcilable.** ANAC092 (§6.1) shares no positive call between its
    two deposits, and both rows sit in one cluster.
 3. **Protein-axis depth is thin and homeodomain-heavy.** 173 variant domains across 108
-   clusters; 1,054 of 1,162 clusters hold a single domain, and 84 of the 173 variants are
+   clusters; 1,053 of 1,161 clusters hold a single domain, and 84 of the 173 variants are
    homeodomain.
 4. **Full-length protein sequence is available for about a third of domains** (§9.3), almost
    entirely because one source publishes no UniProt accession. Domain-level and
@@ -831,13 +864,15 @@ Stated because a user of the dataset needs them, not because they are open work 
    across mouse and human is entirely possible, so these may be two correct records — but their
    labels also disagree (Jaccard 0.097), and one deposit holding the wrong protein would
    explain both facts at once. Unresolved.
-6. **One domain carries two unresolved `X` residues** (an 89-residue zf-C4 domain, 1 of 1,335).
-   Harmless to a sequence model; a genuine problem for structure prediction.
+6. ~~One domain carries two unresolved `X` residues.~~ **Fixed 2026-08-18** — a domain whose
+   padded window contains anything outside the 20 standard residues is now rejected
+   (`unresolved_residue`) and the validator refuses it as well. `MAR17A:Esrrb` was the only
+   one, 1 of 1,335, and is excluded.
 7. **The canonicalisation route is not recorded per row.** Whether a stored domain came from
    its construct, from a reference extension, or was left short is known at parse time but is
    not a stored column; `dbd_source` records the annotation *method*, not the route.
 8. **Cluster membership is order-dependent by construction.** Greedy clustering assigns a
-   sequence to the first representative it matches, not the best. Deterministic, but not the
+   sequence to the first seed it matches, not the best. Deterministic, but not the
    unique optimal partition.
 
 ---

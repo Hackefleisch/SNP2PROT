@@ -7,18 +7,33 @@ of (sequence, 8-mer) -> label, and a cluster never collapses them.
 
 **The algorithm is CD-HIT's greedy incremental clustering** (Li & Godzik 2006; the same as
 MMseqs2 `--cluster-mode 2`), not something invented here. Sort by decreasing length, the
-longest sequence becomes a cluster representative, and every remaining sequence is compared
-**only to representatives** -- joining the first it is close enough to, or founding a new
+longest sequence becomes a cluster **seed**, and every remaining sequence is compared
+**only to seeds** -- joining the first it is close enough to, or founding a new
 cluster. Three properties earn it the job:
 
-* **the longest member represents**, so the least-clipped form of a domain is the reference;
+* **the longest member seeds**, so the least-clipped form of a domain is what others are
+  matched against, which is the direction the padding artefact runs;
 * **comparison is never transitive**, which is what stops chaining. Single-linkage on this
   corpus produced a 35-domain blob at a threshold of 5 edits against 8 at 1 edit -- A near B
   near C, with A and C unrelated, is not a cluster;
-* **every member is within `max_edits` of the representative**, which is exactly the invariant
-  `mut_positions` needs: one coordinate frame per cluster (`docs/DECISIONS.md` §2).
+* **every member is within `max_edits` of the seed**, which bounds how far apart a cluster
+  can spread.
 
-Its known weakness is order dependence -- a sequence joins the first representative it matches
+**The seed is not the reference.** Two jobs were being done by one field. The seed decides
+*membership* and is an artefact of the algorithm — with every member of a variant series the
+same padded length, it was settled by the alphabetical order of the amino-acid string, which
+made `HOXD13_S316C` the frame for its own wild type and injected position 50 into all seven
+siblings' `mut_positions`. The **reference** decides the *coordinate frame* and is the
+**medoid**: the member with the smallest total distance to the others. For a wild type plus
+k single substitutions that provably picks the wild type, since it sits one edit from each
+while any variant sits two from the rest. Decided 2026-08-18 (`docs/DECISIONS.md`, `D3`).
+
+One invariant weakens and is therefore checked rather than assumed: members are within
+`max_edits` of the *seed* by construction, but only within `2 * max_edits` of the reference by
+the triangle inequality. Measured over the corpus the worst case is 5 of 5, and
+`build_clusters.py` reports any cluster that exceeds it.
+
+Its known weakness is order dependence -- a sequence joins the first seed it matches
 rather than its best. Ties are broken deterministically by sequence so a rebuild reproduces the
 same clusters.
 
@@ -41,9 +56,10 @@ from snp2prot.config import CLUSTER_TABLE
 
 @dataclass
 class Cluster:
-    """One representative and the domains that fall within `max_edits` of it."""
+    """One seed and the domains that fall within `max_edits` of it."""
 
-    representative: str
+    #: The founding member: longest-first, and what membership was decided against.
+    seed: str
     members: list[str] = field(default_factory=list)
 
     @property
@@ -88,22 +104,56 @@ def cluster(
             # different length can still be zero edits apart -- which is precisely the
             # differently-clipped case this dataset exists to reconcile. Filtering on length
             # would silently refuse to merge them. Greedy clustering only ever compares
-            # against representatives, so the cost of checking honestly is small.
+            # against seeds, so the cost of checking honestly is small.
             profile = align.edit_profile(rseq, seq)
             if profile.n_edits <= max_edits and profile.overlap >= min_overlap:
                 joined = rkey
                 break
         if joined is None:
             reps.append((key, seq, fam))
-            clusters[key] = Cluster(representative=key, members=[key])
+            clusters[key] = Cluster(seed=key, members=[key])
         else:
             clusters[joined].members.append(key)
     return list(clusters.values())
 
 
 def assign(clusters: list[Cluster]) -> dict[str, str]:
-    """member key -> representative key, for stamping a cluster id onto rows."""
-    return {m: c.representative for c in clusters for m in c.members}
+    """member key -> seed key, for stamping a cluster id onto rows."""
+    return {m: c.seed for c in clusters for m in c.members}
+
+
+def medoid(sequences: list[str]) -> str:
+    """The member with the smallest total distance to the others: a cluster's reference.
+
+    Ties break by length then sequence, so the choice is deterministic. With one member the
+    answer is itself; with two the total distances are equal and the longer one wins, which
+    is a coin toss between two real proteins and costs nothing either way.
+    """
+    if len(sequences) == 1:
+        return sequences[0]
+    distance = {
+        (a, b): align.edit_profile(a, b).n_edits for a in sequences for b in sequences if a != b
+    }
+    return min(
+        sequences,
+        key=lambda c: (sum(distance[(c, o)] for o in sequences if o != c), -len(c), c),
+    )
+
+
+def references(clusters: list[Cluster], sequences: dict[str, str] | None = None) -> dict[str, str]:
+    """member key -> the key of the reference its edits should be expressed against.
+
+    `sequences` is the same map `cluster` was given; omit it when the keys *are* the
+    sequences, which is how the corpus calls this.
+    """
+    seqs = sequences or {}
+    out: dict[str, str] = {}
+    for c in clusters:
+        by_seq = {seqs.get(m, m): m for m in c.members}
+        ref = by_seq[medoid(list(by_seq))]
+        for m in c.members:
+            out[m] = ref
+    return out
 
 
 # ---------------------------------------------------------------------------------------
@@ -124,7 +174,8 @@ def assign(clusters: list[Cluster]) -> dict[str, str]:
 INVENTORY_COLUMNS = (
     "wt_id",
     "dbd_family",
-    "representative",
+    "seed",
+    "reference",
     "n_domains",
     "n_variants",
     "max_edits",
@@ -145,11 +196,14 @@ def inventory(domains: pd.DataFrame) -> pd.DataFrame:
     out = pd.DataFrame(
         {
             "dbd_family": grouped["dbd_family"].first(),
-            # The representative is the domain the cluster id was named after: the one at
-            # zero edits from itself. Ties cannot occur -- CD-HIT has exactly one.
-            "representative": grouped.apply(
+            # The reference is the domain everything else is described against: the one at
+            # zero edits from itself. Exactly one per cluster, by construction.
+            "reference": grouped.apply(
                 lambda g: g.loc[g["n_mut_from_wt"].idxmin(), "dbd_seq"], include_groups=False
             ),
+            # The seed is what membership was decided against, carried through so a cluster
+            # can be traced back to the assignment that formed it.
+            "seed": grouped["seed"].first(),
             "n_domains": grouped["dbd_seq"].nunique(),
             "n_variants": grouped.apply(
                 lambda g: int(g.loc[g["n_mut_from_wt"] > 0, "dbd_seq"].nunique()),

@@ -14,14 +14,19 @@ LONE = "MEVTSQSTLPPGFRFHPTDEELIVYYLRNQTMSKPCPVSIIPEVDIYKFDPWQLPEKTEF"
 
 @pytest.fixture
 def constructs() -> pd.DataFrame:
-    """Two clusters: one with a reference plus a variant measured twice, one singleton."""
+    """Two clusters: one with a reference plus a variant measured twice, one singleton.
+
+    `seed` is the variant here, not the reference — the case `D3` is about: membership was
+    decided against whichever domain the greedy pass happened to reach first, and the
+    coordinate frame is the medoid.
+    """
     return pd.DataFrame(
         [
             # same domain, two sources -> two constructs, ONE domain
-            ("C:X:Hd", WT, "P1", "Homeodomain", 0, "SRC_A", 32896),
-            ("C:X:Hd", WT, "P2", "Homeodomain", 0, "SRC_B", 32896),
-            ("C:X:Hd", VAR, "P1", "Homeodomain", 1, "SRC_A", 32896),
-            ("C:Y:Nac", LONE, "P3", "NAM", 0, "SRC_A", 32896),
+            ("C:X:Hd", WT, "P1", "Homeodomain", 0, "SRC_A", 32896, VAR),
+            ("C:X:Hd", WT, "P2", "Homeodomain", 0, "SRC_B", 32896, VAR),
+            ("C:X:Hd", VAR, "P1", "Homeodomain", 1, "SRC_A", 32896, VAR),
+            ("C:Y:Nac", LONE, "P3", "NAM", 0, "SRC_A", 32896, LONE),
         ],
         columns=[
             "wt_id",
@@ -31,6 +36,7 @@ def constructs() -> pd.DataFrame:
             "n_mut_from_wt",
             "source_dataset",
             "n_rows",
+            "seed",
         ],
     )
 
@@ -53,9 +59,10 @@ def test_variant_and_edit_columns(constructs):
     assert inv.loc["C:Y:Nac", "max_edits"] == 0
 
 
-def test_representative_is_the_zero_edit_member(constructs):
+def test_reference_is_the_zero_edit_member_and_the_seed_is_kept_separately(constructs):
     inv = clusters.inventory(constructs).set_index("wt_id")
-    assert inv.loc["C:X:Hd", "representative"] == WT
+    assert inv.loc["C:X:Hd", "reference"] == WT
+    assert inv.loc["C:X:Hd", "seed"] == VAR
 
 
 def test_columns_and_ordering(constructs):

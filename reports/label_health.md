@@ -12,7 +12,7 @@ filter a frame with `label_health.usable(df)`.
 
 | verdict | meaning | records |
 |---|---|---:|
-| `ok` | at least one 8-mer at or above the cutoff | 1,329 |
+| `ok` | at least one 8-mer at or above the cutoff | 1,328 |
 | `dead_variant` | no positives, but another record of the same cluster **and source** has them — its own series is the control | 20 |
 | `no_evidence` | no positives and no such control: indistinguishable from an experiment too weak to see anything | 34 |
 
@@ -36,7 +36,7 @@ supporting figure because a source full of dead variants drags its own median do
 | `CB11` | 1 | 0% | 0.487 | 0.0365% | 0 | 0 |
 | `GR09` | 37 | 0% | 0.493 | 0.3000% | 0 | 0 |
 | `EMBO10` | 22 | 0% | 0.497 | 0.4889% | 0 | 0 |
-| `MAR17A` | 39 | 0% | 0.497 | 0.2462% | 0 | 0 |
+| `MAR17A` | 38 | 0% | 0.497 | 0.2488% | 0 | 0 |
 | `DEV12` | 10 | 0% | 0.496 | 0.2654% | 0 | 0 |
 | `MBE14` | 2 | 0% | 0.498 | 0.3359% | 0 | 0 |
 | `NAR11` | 4 | 0% | 0.497 | 0.1702% | 0 | 0 |

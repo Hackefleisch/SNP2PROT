@@ -17,6 +17,66 @@ older commit messages and code comments still resolve.
 
 ## 1. Scope
 
+### 2026-08-18 — `D3`: the reference is the medoid, and it is not the seed
+**Decided by the owner.** A cluster now carries two named domains instead of one. The **seed**
+is what greedy assignment compared candidates against — longest first, and it decides
+*membership*. The **reference** is the medoid, the member with the smallest total distance to
+the others, and it decides the *coordinate frame* `mut_positions` is expressed in.
+
+**Why one field could not do both.** Inside a variant series every domain is the same padded
+length, so the seed fell out of the alphabetical order of the amino-acid string. In
+`C:BAR15A:HOXD13` that elected `HOXD13_S316C`: the wild type was stored as a one-mutation
+variant, all seven disease variants as two-mutation ones, and **position 50 — S316C's own
+substitution — was written into all seven siblings' `mut_positions`**. Any per-position
+analysis of this corpus would have found a recurrent hot spot that is one variant's own
+change. `C:BAR15A:ARX` had the same pattern at position 14. Across a paralogue merge it looked
+different and was the same defect: BAR15A's human HOXB7 series framed against `Cell08`'s mouse
+copy, every disease variant reading three edits with two of them mouse-human differences.
+
+**Why the medoid and not the seed order.** The medoid cannot seed the clustering — it is only
+defined once the members are known, and the members are only known once something has seeded.
+Resolving that circularity means an iterative k-medoids refinement, which is a different
+algorithm, changes cluster *membership* rather than only its description, and would reopen a
+settled decision whose blast radius is the splits. Longest-first also suits the data: with
+free terminal gaps a clipped copy matches a longer seed, which is the direction the padding
+artefact runs.
+
+**Effect.** 26 of 108 multi-member clusters take a new reference; 113 domains change their
+`n_mut_from_wt` and `mut_positions`; the total edits reported across cluster members falls
+from 480 to **398**, so 17% of the recorded protein-axis variation was an artefact of the
+frame. Cluster membership, counts, label health and the merge resolution are all unchanged:
+1,161 clusters, 108 multi-member, 173 variants, 20 `dead_variant` / 34 `no_evidence`, 48
+records dropped at merge.
+
+**One invariant weakens.** Members are within `max_edits` of the seed by construction, but the
+triangle inequality allows `2 × max_edits` from the reference. Measured: worst case 5 of 5,
+zero clusters over. `build_clusters.py` now checks and reports rather than assuming.
+
+A reference is a frame, not a claim about ancestry — for a cluster of genuine paralogues there
+is no wild type and the medoid is simply the most central member. Implementation:
+`clusters.medoid` / `clusters.references`, `seed` and `reference` columns in the inventory,
+4 new tests.
+
+### 2026-08-18 — `D2`: `MAR17A:Esrrb` is excluded, and unresolved residues are now a rejection
+**Decided by the owner.** The domain carried two `X` residues in an 89 aa zf-C4 window — the
+depositor's uncertainty, not a property of the protein. A sequence model would embed the
+ambiguity as a token and a structure predictor cannot place the residue at all.
+
+Implemented as a **general rule rather than a named exclusion**: `domains.call_domain` rejects
+any padded window containing a character outside the 20 standard residues
+(`unresolved_residue`, now in `DOMAIN_POLICY.md`), and `schema.validate` refuses such a
+`dbd_seq` outright, mirroring the non-ACGT check on `dna_seq`. `MAR17A:Esrrb` was the only
+domain in the corpus affected; any future one is caught at parse time with a reason.
+
+Corpus after the rebuild: **1,334 domains, 1,382 records, 45,462,272 rows** (= 1,382 × 32,896),
+1,161 clusters. Variant counts are untouched — it was a singleton.
+
+**The rebuild also exposed a stale table, which is worth recording.** `MAR17A` on disk
+predated a parser change: re-running it dropped `Esrrb` *and added* `MAR17A:Mlx` (HLH, 78 aa),
+which the current parser admits and the committed table did not. That is exactly what `TODO.md`
+`N6` warns about, and `MAR17A` now joins the list of sources whose stored form is newer than
+the rest. A full rebuild would move other numbers too.
+
 ### 2026-08-18 — `T25`: free terminal gaps need an overlap floor, and 31 memberships fail it
 **Decided by the owner and applied.** `cluster.min_overlap: 0.6` is new in
 `configs/thresholds.yaml`: a domain joins a cluster only if the alignment matched residues over

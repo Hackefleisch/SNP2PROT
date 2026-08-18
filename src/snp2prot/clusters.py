@@ -31,8 +31,12 @@ what is being reused; a C++ dependency would add nothing at this scale.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
+
+import pandas as pd
 
 from snp2prot import align
+from snp2prot.config import CLUSTER_TABLE
 
 
 @dataclass
@@ -91,3 +95,88 @@ def cluster(
 def assign(clusters: list[Cluster]) -> dict[str, str]:
     """member key -> representative key, for stamping a cluster id onto rows."""
     return {m: c.representative for c in clusters for m in c.members}
+
+
+# ---------------------------------------------------------------------------------------
+# The cluster inventory: one row per cluster, written once and read cheaply.
+#
+# "Give me clusters with at least 5 domains" is a training-time question (`docs/DECISIONS.md`
+# section 1), and answering it from the row tables means grouping 45 million rows by `wt_id`
+# and counting distinct `dbd_seq` -- a minute of work to learn 1,133 numbers. A stored
+# `cluster_size` column would answer it by Parquet predicate pushdown, but it would touch
+# `schema.py` and every parser's output to denormalise a per-cluster fact onto 45 million
+# rows. The side table costs one file, changes no parser, and keeps the 22-column schema
+# frozen.
+# ---------------------------------------------------------------------------------------
+
+#: Columns of the inventory. `n_domains` is what "cluster size" means throughout the project:
+#: distinct canonical domains, NOT rows and NOT constructs -- one domain assayed by two
+#: sources is one domain.
+INVENTORY_COLUMNS = (
+    "wt_id",
+    "dbd_family",
+    "representative",
+    "n_domains",
+    "n_variants",
+    "max_edits",
+    "n_sources",
+    "n_constructs",
+    "n_rows",
+)
+
+
+def inventory(domains: pd.DataFrame) -> pd.DataFrame:
+    """Build the per-cluster inventory from per-construct rows.
+
+    `domains` needs one row per (source, construct) with `wt_id`, `dbd_seq`, `dbd_family`,
+    `n_mut_from_wt`, `source_dataset` and `n_rows`. Aggregating constructs rather than corpus
+    rows keeps this cheap; `n_rows` is summed from what the caller counted.
+    """
+    grouped = domains.groupby("wt_id", sort=True)
+    out = pd.DataFrame(
+        {
+            "dbd_family": grouped["dbd_family"].first(),
+            # The representative is the domain the cluster id was named after: the one at
+            # zero edits from itself. Ties cannot occur -- CD-HIT has exactly one.
+            "representative": grouped.apply(
+                lambda g: g.loc[g["n_mut_from_wt"].idxmin(), "dbd_seq"], include_groups=False
+            ),
+            "n_domains": grouped["dbd_seq"].nunique(),
+            "n_variants": grouped.apply(
+                lambda g: int(g.loc[g["n_mut_from_wt"] > 0, "dbd_seq"].nunique()),
+                include_groups=False,
+            ),
+            "max_edits": grouped["n_mut_from_wt"].max().astype("int32"),
+            "n_sources": grouped["source_dataset"].nunique(),
+            "n_constructs": grouped.size(),
+            "n_rows": grouped["n_rows"].sum(),
+        }
+    ).reset_index()
+    return (
+        out[list(INVENTORY_COLUMNS)]
+        .sort_values(["n_domains", "wt_id"], ascending=[False, True])
+        .reset_index(drop=True)
+    )
+
+
+def load(path: str | Path | None = None) -> pd.DataFrame:
+    """Read the cluster inventory. Raises if `build_clusters.py` has not been run."""
+    p = Path(path) if path else CLUSTER_TABLE
+    if not p.exists():
+        raise FileNotFoundError(f"no cluster inventory at {p}\nrun scripts/build_clusters.py")
+    return pd.read_parquet(p)
+
+
+def ids_with_at_least(n_domains: int, path: str | Path | None = None) -> set[str]:
+    """`wt_id`s whose cluster holds at least `n_domains` distinct domains."""
+    inv = load(path)
+    return set(inv.loc[inv["n_domains"] >= n_domains, "wt_id"])
+
+
+def select(df: pd.DataFrame, min_domains: int, path: str | Path | None = None) -> pd.DataFrame:
+    """Rows belonging to clusters of at least `min_domains` domains.
+
+    The point of the inventory: this is a membership test against a set of ids, not a
+    group-by over the rows being filtered.
+    """
+    return df[df["wt_id"].isin(ids_with_at_least(min_domains, path))]

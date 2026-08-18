@@ -41,16 +41,19 @@ called positive, against 70-72% for replicates within one source. Any model that
 held-out positives much past that is reproducing a laboratory. One pair — `C:LIN14B:NAP` —
 agrees on nothing at all, which is `D4`.
 
-`build_dataset.py --all` was ~25 minutes and should now be roughly **4-5**, after the T6 work
-of 2026-08-14 (`docs/DECISIONS.md` §7). **The library must be pressed once per machine —
-`python scripts/press_pfam.py`** — or every source pays 19.5 s to re-read 2.2 GB of text.
+**Timings are measured, from the full rebuild of 2026-08-17.** `build_dataset.py --all` is
+**7 min 28 s** — the "4-5 min" figure carried here since 2026-08-14 was optimistic — and the
+whole pipeline (build, cluster, protein table, reports, overlap, audit) is **13 minutes**.
+Per-step timings and the order to run them in are `docs/METHODS.md` §10.2. **The library must
+be pressed once per machine — `python scripts/press_pfam.py`** — or every source pays 19.5 s to
+re-read 2.2 GB of text.
 
 **The plan, in order:**
 
 | # | step | state |
 |---|---|---|
 | 1 | **Extend PBM coverage** beyond UniPROBE | **closes with `T11`** (Kock), plus `T14`; `T2`/`T2b` dropped 2026-08-17 |
-| 2 | **Deepen the protein axis in what we already hold** | **done 2026-08-17** — clustering by sequence distance shipped |
+| 2 | **Deepen the protein axis in what we already hold** | **done 2026-08-17** — clustering by sequence distance, and the cluster inventory (`T3`) with it |
 | 3 | **Merge**: single table, splits, NN baseline | after step 1 — the overlap report is already done (`T4`) |
 | 4 | **Modelling** | after step 3 |
 
@@ -127,22 +130,6 @@ as *Mus musculus* by one and *Homo sapiens* by the other. A byte-identical homeo
 mouse and human is entirely possible, so this may be two correct records — but their labels
 disagree (Jaccard 0.097, `reports/overlap.md`), and one deposit having the wrong protein would
 explain both facts at once. Related: `D4`.
-
-### T3 — Make cluster size cheap to filter on
-Whether to require ≥5 variants per DBD is a **training-time** choice, not a dataset one
-(`D-2026-08-14-clusters`). What the dataset owes the modeller is the ability to select on it
-without a full scan: today it means grouping 16.6M rows by `wt_id` and counting distinct
-`dbd_seq`.
-
-**Smaller since 2026-08-17:** `build_clusters.py` already computes the whole size distribution
-and writes it to `reports/clusters.md`, but only as prose — nothing machine-readable, and
-`snp2prot.splits` is still three `NotImplementedError` stubs.
-
-Design question inside the task: a stored `cluster_size` column is a Parquet predicate
-pushdown but touches `schema.py` and every parser's output; a small `wt_id -> size` side table
-or a helper in `snp2prot.splits` costs nothing and stays out of the 22-column schema. Second
-is likely right, and the cluster rebuild is now the obvious place to emit it — flag before
-implementing.
 
 ### T9 — Parallelise the build
 Deferred deliberately after the T6 work (see [`docs/DECISIONS.md`](docs/DECISIONS.md) §7):
@@ -224,6 +211,13 @@ so a split cannot separate them and a model sees one protein with two contradict
 
 ## Notes
 
+### N7 — Cluster size is a one-file lookup now
+`data/interim/clusters/clusters.parquet`, one row per cluster, written by `build_clusters.py`.
+Read it with `snp2prot.clusters.load` / `ids_with_at_least(n)` / `select(df, n)` rather than
+grouping the row tables — and note that **size means distinct canonical domains**, not rows and
+not constructs, so a domain assayed by two labs counts once. Today: 122 clusters hold more than
+one domain, 34 hold three or more, 14 hold five or more.
+
 ### N1 — The row count is an exact invariant
 `45,495,168 = 1,383 x 32,896`, where 1,383 is 1,335 distinct domains plus 48 measured by more
 than one source. Canonicalisation raised that overlap: domains that used to differ only by how
@@ -276,7 +270,7 @@ validator. Check each before trusting a new accession:
 Full account in [`docs/DECISIONS.md`](docs/DECISIONS.md). Run
 `scripts/audit_sources.py` (~4 min) after any new source lands — it sweeps every one of these.
 
-### N4 — Only 8 families are large enough to hold out
+### N4 — 27 families are large enough to hold out
 **Largely fixed by CIS-BP: 27 families now hold 10 or more domains, against 8 before.**
 Homeodomain 427, HLH 100, bZIP 79, Zn_clus 74, Forkhead 69, Myb_DNA-binding 59, zf-C4 58,
 AP2 41, GATA 29, Ets 26, HMG_box 26, NAM 26, WRKY 23, TCP 20, Zn_ribbon_Dof 17, ARID 17, and

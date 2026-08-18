@@ -87,7 +87,7 @@ src/snp2prot/
   domains.py      Pfam/HMMER annotation + the three-condition admission policy
   canonical.py    the project-internal canonical domain sequence  <- READ BEFORE dbd_seq
   references.py   identifier -> reference protein, cached; only used when a construct is short
-  clusters.py     CD-HIT greedy incremental clustering, for splits only
+  clusters.py     CD-HIT greedy incremental clustering + the cluster inventory (size lookup)
   proteins.py     the protein-side companion table (bare/padded domain, construct, full-length)
   parsers/        one module per source, each exposing parse() -> pd.DataFrame
     _pbm.py       assay-level machinery shared by ALL universal-PBM sources
@@ -103,6 +103,7 @@ src/snp2prot/
 data/raw/<source>/       append-only, never edited          (git-ignored)
 data/interim/<source>/   per-source parsed Parquet          (git-ignored)
 data/interim/proteins/   protein table: domain at 4 levels + UniProt full-length
+data/interim/clusters/   one row per cluster: size, family, variants  <- read via snp2prot.clusters
 data/external/pfam/      Pfam HMMs for boundary annotation
 data/external/uniprot/   cached canonical sequences
 data/processed/          merged training table              (git-ignored)
@@ -146,10 +147,13 @@ names — **do not create the left-hand paths**, that would fork the structure i
    `data/raw/<source>/HOWTO.md` with exact manual steps, a row in the PROVENANCE manual queue,
    and then you move to the next source. Do not burn effort brute-forcing a download.
 9. **Stop at each phase boundary** and hand back the reports. Do not run ahead to modeling.
-10. **Never run a command that takes more than a few minutes.** Hand over the exact command
-    instead, with how long it takes and what to check in the output. `scripts/build_dataset.py
-    --all` is ~4-5 min after the T6 work and is still the owner's to run; single small sources and test subsets
-    are fine to execute here.
+10. **Never run a command that takes more than a few minutes.** Measured 2026-08-17:
+    `build_dataset.py --all` is 7 min 28 s and the whole pipeline is 13 min
+    (`docs/METHODS.md` §10.2). Hand over the exact command
+    instead, with how long it takes and what to check in the output. Those remain the owner's to run; single small
+    sources and test subsets are fine to execute here. **A single-source rebuild must be
+    followed by `scripts/build_clusters.py`** or that source silently leaves its clusters
+    (`TODO.md` N6).
 11. **Never `git commit` unsolicited.** The owner reviews work as an uncommitted diff;
     committing removes the review surface. Finish, run tests and lint, leave the tree dirty.
 
@@ -202,6 +206,7 @@ uv venv --python 3.11 .venv && uv pip install --python .venv -e ".[dev]"
 .venv/bin/python scripts/make_reports.py --source BAR15A    # regenerate reports/
 .venv/bin/python scripts/audit_sources.py                  # invariant sweep, ~4 min
 .venv/bin/python scripts/build_protein_table.py            # protein-side companion table
+.venv/bin/python scripts/build_clusters.py                 # wt_id corpus-wide + cluster inventory, ~1.5 min
 .venv/bin/python scripts/make_overlap_report.py            # cross-source label agreement, ~5 s
 .venv/bin/python -m ruff check . && .venv/bin/python -m ruff format .
 .venv/bin/python scripts/record_provenance.py data/raw/<source>/<file> --url ... --desc ...

@@ -67,7 +67,7 @@ A family above 40% of rows is flagged: it can be memorized instead of learned.
 | `C:SCI09:Arid3a` | `ARID` | 1 | 32,896 | yes |
 | `C:SCI09:Arid5a` | `ARID` | 1 | 32,896 | yes |
 | `C:SCI09:Ascl2` | `HLH` | 1 | 32,896 | yes |
-| `C:ROG18A:FoxJ3` | `Forkhead` | 1 | 32,896 | NO |
+| `C:ROG18A:FoxJ3#5` | `Forkhead` | 1 | 32,896 | NO |
 | `C:SCI09:Bbx` | `HMG_box` | 1 | 32,896 | yes |
 | `C:SCI09:Bhlhb2` | `HLH` | 1 | 32,896 | yes |
 | `C:SCI09:E2F3` | `WHD_E2F_TDP` | 1 | 32,896 | yes |

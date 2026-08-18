@@ -37,6 +37,31 @@ CHECKPOINT_DIR = RESULTS_DIR / "checkpoints"
 PROVENANCE_FILE = PROJECT_ROOT / "PROVENANCE.md"
 
 
+#: Companion tables that live under `data/interim/` but are NOT parsed sources. Anything
+#: iterating the corpus must skip them, and three places were doing that with an ad-hoc
+#: `"/proteins/" not in path` string test that silently would not have covered a second one.
+NON_SOURCE_INTERIM = frozenset({"proteins", "clusters"})
+
+#: One row per cluster: size, family, variant count. Written by `scripts/build_clusters.py`
+#: so that selecting on cluster size costs a 1,133-row read instead of a 45-million-row
+#: group-by (`TODO.md` T3).
+CLUSTER_TABLE = INTERIM_DIR / "clusters" / "clusters.parquet"
+
+
+def source_tables() -> dict[str, Path]:
+    """`source_dataset` -> its parsed Parquet, for every source actually on disk.
+
+    Discovered from the filesystem rather than from the parser registry, which also lists
+    accessions that were screened out and never parsed.
+    """
+    found = {}
+    for path in sorted(INTERIM_DIR.glob("*/*.parquet")):
+        if path.parent.name in NON_SOURCE_INTERIM:
+            continue
+        found[path.parent.name] = path
+    return found
+
+
 def raw_dir(source: str, create: bool = False) -> Path:
     """Raw download directory for one source, e.g. `raw_dir("BAR15A")`."""
     p = RAW_DIR / source

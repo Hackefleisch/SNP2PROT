@@ -14,16 +14,14 @@ of gigabytes for a report about 3% of them.
 
 from __future__ import annotations
 
-import glob
 from collections import Counter
-from pathlib import Path
 
 import pandas as pd
 import pyarrow.compute as pc
 import pyarrow.dataset as ds
 
 from snp2prot import reports
-from snp2prot.config import INTERIM_DIR, PROJECT_ROOT, REPORTS_DIR
+from snp2prot.config import PROJECT_ROOT, REPORTS_DIR, source_tables
 
 #: Columns the report needs. Reading `dbd_seq` for 45M rows is already the expensive part;
 #: pulling the other 17 columns as well would double it for nothing.
@@ -31,11 +29,7 @@ COLUMNS = ["source_dataset", "dbd_seq", "dbd_family", "wt_id", "dna_seq", "label
 
 
 def main() -> None:
-    # Discovered from disk rather than from the parser REGISTRY, which also lists sources
-    # screened out and never parsed (GD09, PP15, ...). The protein-side table lives under
-    # the same tree and is not a source.
-    paths = sorted(glob.glob(str(INTERIM_DIR / "*" / "*.parquet")))
-    tables = {Path(p).parent.name: Path(p) for p in paths if Path(p).parent.name != "proteins"}
+    tables = source_tables()
     if not tables:
         raise SystemExit("nothing parsed yet\nrun scripts/build_dataset.py --all")
 

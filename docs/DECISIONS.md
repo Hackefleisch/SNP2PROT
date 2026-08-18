@@ -125,6 +125,54 @@ write it, and following it would put this module in the business of tracking tax
 `weirauch2014` is byte-identical and stored as *Mus musculus* by one and *Homo sapiens* by the
 other. One of them is wrong about the protein, and no normalisation can decide which.
 
+### 2026-08-17 — `T3` done: a cluster side table, not a `cluster_size` column
+The open design question was a stored `cluster_size` column against a side table.
+**Side table.** A column would answer size queries by Parquet predicate pushdown, but it
+denormalises a per-cluster fact onto 45 million rows and requires touching `schema.py` and
+every parser's output; the schema stays frozen and no parser was rewritten.
+
+`data/interim/clusters/clusters.parquet` — one row per cluster: family, representative, domain
+count, variant count, maximum edit distance, contributing sources, construct and row counts.
+Written by `scripts/build_clusters.py`, which is the only pass that already knows the
+assignment, and read through `snp2prot.clusters.load` / `ids_with_at_least` / `select`.
+
+Two things settled along the way:
+
+- **"Cluster size" means distinct canonical domains** — not rows, not constructs. One domain
+  assayed by two laboratories counts once. Asserted in a test, because counting constructs
+  instead would inflate 47 clusters.
+- **Row counts are accumulated during the rewrite pass, not in a second scan.** The inventory
+  needs a row count per cluster and the rows are already in memory; a second pass over 45
+  million rows would cost more than everything else in the script.
+
+Incidental fix: three places discovered the corpus with an ad-hoc `"/proteins/" not in path`
+string test, which would silently not have covered the new `clusters/` directory.
+`config.source_tables()` is now the single discovery helper and `config.NON_SOURCE_INTERIM`
+the single list of companion tables.
+
+### 2026-08-17 — Full rebuild, and two reproducibility defects it exposed
+The owner waived the no-long-running-commands rule once for a complete rerun. Everything
+reproduced: 45,495,168 rows, 1,335 domains, 1,133 clusters, 122 multi-member, largest 8, and
+the audit sweep clean apart from the two known excluded accessions. Timings are recorded in
+`METHODS.md` §10.2 — the full build is **13 minutes**, of which `build_dataset.py --all` is
+**7 min 28 s**, not the 4-5 min previously claimed in `TODO.md`.
+
+Two defects surfaced that only a fresh build could show:
+
+- **`reports/clusters.md` was not stable under re-run.** It stated "after dropping *N*
+  superseded short-window copies", where *N* is 17 on a fresh build and 0 on a repeat: it
+  described the state of `data/interim/` when the script ran, not the dataset. A committed
+  report whose diff depends on how many times a step was repeated cannot serve as evidence, so
+  the line now states the dataset property and the run-dependent count goes to stdout only.
+- **A single-source rebuild silently detaches that source from its clusters.**
+  `build_dataset.py --source X` writes `wt_id` in lineage form while the rest of the corpus
+  carries the cluster form. The table validates, the row count is right, and the domain simply
+  leaves its cluster. `build_clusters.py` must follow any single-source rebuild; it is
+  idempotent, and the cluster table was verified byte-identical across two consecutive runs.
+
+The clusters report also gained the multi-domain family breakdown and the fifteen largest
+clusters, which the inventory made free to produce.
+
 ### 2026-08-17 — Tier 4 dropped; `T7` discarded
 **Decided by the owner.** The bHLH dimer held-out sets are no longer wanted. The two problems
 `T7` was opened to resolve go with it, unresolved and now moot: a heterodimer is two chains

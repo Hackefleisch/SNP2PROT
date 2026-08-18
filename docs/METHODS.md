@@ -544,8 +544,17 @@ rather than its best. Ties are broken deterministically by length then sequence,
 reproduces the same clusters. Only sequences of the same Pfam family are compared, which is
 both correct and a large saving.
 
-**The threshold is 5 edits** (`cluster.max_edits`, owner's decision). It gives 1,133 clusters
-with a largest of 8 domains.
+**The threshold is 5 edits** (`cluster.max_edits`, owner's decision), **and a membership must
+also align over at least 60% of the shorter sequence** (`cluster.min_overlap`). Together they
+give 1,162 clusters with a largest of 8 domains.
+
+The overlap floor exists because free terminal gaps, unguarded, stop measuring distance
+between two domains at all: an arbitrarily long prefix of one and suffix of the other can be
+discarded at zero cost, and the edits are then counted over whatever window survives. Two
+unrelated Myb domains of 72 and 60 aa align on six residues and report 3 edits, where the same
+alignment with terminal gaps charged reports 59. **31 of 202 memberships had been formed that
+way**, aligning over 3-10% of the shorter sequence. The floor is not a tuned parameter:
+genuine members align at ≥90% and the spurious ones at ≤10%, with nothing in between.
 
 ### 7.4 Cluster identity
 
@@ -562,7 +571,7 @@ Selecting on cluster size — "train only on DBDs with at least five variants" �
 training-time choice, not a dataset one: the dataset stores everything and the modeller
 filters. What the dataset owes the modeller is the ability to make that selection cheaply.
 Answering it from the row tables means grouping 45 million rows and counting distinct
-sequences, roughly a minute of work to learn 1,133 numbers.
+sequences, roughly a minute of work to learn 1,162 numbers.
 
 A per-cluster side table (`data/interim/clusters/clusters.parquet`, one row per cluster:
 family, representative, domain count, variant count, maximum edit distance, contributing
@@ -668,7 +677,7 @@ Build of **2026-08-17**, from 19 contributing sources.
 | rows | 45,495,168 |
 | constructs | 1,383 |
 | distinct DNA-binding domains | 1,335 |
-| clusters | 1,133 |
+| clusters | 1,162 |
 | Pfam families | 56 |
 | distinct 8-mers | 32,896 (identical in every source) |
 | binding / non-binding / no call | 95,840 / 44,626,532 / 772,796 |
@@ -712,28 +721,31 @@ domains, and how those domains divide into references and variants.
 |---:|---:|---:|---:|---:|
 | 1 | 1,011 | 1,011 | 1,011 | 0 |
 | 2 | 88 | 176 | 88 | 88 |
-| 3 | 13 | 39 | 13 | 26 |
-| 4 | 7 | 28 | 7 | 21 |
-| 5 | 8 | 40 | 8 | 32 |
+| 3 | 11 | 33 | 11 | 22 |
+| 4 | 6 | 24 | 6 | 18 |
+| 5 | 6 | 30 | 6 | 24 |
 | 6 | 2 | 12 | 2 | 10 |
-| 7 | 3 | 21 | 3 | 18 |
+| 7 | 2 | 14 | 2 | 12 |
 | 8 | 1 | 8 | 1 | 7 |
-| | **1,133** | **1,335** | **1,133** | **202** |
+| | **1,162** | **1,335** | **1,162** | **173** |
 
 The columns are related exactly. Every cluster contains **exactly one reference**, so
 *references* equals the cluster count and
 
 > variants = domains − clusters
 
-A cluster of size 1 is a reference with nothing to compare it to. **122 clusters hold more than
-one domain**, 34 hold three or more and 14 hold five or more; 75 clusters draw on more than one
-source. The largest is `C:BAR15A:HOXD13` at 8 domains, then `C:BAR15A:CRX`, `C:BAR15A:FOXC1`
-and `C:PNAS08:PF14_0633` at 7.
+A cluster of size 1 is a reference with nothing to compare it to. **108 clusters hold more than
+one domain**, 28 hold three or more and 11 hold five or more; 70 clusters draw on more than one
+source. The largest is `C:BAR15A:HOXD13` at 8 domains, then `C:BAR15A:CRX` and
+`C:BAR15A:FOXC1` at 7.
 
-Variants by family — Homeodomain 87, Myb 16, bHLH 15, forkhead 13, AP2 9, zf-C4 7,
-RFX 5, TCP 5. The point is not the total but the spread: with variants in homeodomain only, the
-project's central question — *does sensitivity to single-residue change transfer across folds?*
-— is unanswerable. Eight families now carry variants. It is still thin.
+Variants by family — Homeodomain 84, forkhead 13, HLH 9, zf-C4 7, MADF 5, RFX 5, TCP 5,
+SAND 5, Myb 4, bZIP 4, DM 4. The point is not the total but the spread: with variants in
+homeodomain only, the project's central question — *does sensitivity to single-residue change
+transfer across folds?* — is unanswerable. Twenty-nine families now carry at least one variant,
+though only ten carry more than three. It is thin, and thinner than it looked before the
+overlap floor of §7.3 removed 29 spurious variants — a correction that fell hardest on Myb
+(16 to 4) and AP2 (9 to 1), which were the two families the earlier breadth claim leant on.
 
 The companion protein table covers **1,224 of 1,335 domains**, each located inside the
 construct it was cut from. Full-length coverage is the exception rather than the rule:
@@ -807,8 +819,8 @@ Stated because a user of the dataset needs them, not because they are open work 
    on this data can mean.
 2. **One replicate pair is irreconcilable.** ANAC092 (§6.1) shares no positive call between its
    two deposits, and both rows sit in one cluster.
-3. **Protein-axis depth is thin and homeodomain-heavy.** 202 variant domains across 122
-   clusters; 1,011 of 1,133 clusters hold a single domain, and 87 of the 202 variants are
+3. **Protein-axis depth is thin and homeodomain-heavy.** 173 variant domains across 108
+   clusters; 1,054 of 1,162 clusters hold a single domain, and 84 of the 173 variants are
    homeodomain.
 4. **Full-length protein sequence is available for about a third of domains** (§9.3), almost
    entirely because one source publishes no UniProt accession. Domain-level and

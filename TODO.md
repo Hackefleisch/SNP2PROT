@@ -18,7 +18,7 @@ scheme; it is frozen at [`reports/archive/OPEN_ITEMS_2026-08-14.md`](reports/arc
 have mixed assay types are out — which removes the `dna_len` leakage problem entirely, since
 every row is an 8-mer and always will be.
 
-19 PBM sources parsed and validator-clean: **45,495,168 rows, 1,335 domains in 1,133
+19 PBM sources parsed and validator-clean: **45,495,168 rows, 1,335 domains in 1,162
 clusters, 56 Pfam families, 137 organisms**, every protein scored against the same 32,896
 8-mers.
 
@@ -26,9 +26,11 @@ clusters, 56 Pfam families, 137 organisms**, every protein scored against the sa
 (`docs/DECISIONS.md` §11) — and `wt_id` comes from CD-HIT clustering at 5 edits, not construct
 lineage.
 
-**The protein axis is no longer the bottleneck it was.** 122 clusters hold 202 variants,
-against 28 and 81 before, and only 87 of the 202 are homeodomain (was 54 of 81): Myb 16,
-bHLH 15, forkhead 13, AP2 9, zf-C4 7. `T14` is the only open lead that would deepen it.
+**The protein axis is thinner than it looked.** 108 clusters hold **173 variants**, and 84 of
+them are homeodomain: forkhead 13, HLH 9, zf-C4 7, then MADF, RFX, TCP and SAND at 5 each,
+Myb 4, bZIP 4, DM 4. The earlier figure of 202 across 122 clusters included 31 memberships
+formed on a degenerate alignment (`T25`, closed 2026-08-18) — the correction fell hardest on
+Myb (16 to 4) and AP2 (9 to 1). `T14` is the only open lead that would deepen it.
 
 That is what makes the project's central question askable at all — **does sensitivity to
 single-residue change transfer across folds?** With variants in homeodomain only it was
@@ -122,18 +124,23 @@ Small, but it is ancestral reconstruction, so every sequence is stated explicitl
 no accession chasing. Reconstructed-ancestor series are also the one place where designed
 protein-axis depth exists outside homeodomain point mutants.
 
-### T25 — Free terminal gaps can call two unrelated domains near-identical
-`align.edit_profile` with `free_end_gaps: true` reports **3 edits** between a 60 aa
-homeodomain-like window from `GD09`'s NSY-7 and `C:weirauch2014:lim-4` — because the global
-aligner pushed everything into free terminal gaps and scored a 5-residue overlap. The setting
-is right and load-bearing (`ROG18A`'s clipped padding, `docs/DECISIONS.md`), but it has no
-floor: nothing requires the aligned region to be a meaningful fraction of either sequence.
+### T27 — Near-identical domains can sit in different clusters
+Surfaced by the `T25` sweep, and **not caused by it** — this is the greedy algorithm's known
+order dependence, now measured for the first time. A domain joins the *first* representative
+within 5 edits, not the best, so two paralogues that are 1-5 edits apart can end up in separate
+clusters if one of them matched an earlier representative first.
 
-Nothing in the corpus is known to be affected — clustering compares within a family and real
-domains share a full core — but a heavily clipped short domain meeting a long representative
-of its own family is the shape that would trigger it. Fix is a minimum-overlap guard
-(reject the alignment if the ungapped overlap is below, say, 60% of the shorter sequence),
-plus a sweep of existing clusters for any member joined on a short overlap.
+**13 such pairs exist** across the four families swept (Homeodomain, Myb, AP2, HLH), all at
+full overlap: `BAR15A:VAX2`/`Cell08:Vax1` at 1 edit, `BAR15A:HOXC4`/`Cell08:Hoxb4` at 1-2,
+`weirauch2014:six3`/`Optix` at 2-3, `Cell08:Hoxc10`/`Hoxa10` at 4, `BAR15A:VSX1`/`Cell08:Vsx1`
+and `Cell08:Irx4`/`Irx6` and `BAR15A:PITX2`/`Cell08:Pitx3` at 5.
+
+**This is leakage in leave-one-cluster-out**: hold out one cluster and a near-identical
+sequence remains in training. Options are a post-pass that merges clusters whose
+representatives are within the threshold (reintroducing some chaining, which single-linkage
+was rejected for), a stricter split regime that groups clusters by connected component at
+evaluation time only, or accepting and reporting it. The last is cheapest and honest, and the
+split code is not written yet — decide it there rather than in the clustering.
 
 ### T26 — `.gitignore` silently drops the docs it promises to keep
 `data/raw/*` excludes the *directory*, so git never descends into it and the
@@ -240,7 +247,7 @@ the report specifies it.
 `data/interim/clusters/clusters.parquet`, one row per cluster, written by `build_clusters.py`.
 Read it with `snp2prot.clusters.load` / `ids_with_at_least(n)` / `select(df, n)` rather than
 grouping the row tables — and note that **size means distinct canonical domains**, not rows and
-not constructs, so a domain assayed by two labs counts once. Today: 122 clusters hold more than
+not constructs, so a domain assayed by two labs counts once. Today: 108 clusters hold more than
 one domain, 34 hold three or more, 14 hold five or more.
 
 ### N1 — The row count is an exact invariant
@@ -259,7 +266,7 @@ table validates, the row count is right, and the domain simply leaves its cluste
 
 **Always run `scripts/build_clusters.py` after any single-source rebuild.** It is corpus-wide
 and idempotent (it strips the `C:` prefix to recover the lineage name underneath), takes
-**79-84 s**, and reports the domain and cluster counts so a mismatch is visible: 1,335 / 1,133
+**79-84 s**, and reports the domain and cluster counts so a mismatch is visible: 1,335 / 1,162
 / 122 multi-member / largest 8 as of 2026-08-17.
 
 **That is necessary but it is not sufficient, and the ROG18A rebuild of 2026-08-17 showed

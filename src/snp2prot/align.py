@@ -15,6 +15,16 @@ residues of N-terminal padding and others only 2. Charging for those terminal ga
 report 8 phantom indels between a protein and its own chimera. Internal indels still count —
 those are real.
 
+**Free terminal gaps need a floor, or they stop measuring distance at all.** With end gaps
+weighted zero, an arbitrarily long prefix of one sequence and suffix of the other can be
+discarded for nothing, and the edits are then counted only over whatever window survives. For
+two unrelated domains the optimiser exploits exactly that: a 72 aa and a 60 aa Myb domain
+align on six residues, score +14 against −22 for the honest alignment, and report **3 edits
+where a charged alignment reports 59**. `overlap` records how much of the shorter sequence
+actually aligned so a caller can refuse that answer; `snp2prot.clusters` does, at
+`cluster.min_overlap`. Legitimate clipping is unaffected — when the difference really is
+padding, the shorter sequence is fully contained and `overlap` is 1.0.
+
 **Positions are reported in the reference frame.** Every variant in a cluster is then
 described in one coordinate system, which is what makes `mut_positions` comparable across a
 cluster and mappable onto a single predicted structure. An inserted residue is attributed to
@@ -43,6 +53,11 @@ class EditProfile:
     n_substitutions: int = 0
     n_insertions: int = 0
     n_deletions: int = 0
+    #: Residues aligned to a residue, as a fraction of the shorter sequence. 1.0 means one
+    #: sequence is wholly contained in the other, which is what differently-clipped padding
+    #: looks like. A low value means the aligner discarded most of both sequences into free
+    #: terminal gaps, and `n_edits` then describes a window rather than the domains.
+    overlap: float = 1.0
 
     @property
     def positions_str(self) -> str:
@@ -80,6 +95,10 @@ def edit_profile(reference: str, variant: str, free_end_gaps: bool = True) -> Ed
         while hi > lo and (ref_row[hi - 1] == "-" or var_row[hi - 1] == "-"):
             hi -= 1
 
+    aligned = sum(
+        1 for i in range(lo, hi) if ref_row[i] != "-" and var_row[i] != "-"
+    )  # residue-to-residue, the part of the comparison that actually happened
+
     positions: list[int] = []
     n_sub = n_ins = n_del = 0
     ref_pos = sum(1 for c in ref_row[:lo] if c != "-")  # residues of the reference consumed
@@ -107,4 +126,5 @@ def edit_profile(reference: str, variant: str, free_end_gaps: bool = True) -> Ed
         n_substitutions=n_sub,
         n_insertions=n_ins,
         n_deletions=n_del,
+        overlap=aligned / min(len(reference), len(variant)),
     )

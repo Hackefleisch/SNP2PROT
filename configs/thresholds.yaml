@@ -47,6 +47,18 @@ cluster:
   # own chimera. Internal indels still count.
   free_end_gaps: true
 
+  # ...but a free trim is only legitimate when what remains is essentially the whole of the
+  # shorter sequence. Weighted at zero, terminal gaps let the aligner discard an arbitrary
+  # prefix of one domain and suffix of the other and count edits over the sliver that is
+  # left: two unrelated 60-72 aa Myb domains align on six residues and report 3 edits where a
+  # charged alignment reports 59. A membership is refused unless this fraction of the shorter
+  # sequence aligned residue-to-residue.
+  #
+  # Not a tuned number. Measured over the corpus, genuine cluster members overlap at >= 0.90
+  # and the spurious ones at <= 0.10, with nothing in between; any value in that band gives
+  # the same 31 rejections.
+  min_overlap: 0.6
+
 domain:
   # Padding applied to each side of the Pfam envelope. 10 covers every observed
   # out-of-envelope mutation (max 9) with margin, and is set from the biology of the

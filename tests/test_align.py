@@ -65,3 +65,30 @@ def test_one_position_is_emitted_per_edited_residue():
 def test_substitution_count_matches_a_known_edit(n):
     variant = "".join("W" if i < n else c for i, c in enumerate(REF))
     assert edit_profile(REF, variant).n_edits == n
+
+
+def test_overlap_is_one_when_the_difference_is_only_clipped_padding():
+    """The case free end gaps exist for: the shorter domain is wholly contained."""
+    full = "MMMMMMMMMM" + "KKKKKAAAAA"
+    clipped = "KKKKKAAAAA"
+    profile = edit_profile(full, clipped)
+    assert profile.n_edits == 0
+    assert profile.overlap == 1.0
+
+
+def test_overlap_exposes_an_alignment_that_measured_almost_nothing():
+    """Two sequences sharing only a tail: free end gaps discard the rest at no cost, so the
+    edit count describes five residues rather than the domains. Real instance in the corpus:
+    a 72 aa and a 60 aa Myb domain, six residues aligned, 3 edits where a charged alignment
+    reports 59."""
+    a = "WWWWWWWWWW" + "KKKKK"
+    b = "KKKKK" + "YYYYYYYYYY"
+    profile = edit_profile(a, b)
+    assert profile.n_edits == 0
+    assert profile.overlap == pytest.approx(5 / 15)
+
+
+def test_charging_terminal_gaps_reveals_the_edits_that_were_skipped():
+    a = "WWWWWWWWWW" + "KKKKK"
+    b = "KKKKK" + "YYYYYYYYYY"
+    assert edit_profile(a, b, free_end_gaps=False).n_edits > 10

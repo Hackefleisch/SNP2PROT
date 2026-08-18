@@ -18,7 +18,7 @@ Where it and this file disagree about *paths*, this file wins (see the mapping b
 they disagree about *intent*, the brief wins.
 
 **Current state: 19 PBM sources parsed and validator-clean — 45,495,168 rows, 1,335 domains
-in 1,133 clusters, 56 Pfam families, 137 organisms, every protein scored against the same
+in 1,162 clusters, 56 Pfam families, 137 organisms, every protein scored against the same
 32,896 8-mers. `dbd_seq` is the canonical domain (`snp2prot.canonical`) and `wt_id` comes from
 CD-HIT clustering (`scripts/build_clusters.py`), not from construct lineage. Two source
 families and no more: 18 UniPROBE accessions plus CIS-BP / Weirauch 2014 (`weirauch2014`, GEO

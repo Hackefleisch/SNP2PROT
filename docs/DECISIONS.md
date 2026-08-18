@@ -17,6 +17,51 @@ older commit messages and code comments still resolve.
 
 ## 1. Scope
 
+### 2026-08-18 — `T25`: free terminal gaps need an overlap floor, and 31 memberships fail it
+**Decided by the owner and applied.** `cluster.min_overlap: 0.6` is new in
+`configs/thresholds.yaml`: a domain joins a cluster only if the alignment matched residues over
+at least that fraction of the shorter sequence.
+
+**What was wrong.** With terminal gaps weighted zero, an arbitrarily long prefix of one
+sequence and suffix of the other can be discarded for free, and `align.edit_profile` then
+counts edits only over what remains. That is no longer a distance between two domains — it is
+the edit distance of the best-matching window after free trimming, and it has no triangle
+inequality. Two unrelated Myb domains of 72 and 60 aa align on six residues, score +14 against
+−22 for the honest alignment, and report **3 edits where a charged alignment reports 59**.
+
+**How much of the corpus it touched.** Every one of the 202 cluster memberships was measured:
+**31 of them (15%), across 18 clusters, were formed on 3-10% overlap** — Myb 13, AP2 8, HLH 7,
+Homeodomain 3. Genuine memberships align at ≥90%. Nothing falls between 10% and 90%, so the
+floor is not a tuned number; any value in that band rejects the same 31.
+
+**What it cost, and what it bought.**
+
+| | before | after |
+|---|---:|---:|
+| clusters | 1,133 | **1,162** |
+| clusters holding a variant | 122 | **108** |
+| variant domains | 202 | **173** |
+| variants that are homeodomain | 87 of 202 | 84 of 173 |
+
+The correction falls hardest on the families the breadth claim leant on — **Myb 16 → 4 and
+AP2 9 → 1** — so "the protein axis is no longer the bottleneck" was overstated by more than
+the totals suggest. `mut_positions` and `n_mut_from_wt` for the 31 were positions in a frame
+the variant had never been aligned to; they are now correct or gone.
+
+It also closes two demonstrated leaks: an HLH domain and a Myb domain each sat in one cluster
+on a spurious match while a genuine ≤5-edit relative sat in another, which under
+leave-one-cluster-out puts near-identical sequences on both sides of a split.
+
+**Why the floor is safe.** It is measured against the *shorter* sequence, so the case free
+terminal gaps exist for — the same domain clipped to less padding, ROG18A's 83 aa bare against
+105 aa padded — is wholly contained and scores 1.0. The subsumption pass that folds
+short-window duplicates together now demands 1.0 exactly, which is what "one is the other with
+different padding" means.
+
+Implementation: `overlap` on `align.EditProfile`, `min_overlap` in `snp2prot.clusters.cluster`,
+5 new tests. Label health and the merge resolution were rebuilt on the new clusters and are
+unchanged: 20 `dead_variant` / 34 `no_evidence`, 48 records dropped at merge.
+
 ### 2026-08-18 — `T15` and `D4`: one record per domain, the one with more positives
 **Decided by the owner.** 47 domains are stored by more than one source, 95 records in all,
 and their labels do not agree — the median pair on 46% of the 8-mers either called positive,

@@ -56,12 +56,20 @@ def cluster(
     max_edits: int,
     same_family_only: bool = True,
     families: dict[str, str] | None = None,
+    min_overlap: float = 0.0,
 ) -> list[Cluster]:
     """Greedy incremental clustering of `{key: sequence}`.
 
     Only sequences of the same Pfam family are compared when `same_family_only`, which is both
     correct and a large saving: two domains of different folds are never one cluster, and the
     comparison is skipped rather than computed and discarded.
+
+    `min_overlap` is the guard on free terminal gaps. Without it, two unrelated domains can be
+    called a few edits apart because the aligner parked almost all of both sequences in gaps
+    that cost nothing — 31 of 202 memberships in this corpus were formed that way, aligning on
+    3-10% of the shorter sequence (`docs/DECISIONS.md`, `T25`). Set it from
+    `cluster.min_overlap`; the default of 0 preserves the old behaviour for callers that
+    deliberately want it, such as reproducing a historical inventory.
     """
     fams = families or {}
     # Longest first, then by sequence, so the result does not depend on dict ordering.
@@ -81,7 +89,8 @@ def cluster(
             # differently-clipped case this dataset exists to reconcile. Filtering on length
             # would silently refuse to merge them. Greedy clustering only ever compares
             # against representatives, so the cost of checking honestly is small.
-            if align.edit_profile(rseq, seq).n_edits <= max_edits:
+            profile = align.edit_profile(rseq, seq)
+            if profile.n_edits <= max_edits and profile.overlap >= min_overlap:
                 joined = rkey
                 break
         if joined is None:

@@ -71,3 +71,27 @@ def test_every_member_is_within_the_threshold_of_its_representative():
     for c in clusters.cluster(seqs, max_edits=2):
         for m in c.members:
             assert align.edit_profile(seqs[c.representative], seqs[m]).n_edits <= 2
+
+
+def test_a_minimum_overlap_refuses_a_membership_built_on_free_terminal_gaps():
+    """31 of the corpus's 202 memberships were formed this way, aligning on 3-10% of the
+    shorter sequence (`docs/DECISIONS.md`, `T25`). Without the floor these two join; with it
+    they are two clusters."""
+    seqs = {"a": "WWWWWWWWWW" + "KKKKK", "b": "KKKKK" + "YYYYYYYYYY"}
+    fams = {"a": "F", "b": "F"}
+
+    unguarded = clusters.cluster(seqs, max_edits=5, families=fams)
+    assert len(unguarded) == 1
+
+    guarded = clusters.cluster(seqs, max_edits=5, families=fams, min_overlap=0.6)
+    assert len(guarded) == 2
+
+
+def test_the_floor_does_not_separate_a_domain_from_its_own_clipped_copy():
+    """Which is the whole reason terminal gaps are free: same domain, less padding."""
+    full = "MMMMMMMMMM" + "KKKKKAAAAAKKKKKAAAAA" + "WWWWWWWWWW"
+    clipped = "KKKKKAAAAAKKKKKAAAAA"
+    seqs = {"full": full, "clipped": clipped}
+    fams = {"full": "F", "clipped": "F"}
+    guarded = clusters.cluster(seqs, max_edits=5, families=fams, min_overlap=0.6)
+    assert len(guarded) == 1

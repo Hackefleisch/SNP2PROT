@@ -38,8 +38,12 @@ its own when modelling starts.
 **The label noise floor is measured and it is not small** (`reports/overlap.md`, 2026-08-17).
 47 domains are stored by two sources; the median pair agrees on **45.8%** of the 8-mers either
 called positive, against 70-72% for replicates within one source. Any model that reproduces
-held-out positives much past that is reproducing a laboratory. One pair — `C:LIN14B:NAP` —
-agrees on nothing at all, which is `D4`.
+held-out positives much past that is reproducing a laboratory.
+
+**Only one of each duplicate reaches the merged table** (`T15`/`D4` closed 2026-08-18): the
+record with more positives, unless a variant series is involved, in which case the series
+wins. 48 of 95 records drop at merge, 3.5% of rows — `snp2prot.merge`, applied at merge, never
+at parse.
 
 **The cutoff was swept and kept** (`reports/threshold_review.md`, `T20` closed 2026-08-18).
 `E >= 0.45` is the best absolute cutoff there is, and the rank-matched alternative was
@@ -117,19 +121,6 @@ is reported at Dryad `10.5061/dryad.pm3g4r3` with a companion GitHub repo — un
 Small, but it is ancestral reconstruction, so every sequence is stated explicitly and there is
 no accession chasing. Reconstructed-ancestor series are also the one place where designed
 protein-axis depth exists outside homeodomain point mutants.
-
-### T15 — One domain is two different proteins, depending on the source
-Left over from `T5b`, which fixed how organism names are *written* and could not fix this. The
-domain under `C:Cell08:Tlx2` is byte-identical in `Cell08` and `weirauch2014`, and is stored
-as *Mus musculus* by one and *Homo sapiens* by the other. A byte-identical homeodomain across
-mouse and human is entirely possible, so this may be two correct records — but their labels
-disagree (Jaccard 0.097, `reports/overlap.md`), and one deposit having the wrong protein would
-explain both facts at once. Related: `D4`.
-
-The general rule behind it is still undecided and applies to the two sources we hold: does
-the corpus store one row per sequence, or one per (sequence, protein)? Today two sources can
-give one `dbd_seq` two identities and two labels, which is the input a sequence model cannot
-tell apart.
 
 ### T25 — Free terminal gaps can call two unrelated domains near-identical
 `align.edit_profile` with `free_end_gaps: true` reports **3 edits** between a 60 aa
@@ -225,21 +216,6 @@ Clustering by sequence distance merges two natural paralogues that construct lin
 apart, and `mut_positions` is expressed in the reference's frame — so the merge has to pick
 one, and neither has a claim. The **threshold** half of this decision is settled (5 edits,
 owner); the reference-choice half is not.
-
-### D4 — `C:LIN14B:NAP` — two deposits of ANAC092 that share no positive call
-**Surfaced by `T4`'s agreement check, 2026-08-17.** *Arabidopsis* ANAC092 / O49255 is stored
-by both `LIN14B` and `weirauch2014` with a byte-identical 144 aa domain. Their positive sets
-are **disjoint** — 12 against 126, zero shared — at a rank correlation of 0.068 across all
-32,896 8-mers. Every other replicate pair in the corpus reaches at least 0.097 Jaccard and
-0.200 rho.
-
-This is outside the range noise explains, so one of the two measurements is probably attached
-to the wrong construct. It is one domain of 1,335 and no rule in the admission policy catches
-it, since both deposits are internally consistent. Options: exclude the domain, keep one
-deposit and say which, or keep both and let the disagreement stand as measured. Not resolved
-unilaterally — but note that whatever the answer, both rows currently sit in **one cluster**,
-so a split cannot separate them and a model sees one protein with two contradictory profiles.
-
 
 ---
 

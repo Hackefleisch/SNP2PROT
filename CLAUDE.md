@@ -91,6 +91,7 @@ src/snp2prot/
   references.py   identifier -> reference protein, cached; only used when a construct is short
   clusters.py     CD-HIT greedy incremental clustering + the cluster inventory (size lookup)
   label_health.py which records carry positive evidence; the training-time filter (T21)
+  merge.py        one record per domain: which of two sources' measurements survives (T15/D4)
   proteins.py     the protein-side companion table (bare/padded domain, construct, full-length)
   parsers/        one module per source, each exposing parse() -> pd.DataFrame
     _pbm.py       assay-level machinery shared by ALL universal-PBM sources

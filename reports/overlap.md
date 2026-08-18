@@ -33,6 +33,64 @@ Jaccard below 0.2 or rank correlation below 0.3. These are reported, never repai
 | `C:SCI09:Myf6` | `HLH` | SCI09 | weirauch2014 | 23 | 7 | 5 | 0.200 | 0.200 |
 | `C:MAR17A:Tcfec` | `HLH` | MAR17A | weirauch2014 | 29 | 91 | 29 | 0.319 | 0.225 |
 
+## Which record survives the merge
+
+One record per domain reaches `data/processed/`: **the one with more positives**, unless one candidate belongs to a variant series, in which case the series wins (`docs/DECISIONS.md`, 2026-08-18). A PBM fails by missing binding, not by inventing it, so the deeper measurement is the more informative one — and leaving both would hand a model identical input with two different labels, inside one cluster, where no split can separate them.
+
+**48 of 95 records are dropped at merge**, 1,579,008 rows. Nothing is deleted: `data/interim/` keeps every measurement, which is what this report is computed from.
+
+| `wt_id` | family | kept | positives | dropped | positives | why |
+|---|---|---|---:|---|---:|---|
+| `C:BAR15A:ARX` | `Homeodomain` | BAR15A | 188 | Cell08 | 206 | series |
+| `C:BAR15A:FOXC1` | `Forkhead` | BAR15A | 68 | MAR17A, weirauch2014 | 72, 11 | series |
+| `C:BAR15A:HOXD13` | `Homeodomain` | BAR15A | 117 | Cell08 | 89 | positives |
+| `C:BAR15A:PHOX2B` | `Homeodomain` | BAR15A | 37 | Cell08 | 179 | series |
+| `C:BAR15A:PITX2` | `Homeodomain` | BAR15A | 96 | Cell08 | 163 | series |
+| `C:BAR15A:VENTX` | `Homeodomain` | BAR15A | 48 | weirauch2014 | 54 | series |
+| `C:Cell08:Hoxa2` | `Homeodomain` | Cell08 | 165 | weirauch2014 | 17 | positives |
+| `C:Cell08:Lhx2` | `Homeodomain` | Cell08 | 205 | weirauch2014 | 74 | positives |
+| `C:Cell08:Lhx6` | `Homeodomain` | Cell08 | 202 | weirauch2014 | 156 | positives |
+| `C:Cell08:Msx1` | `Homeodomain` | BAR15A | 175 | Cell08 | 169 | positives |
+| `C:Cell08:Msx1` | `Homeodomain` | Cell08 | 185 | MAR17A | 187 | series |
+| `C:Cell08:Rhox11` | `Homeodomain` | Cell08 | 95 | weirauch2014 | 31 | positives |
+| `C:Cell08:Tlx2` | `Homeodomain` | Cell08 | 20 | weirauch2014 | 14 | positives |
+| `C:Cell08:Vax1` | `Homeodomain` | Cell08 | 173 | BAR15A | 139 | positives |
+| `C:DEV12:Bap` | `Homeodomain` | DEV12 | 39 | weirauch2014 | 38 | positives |
+| `C:DEV12:Eve` | `Homeodomain` | DEV12 | 115 | weirauch2014 | 82 | positives |
+| `C:DEV12:Ptx1` | `Homeodomain` | DEV12 | 136 | weirauch2014 | 75 | positives |
+| `C:EMBO10:Ehf` | `Ets` | EMBO10 | 199 | SCI09 | 135 | positives |
+| `C:EMBO10:Elf3` | `Ets` | EMBO10 | 110 | SCI09 | 35 | positives |
+| `C:EMBO10:Gabpa` | `Ets` | EMBO10 | 83 | SCI09 | 81 | positives |
+| `C:EMBO10:Sfpi1` | `Ets` | EMBO10 | 153 | SCI09 | 87 | positives |
+| `C:EMBO10:Spdef` | `Ets` | EMBO10 | 145 | SCI09 | 109 | positives |
+| `C:LIN14B:NAP` | `NAM` | weirauch2014 | 126 | LIN14B | 12 | positives |
+| `C:MAR17A:Atf3` | `bZIP` | MAR17A | 72 | weirauch2014 | 27 | positives |
+| `C:MAR17A:Cebpb` | `bZIP` | MAR17A | 79 | weirauch2014 | 49 | positives |
+| `C:MAR17A:Dbp` | `bZIP` | MAR17A | 30 | weirauch2014 | 3 | positives |
+| `C:MAR17A:Foxb1` | `Forkhead` | MAR17A | 17 | weirauch2014 | 9 | positives |
+| `C:MAR17A:Foxj2` | `Forkhead` | MAR17A | 146 | weirauch2014 | 44 | positives |
+| `C:MAR17A:Foxm1` | `Forkhead` | PNAS13 | 92 | MAR17A | 85 | positives |
+| `C:MAR17A:LOC100168299` | `ARID` | MAR17A | 162 | weirauch2014 | 132 | positives |
+| `C:MAR17A:Rarg` | `zf-C4` | MAR17A | 129 | weirauch2014 | 73 | positives |
+| `C:MAR17A:Rxrb` | `zf-C4` | MAR17A | 158 | weirauch2014 | 96 | positives |
+| `C:MAR17A:Rxrg` | `zf-C4` | weirauch2014 | 119 | MAR17A | 110 | positives |
+| `C:MAR17A:Srebf1` | `HLH` | weirauch2014 | 34 | MAR17A | 17 | positives |
+| `C:MAR17A:Tcfec` | `HLH` | weirauch2014 | 91 | MAR17A | 29 | positives |
+| `C:MAR17A:Tef` | `bZIP` | MAR17A | 71 | weirauch2014 | 26 | positives |
+| `C:MAR17A:Tfap2a` | `TF_AP-2` | SCI09 | 58 | MAR17A | 16 | positives |
+| `C:MAR17A:Xbp1` | `bZIP` | MAR17A | 84 | weirauch2014 | 22 | positives |
+| `C:PNAS13:FOXN2` | `Forkhead` | PNAS13 | 171 | ROG18A | 167 | positives |
+| `C:SCI09:Arid3a` | `ARID` | weirauch2014 | 156 | SCI09 | 38 | positives |
+| `C:SCI09:Atf1` | `bZIP` | weirauch2014 | 96 | SCI09 | 13 | positives |
+| `C:SCI09:Bhlhb2` | `HLH` | SCI09 | 115 | weirauch2014 | 87 | positives |
+| `C:SCI09:Jundm2` | `bZIP` | SCI09 | 54 | weirauch2014 | 17 | positives |
+| `C:SCI09:Max` | `HLH` | weirauch2014 | 122 | SCI09 | 56 | positives |
+| `C:SCI09:Myf6` | `HLH` | SCI09 | 23 | weirauch2014 | 7 | positives |
+| `C:SHO18A:Retn` | `ARID` | weirauch2014 | 58 | SHO18A | 18 | positives |
+| `C:weirauch2014:six3` | `Homeodomain` | BAR15A | 95 | SCI09 | 60 | positives |
+
+6 of them are decided by the series rule against the positive count: the kept record has fewer positives but sits beside the variants of its own cluster, measured by the same lab on the same array design.
+
 ## Every replicate pair
 
 Sorted by positive-call agreement, worst first.

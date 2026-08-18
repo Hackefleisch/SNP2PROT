@@ -20,7 +20,7 @@ import pandas as pd
 import pyarrow.compute as pc
 import pyarrow.dataset as ds
 
-from snp2prot import reports
+from snp2prot import label_health, reports
 from snp2prot.config import PROJECT_ROOT, REPORTS_DIR, source_tables
 
 #: Columns the report needs. Reading `dbd_seq` for 45M rows is already the expensive part;
@@ -51,8 +51,14 @@ def main() -> None:
             frames[source] = table.to_pandas()
 
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        records = label_health.load()
+    except FileNotFoundError:
+        records = None
+        print("  no label-health table: the merge-resolution section will be skipped")
+
     out = REPORTS_DIR / "overlap.md"
-    out.write_text(reports.overlap_report(frames))
+    out.write_text(reports.overlap_report(frames, records))
     print(f"wrote {out.relative_to(PROJECT_ROOT)}")
 
 

@@ -471,6 +471,19 @@ them. Open for the project owner, not resolved here.
 
 ---
 
+**Only one record per domain reaches the merged table.** Two labs measuring one sequence
+cannot be reconciled the way replicates within a source are — the disagreement is too large,
+and on two pairs it is total — so leaving both would present a model with identical input
+under two different labels, inside a single cluster where no split can separate them. The
+record with more positives is kept, on the grounds that a PBM fails by missing binding rather
+than inventing it (§5.1), **unless one candidate belongs to a variant series, in which case
+the series wins**: a wild type must be measured by the same lab and array design as the
+variants it is the reference for, or every substitution in that cluster is measured across the
+cross-source noise floor instead of against its own control. 48 of the 95 duplicate records
+are dropped, 1,579,008 rows, 3.5% of the corpus. The rule is applied at merge and never at
+parse: `data/interim/` retains every measurement, and every resolution is listed in
+`reports/overlap.md`.
+
 ## 7. Cluster construction
 
 A cluster (`wt_id`) is the unit at which train/test partitions must be made: a partition that

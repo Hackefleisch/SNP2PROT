@@ -19,7 +19,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from snp2prot import schema
+from snp2prot import merge, schema
 
 #: A family above this share of total rows gets flagged — C2H2 will otherwise swamp
 #: everything and the model can win by memorizing one family.
@@ -253,11 +253,17 @@ def _replicate_pairs(frames: dict[str, pd.DataFrame]) -> pd.DataFrame:
     return pd.DataFrame(rows).sort_values(["jaccard", "rho"]).reset_index(drop=True)
 
 
-def overlap_report(frames: dict[str, pd.DataFrame]) -> str:
+def overlap_report(frames: dict[str, pd.DataFrame], records: pd.DataFrame | None = None) -> str:
     """Cross-source replicates and how far their labels agree.
 
     `frames` maps source name to that source's rows. Only domains present in more than one
     source contribute, so the caller may pass frames pre-filtered to those domains.
+
+    `records` is the per-record summary from `snp2prot.label_health`, covering the **whole**
+    corpus. It cannot be derived from `frames`: the merge rule asks whether a record's source
+    also supplies the other domains of its cluster, and those other domains are the variants,
+    which are not duplicated and so are not in `frames`. Without it the merge section is
+    skipped rather than computed wrongly.
 
     The headline is deliberately *not* the overall agreement rate. Positives are well under
     1% of rows, so agreeing on the negatives carries that number to ~100% no matter how
@@ -332,6 +338,59 @@ def overlap_report(frames: dict[str, pd.DataFrame]) -> str:
                 f"{x['pos_b']} | {x['pos_both']} | {x['jaccard']:.3f} | {x['rho']:.3f} |"
             )
         lines.append("")
+
+    lines += [
+        "## Which record survives the merge",
+        "",
+        "One record per domain reaches `data/processed/`: **the one with more positives**, "
+        "unless one candidate belongs to a variant series, in which case the series wins "
+        "(`docs/DECISIONS.md`, 2026-08-18). A PBM fails by missing binding, not by inventing "
+        "it, so the deeper measurement is the more informative one — and leaving both would "
+        "hand a model identical input with two different labels, inside one cluster, where no "
+        "split can separate them.",
+        "",
+    ]
+    if records is None:
+        lines += [
+            "_Not computed: run `scripts/build_label_health.py` first, then regenerate._",
+            "",
+        ]
+    else:
+        resolution = merge.resolve(records)
+        resolution = resolution[resolution.dbd_seq.isin(r["dbd_seq"])]
+        kept = resolution[resolution.keep]
+        dropped = resolution[~resolution.keep]
+        n_rows = int(dropped["n_rows"].sum()) if "n_rows" in dropped else 0
+        flipped = 0
+        lines += [
+            f"**{len(dropped)} of {len(resolution)} records are dropped at merge**, "
+            f"{_fmt(n_rows)} rows. Nothing is deleted: `data/interim/` keeps every "
+            "measurement, which is what this report is computed from.",
+            "",
+            "| `wt_id` | family | kept | positives | dropped | positives | why |",
+            "|---|---|---|---:|---|---:|---|",
+        ]
+        for _, k in kept.sort_values("wt_id").iterrows():
+            others = dropped[dropped.dbd_seq == k["dbd_seq"]]
+            if others.empty:
+                continue
+            by_series = k["n_pos"] < others["n_pos"].max()
+            flipped += by_series
+            lines.append(
+                f"| `{k['wt_id']}` | `{k['dbd_family']}` | {k['source_dataset']} | "
+                f"{k['n_pos']} | "
+                + ", ".join(o.source_dataset for o in others.itertuples())
+                + " | "
+                + ", ".join(str(o.n_pos) for o in others.itertuples())
+                + (" | series |" if by_series else " | positives |")
+            )
+        lines += [
+            "",
+            f"{flipped} of them are decided by the series rule against the positive count: "
+            "the kept record has fewer positives but sits beside the variants of its own "
+            "cluster, measured by the same lab on the same array design.",
+            "",
+        ]
 
     lines += [
         "## Every replicate pair",

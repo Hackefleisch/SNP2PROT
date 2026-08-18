@@ -17,6 +17,43 @@ older commit messages and code comments still resolve.
 
 ## 1. Scope
 
+### 2026-08-18 — `T15` and `D4`: one record per domain, the one with more positives
+**Decided by the owner.** 47 domains are stored by more than one source, 95 records in all,
+and their labels do not agree — the median pair on 46% of the 8-mers either called positive,
+two pairs on almost nothing (`C:LIN14B:NAP` 12 against 126 sharing none; `C:Cell08:Tlx2` 20
+against 14 sharing three). Left alone they hand a sequence model identical input with two
+different labels, inside one cluster, where no split can separate them.
+
+**The record with more positives wins — unless one candidate belongs to a variant series, in
+which case the series wins.** 48 of the 95 records are dropped at merge, 1,579,008 rows
+(3.5% of the corpus). The rule is applied at *merge*, never at parse: `data/interim/` keeps
+every measurement, so `reports/overlap.md` still measures the noise floor from the full
+evidence and lists every resolution.
+
+Why more positives: a PBM fails by missing binding, not by inventing it — a weak array
+compresses its E-score distribution and calls fewer positives (`METHODS.md` §5.1) — so the
+deeper measurement is the more informative one. Intersecting the two instead would inherit the
+worse array's sensitivity everywhere and would leave `C:LIN14B:NAP` with no positives at all.
+
+**The series exception was added after measuring what the plain rule does.** It flips 6
+clusters, all of them wild types: `BAR15A`'s `ARX_REF` has 188 positives against `Cell08`'s
+206, so more-positives would take `Cell08`'s copy and leave ARX's five `BAR15A` variants to be
+compared against a wild type from another lab on another array — across a 46% cross-source
+noise floor that dwarfs any single-residue effect. Where one candidate's source also supplies
+the other domains of that cluster, that source wins.
+
+Two properties made the rule safe to apply corpus-wide, both checked and both worth re-checking
+whenever a source is added: **no duplicate pair disagrees about whether the protein binds at
+all** (all 95 records carry positives, so the rule never discards a measured non-binding), and
+**there are no ties** (1.8x margin at the median, 10x at the worst).
+
+This also settles `T15`'s general question — the corpus stores **one row per sequence**, not
+one per (sequence, protein) — and with it the species contradiction under `C:Cell08:Tlx2`:
+`Cell08` wins on 20 positives against 14, so the domain is stored as *Mus musculus*.
+
+Implementation: [`src/snp2prot/merge.py`](../src/snp2prot/merge.py), 6 tests, and the
+resolution table in [`reports/overlap.md`](../reports/overlap.md).
+
 ### 2026-08-18 — `T20`: the cutoff stays at `E >= 0.45`
 **Decided by the owner**, on the sweep in [`reports/threshold_review.md`](../reports/threshold_review.md).
 `configs/thresholds.yaml` is unchanged: `positive: 0.45`, `negative: 0.35`,

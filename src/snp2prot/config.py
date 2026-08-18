@@ -40,7 +40,16 @@ PROVENANCE_FILE = PROJECT_ROOT / "PROVENANCE.md"
 #: Companion tables that live under `data/interim/` but are NOT parsed sources. Anything
 #: iterating the corpus must skip them, and three places were doing that with an ad-hoc
 #: `"/proteins/" not in path` string test that silently would not have covered a second one.
-NON_SOURCE_INTERIM = frozenset({"proteins", "clusters"})
+NON_SOURCE_INTERIM = frozenset({"proteins", "clusters", "label_health"})
+
+#: One row per domain record: the domain at four levels, the construct, and the full-length
+#: protein where one resolved. Written by `scripts/build_protein_table.py`.
+PROTEIN_TABLE = INTERIM_DIR / "proteins" / "proteins.parquet"
+
+#: One row per (domain, source) record: label counts, best E-score, and whether the record
+#: has positive evidence or only looks like it does. Written by
+#: `scripts/build_label_health.py`; read via `snp2prot.label_health` (`TODO.md` T21).
+LABEL_HEALTH_TABLE = INTERIM_DIR / "label_health" / "label_health.parquet"
 
 #: One row per cluster: size, family, variant count. Written by `scripts/build_clusters.py`
 #: so that selecting on cluster size costs a 1,133-row read instead of a 45-million-row

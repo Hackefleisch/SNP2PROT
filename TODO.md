@@ -41,10 +41,18 @@ called positive, against 70-72% for replicates within one source. Any model that
 held-out positives much past that is reproducing a laboratory. One pair — `C:LIN14B:NAP` —
 agrees on nothing at all, which is `D4`.
 
-**And the cutoff behind those labels has now been swept** (`reports/threshold_review.md`,
-2026-08-18). `E >= 0.45` is the best *absolute* cutoff there is — every alternative agrees
-less — but a rank-matched rule at the same stringency agrees 8-12 points better, and the
-fixed cutoff silently switches `Cell09` off entirely. `T20` and `T21`.
+**The cutoff was swept and kept** (`reports/threshold_review.md`, `T20` closed 2026-08-18).
+`E >= 0.45` is the best absolute cutoff there is, and the rank-matched alternative was
+rejected: it would turn negatives into a ranking artifact and invent ~100 positives for each
+`BAR15A` variant that lost binding. The sensitivity asymmetry it would have hidden — two labs
+differing 1.6x in positive count on one protein — is now recorded in `docs/METHODS.md` §5.1
+instead.
+
+**Records with no positive evidence are flagged, not re-binarized** (`reports/label_health.md`,
+`T21` closed 2026-08-18). 54 of 1,383 records have no positive 8-mer: 20 are variants that
+measurably lost binding, with a control in their own series, and 34 have nothing to compare
+against — 2.5% of the corpus, dropped at training time with `label_health.usable(df)`, not at
+parse time.
 
 **Timings are measured, from the full rebuild of 2026-08-17.** `build_dataset.py --all` is
 **7 min 28 s** — the "4-5 min" figure carried here since 2026-08-14 was optimistic — and the
@@ -80,36 +88,6 @@ substring of the construct it came from. Use `canonical.place` instead of `dbd i
 Note the construct-architecture covariate (`T13`, closed 2026-08-17) rides on the same
 columns: flank length is `dbd_start` and `len(construct_seq) - dbd_end`, so whatever fixes the
 placement fixes that too.
-
-### T20 — Fixed cutoff or rank-matched rule?
-**Measured, not speculative** — [`reports/threshold_review.md`](reports/threshold_review.md).
-`E >= 0.45` is the **best absolute cutoff available**: median cross-source Jaccard 0.520,
-against 0.509 at 0.40 and 0.495 at 0.35. Loosening it does not recover agreement.
-
-But the absolute-cutoff *rule* is what costs the agreement. At the same stringency, taking
-each experiment's **top 100** gives 0.600 and top 50 gives 0.639 — 8 to 12 points better —
-and removes the 1.6x median positive-count asymmetry between two labs measuring one protein
-(worst case `Hoxa2`, 165 against 17).
-
-The catch is `T21`'s other half: a naive rank rule would manufacture ~100 positives for each
-of `BAR15A`'s 18 dead variants, which is precisely the signal the corpus exists to carry. A
-rule that survives both failure modes is a **rank cap under an absolute floor**, which is two
-parameters, which by convention invalidates the dataset and every report. Not to be decided
-in passing, and now nothing external forces the timing: it is a question about the corpus we
-already hold.
-
-### T21 — `Cell09` and `LIU18B` are label-dead at the current cutoff
-`Cell09`'s per-domain **maximum** E-score has a median of **0.428**: 12 of its 17 domains
-never reach 0.45 at their single best 8-mer, so the source contributes 559,232 rows that say
-only "does not bind". Its positive rate is 0.0048% against 0.14-0.49% for healthy sources.
-`LIU18B` has **one** positive 8-mer in the entire source.
-
-This is a compressed E-score distribution meeting a cutoff calibrated on other arrays — not
-17 proteins that bind nothing. Distinct from `BAR15A`'s 18 zero-positive domains, which have a
-healthy distribution with a dead tail and are probably real. Options: exclude the two sources,
-re-binarize them at their own scale (`T20`), or accept them as negatives-only and say so in
-`METHODS`. 54 of 1,383 domain records (3.9%) have no positive at all; these two sources are
-most of the unexplained part.
 
 ### T22 — `BAR15A:SIX6` carries the wrong full-length protein
 `protein_id` is `Q6P051`, a 305 aa TrEMBL *"SIX6 protein (Fragment)"* from a cDNA clone, not
@@ -266,6 +244,21 @@ so a split cannot separate them and a model sees one protein with two contradict
 ---
 
 ## Notes
+
+### N8 — Kock et al. 2024 is excluded, but the work is not lost
+Screened, rescored and **excluded 2026-08-18** (`docs/DECISIONS.md` §1). Everything is in
+[`reports/kock2024_excluded.md`](reports/kock2024_excluded.md): verified identifiers (Nat
+Commun 15:3110, GEO `GSE233827`, Dataverse `10.7910/DVN/FDQHCF`), the yield through our own
+admission policy (**67 new domains**, 13 singleton clusters would become variant-bearing), and
+the measurements that decided it — no E-scores in the deposit, and recomputed ones reproduce
+the ranking but not the scale.
+
+**It can be revived without redoing the investigation.** The report's §3.2 records the three
+things that made rescoring work (keep saturated spots; Cy3 as a sequence-model residual, not a
+ratio; join by `(Column, Row)`, never by probe ID) and §5 the conditions that would make it
+worth it — chiefly `T20` settling on a rank-matched rule, which makes a recomputed source's
+compressed scale stop mattering. The code was deleted with the decision; it is ~200 lines and
+the report specifies it.
 
 ### N7 — Cluster size is a one-file lookup now
 `data/interim/clusters/clusters.parquet`, one row per cluster, written by `build_clusters.py`.

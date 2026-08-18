@@ -371,6 +371,45 @@ validator. It exists so that PBM negatives stay distinguishable from weaker form
 evidence — a sequence merely absent from a selection experiment is not evidence of non-binding
 — should another assay type ever be admitted.
 
+### 5.1 What a fixed cutoff does and does not guarantee
+
+The E-score is a rank statistic: for each 8-mer, the Mann-Whitney statistic of the probes
+carrying it against those that do not, computed within the brightest half of the array and
+shifted to [−0.5, +0.5]. Because only ranks enter, every monotone change of laser power,
+protein concentration, antibody labelling or scanner cancels. That invariance is what lets one
+cutoff span 19 sources and two decades of arrays, and `E ≥ 0.45` states, concretely, that at
+most about three of an 8-mer's ~32 probes are less than convincing.
+
+What the statistic does **not** equalise is sensitivity. A noisy or weak array shuffles the
+probe ranking slightly, each shuffle costs the statistic, and the whole distribution compresses
+toward zero. Measured on the 47 domains held by two sources, the median pair differs **1.6×**
+in how many positives it calls at the same cutoff, and the tail is worse — `Hoxa2` is 165
+against 17. Rank-matched labelling removes that asymmetry and raises cross-source agreement by
+8–12 points, but it asserts that every protein binds a fixed number of 8-mers, and it would
+turn a negative into "outside this experiment's top N" rather than measured non-binding. The
+fixed cutoff was kept for that reason (`docs/DECISIONS.md`, 2026-08-18); the asymmetry is
+recorded here as a property of the data rather than removed by definition.
+
+**At the extreme, an experiment sees nothing at all.** 54 of 1,383 domain records have no
+positive 8-mer. They are of two kinds, and the difference matters because the second kind is
+the signal this dataset exists to carry:
+
+| kind | records | what it is |
+|---|---:|---|
+| `dead_variant` | 20 | no positives, but another record of the same cluster **and source** has them — its own series is the control, so this is measured non-binding |
+| `no_evidence` | 34 | no positives and no such control: indistinguishable from an experiment too weak to see anything |
+
+18 of the 20 `dead_variant` records are `BAR15A` variants that lost binding. Of the 34
+`no_evidence` records, 12 are `Cell09`, whose per-domain maximum E-score has a median of 0.428
+— the source's typical domain never reaches the cutoff at its single best 8-mer. A further 13
+of the 54 are silent only because their replicates disagreed: they reach 0.45 on the stored
+replicate mean while the label is a no-call.
+
+This is recorded per record in `data/interim/label_health/`, alongside label counts, the best
+E-score, and how many 8-mers reach the cutoff regardless of label. **No label depends on it.**
+Excluding unsupported records is a training decision, applied at featurization via
+`label_health.usable`, on the same principle as cluster-size restriction.
+
 **The E-score column is identified by content, not position.** Column order, column count and
 the presence of a header row all vary between accessions, and one accession publishes no
 E-score at all. The column is taken from a header name where one is given, and otherwise as the
@@ -726,6 +765,7 @@ Measured on the reference machine (24 threads, 62 GB RAM) for the 2026-08-17 bui
 | 3 | `python scripts/build_protein_table.py` | 4 s | `data/interim/proteins/` (warm UniProt cache) |
 | 4 | `python scripts/make_reports.py --source <S>` ×19 | 1 min 33 s | per-source binarization, cluster inventory, validation |
 | 5 | `python scripts/make_overlap_report.py` | 6 s | `reports/overlap.md` |
+| 5b | `python scripts/build_label_health.py` | 12 s | `data/interim/label_health/`, `reports/label_health.md` |
 | 6 | `python scripts/audit_sources.py` | 2 min 22 s | cross-source invariant sweep |
 
 Steps 1–6 total about **13 minutes**. Step 1 is dominated by CIS-BP, which is 29 of the 45.5
@@ -735,7 +775,7 @@ processes give ~7.6× on this workload where threads give nothing, because the C
 the interpreter lock.
 
 Software: Python 3.11.13, pandas 3.0.5, pyarrow 25.0.1, pyhmmer 0.12.1 (HMMER3), Biopython
-1.88. Test suite: `python -m pytest -q`, 162 tests, under a second.
+1.88. Test suite: `python -m pytest -q`, 169 tests, under a second.
 
 ### 10.3 Consistency assertions after a build
 

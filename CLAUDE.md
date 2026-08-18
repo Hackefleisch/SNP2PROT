@@ -90,6 +90,7 @@ src/snp2prot/
   canonical.py    the project-internal canonical domain sequence  <- READ BEFORE dbd_seq
   references.py   identifier -> reference protein, cached; only used when a construct is short
   clusters.py     CD-HIT greedy incremental clustering + the cluster inventory (size lookup)
+  label_health.py which records carry positive evidence; the training-time filter (T21)
   proteins.py     the protein-side companion table (bare/padded domain, construct, full-length)
   parsers/        one module per source, each exposing parse() -> pd.DataFrame
     _pbm.py       assay-level machinery shared by ALL universal-PBM sources
@@ -106,6 +107,7 @@ data/raw/<source>/       append-only, never edited          (git-ignored)
 data/interim/<source>/   per-source parsed Parquet          (git-ignored)
 data/interim/proteins/   protein table: domain at 4 levels + UniProt full-length
 data/interim/clusters/   one row per cluster: size, family, variants  <- read via snp2prot.clusters
+data/interim/label_health/ one row per (domain, source): verdict, label counts, best E-score
 data/external/pfam/      Pfam HMMs for boundary annotation
 data/external/uniprot/   cached canonical sequences
 data/processed/          merged training table              (git-ignored)
@@ -210,6 +212,7 @@ uv venv --python 3.11 .venv && uv pip install --python .venv -e ".[dev]"
 .venv/bin/python scripts/build_protein_table.py            # protein-side companion table
 .venv/bin/python scripts/build_clusters.py                 # wt_id corpus-wide + cluster inventory, ~1.5 min
 .venv/bin/python scripts/make_overlap_report.py            # cross-source label agreement, ~5 s
+.venv/bin/python scripts/build_label_health.py             # which records carry positive evidence, ~12 s
 .venv/bin/python -m ruff check . && .venv/bin/python -m ruff format .
 .venv/bin/python scripts/record_provenance.py data/raw/<source>/<file> --url ... --desc ...
 ```

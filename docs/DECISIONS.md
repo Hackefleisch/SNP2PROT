@@ -17,6 +17,70 @@ older commit messages and code comments still resolve.
 
 ## 1. Scope
 
+### 2026-08-18 — `T20`: the cutoff stays at `E >= 0.45`
+**Decided by the owner**, on the sweep in [`reports/threshold_review.md`](../reports/threshold_review.md).
+`configs/thresholds.yaml` is unchanged: `positive: 0.45`, `negative: 0.35`,
+`per_experiment: true`.
+
+The sweep found 0.45 is the **maximum over every absolute cutoff tried** — median cross-source
+Jaccard 0.520, against 0.509 at 0.40 and 0.500 at 0.47 — so loosening it adds 8-mers the two
+labs disagree about more often, not less. A rank-matched rule scores 8-12 points higher, and
+that was rejected on three grounds:
+
+1. Its advantage is partly mechanical. Forcing equal counts removes the 1.6x positive-count
+   asymmetry from the denominator, so what it measures is how much of the cross-lab
+   disagreement is *sensitivity* rather than *ranking*. That is a diagnosis, not a rule.
+2. "Every protein binds exactly N 8-mers" is not a fact about biology. Specificity breadth
+   genuinely differs between families.
+3. It would break `neg_provenance`, and with it rule 4. Negatives would become "outside this
+   experiment's top N" — a ranking artifact — rather than measured non-binding. On the 18
+   `BAR15A` variants that lost binding it would invent ~100 positives each, destroying the
+   signal the corpus exists to carry.
+
+**What the E-score does and does not guarantee, since this is what the decision turns on.** It
+is a rank statistic — for each 8-mer, the Mann-Whitney AUC of the probes carrying it against
+the rest, within the brightest half of the array, shifted to [-0.5, +0.5]. Every monotone
+change of laser power, protein concentration, antibody or scanner cancels, which is why one
+cutoff can span 19 sources and two decades of arrays. `E >= 0.45` says "at most about three of
+this 8-mer's ~32 probes are less than convincing". What it does not equalise is **sensitivity**:
+a noisy array shuffles ranks, every shuffle costs AUC, and the distribution compresses. Two
+labs on one protein differ 1.6x in positive count (`Hoxa2`: 165 against 17). That asymmetry is
+a measured property of the corpus, recorded in `docs/METHODS.md`, and it caps the agreement any
+model can be expected to reach — the same fact as the 45.8% noise floor.
+
+### 2026-08-18 — `T21`: label health is a side table, not a threshold change
+**Decided by the owner.** `Cell09` and `LIU18B` are not re-binarized, not excluded, and not
+left silently indistinguishable from measured non-binding. Instead
+[`data/interim/label_health/`](../data/interim/label_health/) records, per
+`(dbd_seq, source_dataset)` record, whether it has positive evidence — and filtering on it is a
+**training** decision made at featurization, exactly as cluster-size restriction is (§ above,
+2026-08-14). The dataset stores evidence; what a model is fed is chosen later.
+
+Three verdicts, of 1,383 records:
+
+| verdict | records | rows | meaning |
+|---|---:|---:|---|
+| `ok` | 1,329 | | at least one 8-mer at or above the cutoff |
+| `dead_variant` | 20 | 657,920 | no positives, but another record of the same cluster **and source** has them — its own series is the control, so this is measured non-binding |
+| `no_evidence` | 34 | 1,118,464 | no positives and no such control: indistinguishable from an experiment too weak to see |
+
+`no_evidence` is 2.5% of the corpus and is what `label_health.usable(df)` drops; 18 of the 20
+`dead_variant` records are `BAR15A` variants that lost binding, and keeping them is the point
+of drawing the distinction at all.
+
+Two things the build turned up on the way:
+
+- **13 of the 54 silent records are not weak — their replicates disagreed.** They reach 0.45
+  on their stored score, which is the replicate mean, while the label is `LABEL_GRAY` because
+  the two experiments disagreed. `n_at_cutoff` sits beside `n_pos` in the table for this
+  reason.
+- **`frac_silent`, not `median_max_escore`, is the source-level statistic.** A source that
+  deliberately contains dead variants drags its own median down; `Cell09` stands out on both
+  (71% silent, median 0.428) but `BAR15A` at 20% silent would look bad on the median alone.
+
+Report: [`reports/label_health.md`](../reports/label_health.md), rebuilt by
+`scripts/build_label_health.py` (12 s). No label, threshold or parsed table was touched.
+
 ### 2026-08-18 — Kock et al. 2024 excluded; PBM acquisition is closed
 **Decided by the owner**, after the source was acquired, screened and rescored. Full record in
 [`reports/kock2024_excluded.md`](../reports/kock2024_excluded.md). The corpus stays on its two

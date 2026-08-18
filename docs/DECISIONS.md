@@ -17,6 +17,40 @@ older commit messages and code comments still resolve.
 
 ## 1. Scope
 
+### 2026-08-18 — Kock et al. 2024 excluded; PBM acquisition is closed
+**Decided by the owner**, after the source was acquired, screened and rescored. Full record in
+[`reports/kock2024_excluded.md`](../reports/kock2024_excluded.md). The corpus stays on its two
+source families — UniPROBE (18 accessions) and CIS-BP / Weirauch 2014 — and nothing further is
+sought.
+
+What was on offer: **67 new domains**, 87 of 93 clones admitted, variants 202 → ~269, and 13
+singleton clusters becoming variant-bearing. Real, and the reason this was not an easy call.
+
+What decided it, in one sentence: **the deposit publishes no E-scores, and neither of the two
+ways in gives labels comparable with the rest of the corpus.**
+
+- Its own statistic, `affinityEstimate`, has no transferable scale — the value at our
+  `E = 0.45` boundary runs 10.82-12.14 across four proteins while the `E = 0.35` boundary runs
+  10.08-11.16, so one protein's positive threshold is another's negative. `affinityQ` is a
+  detection statistic, calling 6-13% of 8-mers positive against our 0.3%. Entering on those
+  terms meant a second `score_type` and two new cutoffs (the 2026-08-14 decision below, now
+  moot).
+- Recomputing E-scores from the raw `.gpr` scans was built and validated against `BAR15A`
+  rescored from Barrera's own scans: the **ranking** reproduces (Spearman 0.78-0.91 where a
+  protein binds; rank-matched positives at Jaccard 0.57-0.77, against 0.70-0.72 for replicates
+  within one source) but the **values** do not — `E >= 0.45` selects 0-32 8-mers where the
+  stored values select 129-204, and the count-matching cutoff is 0.312-0.343. That is one
+  recalibrated number and a mixed-provenance corpus, 19 sources on published E-scores and one
+  on ours.
+
+Neither price was worth 67 domains in a dataset whose whole value is that every row is
+comparable. Removed with the decision: `T11`, `T19`, `T24`, `src/snp2prot/rawpbm.py`,
+`scripts/validate_escores.py`, `tests/test_rawpbm.py`, `data/external/pbm_design/` and its
+`PROVENANCE.md` rows. Kept, because they are defects in our own data that the screening
+exposed: `T22` (`BAR15A:SIX6` carries a TrEMBL fragment accession, 59 residues off) and `T23`
+(padded windows have never been checked against the reference proteome). `T20` is untouched
+and now stands on its own.
+
 ### 2026-08-14 — The dataset is PBM only
 **Decided by the owner.** B1H and SNP-SELEX are out; the corpus grows by extending PBM
 coverage instead. Then merge, then modelling. Tier 4 held-out sets are still wanted.
@@ -31,6 +65,9 @@ Consequences, all of them simplifications:
 - `b1h:` and `snp_selex:` in `configs/thresholds.yaml` become dead config (`TODO.md` `T8`).
 
 ### 2026-08-14 — upbm Q-values may enter as their own `score_type`
+**Superseded 2026-08-18: Kock was excluded, so no second `score_type` exists.** Kept because
+the reasoning is what the exclusion was weighed against.
+
 If the Kock deposit turns out to publish only upbm affinity/contrast/specificity Q-values and
 no probe-level or E-score data, it is still admitted — with a new `score_type` and its own
 cutoffs, rather than being skipped to protect the single-E-score scale.
@@ -44,6 +81,10 @@ Weighed against 122 alleles in 30 designed series — the single largest additio
 depth identified — and the depth won. Tracked as `TODO.md` `T11`.
 
 ### 2026-08-14 — Homeodomain may go to ~58% of domains; depth beats balance
+**Superseded 2026-08-18.** The projection was made before CIS-BP landed 868 domains; measured
+against the corpus as it now stands, admitting Kock would have moved homeodomain from 29.7%
+to 33.3%. Moot either way — the source was excluded.
+
 Admitting Kock takes homeodomain from 47.9% to roughly 58% of domains and from 67% to ~84% of
 point variants. Accepted as a straight consequence of the earlier call that family imbalance
 is fixed by parsing more rather than down-sampling (`#10`), and because multi-member clusters
@@ -226,6 +267,9 @@ and was not done.
 ### 2026-08-17 — PBM acquisition closes after Kock; `T2` and `T2b` dropped
 **Decided by the owner.** Extending PBM coverage ends with `T11` (Kock et al. 2024). Two
 tasks go with it:
+
+> Closed 2026-08-18: Kock was itself excluded (§1), so acquisition ended with the sources
+> already parsed.
 
 - **`T2` — survey other PBM deposits.** Individual GEO / ArrayExpress submissions and paper
   supplements, always subject to the same gate as everything else: does the deposit publish
@@ -550,7 +594,7 @@ against what is already parsed:
 
 | candidate | verdict |
 |---|---|
-| **Kock et al. 2024, *Nat Commun* 15:3110** — 30 HD allelic series, 122 alleles | **pursue** — `TODO.md` `T11`. The one large find. |
+| **Kock et al. 2024, *Nat Commun* 15:3110** — 30 HD allelic series, 122 alleles | **acquired, screened, excluded 2026-08-18** — no E-scores published and no comparable scale; [`reports/kock2024_excluded.md`](../reports/kock2024_excluded.md). |
 | Rogers et al. 2019, *Mol Cell* 74:245 | **already parsed as `ROG18A`** — 15 domains in 3 clusters, including the `N3(J3-6aa)` swap the sweep highlighted. |
 | Liu et al. 2018, *eLife* 7:e34594 | **already parsed as `LIU18B`**, but only 2 of its constructs. The lead is the Dryad deposit, not the paper: `T14`. |
 | Ibrahim et al. 2013, *Genome Res* 23:2091 — HOXD13 wt/Q325R/Q325K | **mostly held already.** `Q325K` is in BAR15A, which carries HOXD13 as 8 domains / 7 variants. Only `Q325R` would be new — one domain. |

@@ -42,10 +42,6 @@ PROVENANCE_FILE = PROJECT_ROOT / "PROVENANCE.md"
 #: `"/proteins/" not in path` string test that silently would not have covered a second one.
 NON_SOURCE_INTERIM = frozenset({"proteins", "clusters"})
 
-#: One row per domain record: the domain at four levels, the construct, and the full-length
-#: protein where one resolved. Written by `scripts/build_protein_table.py`.
-PROTEIN_TABLE = INTERIM_DIR / "proteins" / "proteins.parquet"
-
 #: One row per cluster: size, family, variant count. Written by `scripts/build_clusters.py`
 #: so that selecting on cluster size costs a 1,133-row read instead of a 45-million-row
 #: group-by (`TODO.md` T3).

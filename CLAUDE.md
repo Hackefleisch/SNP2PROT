@@ -20,9 +20,11 @@ they disagree about *intent*, the brief wins.
 **Current state: 19 PBM sources parsed and validator-clean — 45,495,168 rows, 1,335 domains
 in 1,133 clusters, 56 Pfam families, 137 organisms, every protein scored against the same
 32,896 8-mers. `dbd_seq` is the canonical domain (`snp2prot.canonical`) and `wt_id` comes from
-CD-HIT clustering (`scripts/build_clusters.py`), not from construct lineage. 18 UniPROBE accessions plus CIS-BP / Weirauch 2014 (`weirauch2014`, GEO
-GSE53348). Phases 3-5 are DROPPED or deferred; the dataset is PBM-only and grows by extending
-PBM coverage. See [TODO.md](TODO.md).**
+CD-HIT clustering (`scripts/build_clusters.py`), not from construct lineage. Two source
+families and no more: 18 UniPROBE accessions plus CIS-BP / Weirauch 2014 (`weirauch2014`, GEO
+GSE53348). Acquisition closed on 2026-08-18 when Kock et al. 2024 was screened and excluded
+([reports/kock2024_excluded.md](reports/kock2024_excluded.md)); the next step is phase 5,
+merge. See [TODO.md](TODO.md).**
 
 **Read [docs/METHODS.md](docs/METHODS.md) first** — it records how the dataset was built and
 why, in enough detail to reimplement. [docs/DOMAIN_POLICY.md](docs/DOMAIN_POLICY.md) states
@@ -224,8 +226,8 @@ Use `uv` (already installed at `~/.local/bin/uv`).
 | 2 | remaining UniPROBE family panels | **done** — Cell08, EMBO10, PNAS13, then SCI09, GR09, MAR17A, SHO18A, ROG18A to rebuild breadth after the policy. Survey in `docs/UNIPROBE_ACCESSIONS.md`; `GB11` (27 bHLH) is the best remaining candidate. |
 | 3 | ~~Persikov B1H + Najafabadi C2H2~~ | **DROPPED** — C2H2 arrays fail condition 2; Persikov varies a different subunit than the one that binds. ~8,000 domains excluded. |
 | 4 | ~~SNP-SELEX, trimmed to a 19 bp window~~ | **DROPPED 2026-08-14** — the dataset is PBM only, so every row is an 8-mer and the `dna_len` leak cannot occur |
-| 5 | merge, overlap report, splits, NN baseline | **deferred** — happens after PBM coverage is extended, not before |
-| — | **extend PBM coverage beyond UniPROBE** | **next** — CIS-BP first; the gate is whether it publishes the assayed construct sequence. See `TODO.md` T1 |
+| 5 | merge, overlap report, splits, NN baseline | **next** — PBM acquisition closed 2026-08-18; the overlap report is done, merge/splits/baseline are not |
+| — | **extend PBM coverage beyond UniPROBE** | **CLOSED 2026-08-18** — CIS-BP landed as `weirauch2014`; Kock 2024 screened and excluded (`reports/kock2024_excluded.md`). The corpus is UniPROBE + CIS-BP and grows no further |
 | 6 | ~~Tier 4 test sets, in `data/testsets/`~~ | **DROPPED 2026-08-17** — the owner no longer wants the bHLH dimer sets. `data/testsets/` stays as empty scaffolding for any future held-out set |
 
 ## Deferred to the owner — flag, do not resolve

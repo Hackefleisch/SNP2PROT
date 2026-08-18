@@ -28,7 +28,7 @@ lineage.
 
 **The protein axis is no longer the bottleneck it was.** 122 clusters hold 202 variants,
 against 28 and 81 before, and only 87 of the 202 are homeodomain (was 54 of 81): Myb 16,
-bHLH 15, forkhead 13, AP2 9, zf-C4 7. `T11` and `T14` would deepen it further.
+bHLH 15, forkhead 13, AP2 9, zf-C4 7. `T14` is the only open lead that would deepen it.
 
 That is what makes the project's central question askable at all — **does sensitivity to
 single-residue change transfer across folds?** With variants in homeodomain only it was
@@ -57,15 +57,17 @@ re-read 2.2 GB of text.
 
 | # | step | state |
 |---|---|---|
-| 1 | **Extend PBM coverage** beyond UniPROBE | **`T11` screened 2026-08-18, decision open** — the route is `T19`, now built and measured: rescoring reproduces the ranking but needs one recalibrated cutoff, which makes it the same decision as `T20`. Plus `T14`; `T2`/`T2b` dropped 2026-08-17 |
+| 1 | **Extend PBM coverage** beyond UniPROBE | **closed 2026-08-18** — Kock 2024 screened and excluded ([`reports/kock2024_excluded.md`](reports/kock2024_excluded.md)); `T2`/`T2b` dropped 2026-08-17. `T14` is the one small lead left open |
 | 2 | **Deepen the protein axis in what we already hold** | **done 2026-08-17** — clustering by sequence distance, and the cluster inventory (`T3`) with it |
-| 3 | **Merge**: single table, splits, NN baseline | after step 1 — the overlap report is already done (`T4`) |
+| 3 | **Merge**: single table, splits, NN baseline | **next** — step 1 is closed; the overlap report is already done (`T4`) |
 | 4 | **Modelling** | after step 3 |
 
 A research sweep on 2026-08-14 surveyed the literature for PBM sources with designed protein
-variation. Its verdict, after screening against the admission policy: **Kock 2024 is the one
-large find** (`T11`), two of its other leads were already parsed, and one fails condition 2
-outright. See [`docs/DECISIONS.md`](docs/DECISIONS.md) §9.
+variation. Its one large find, Kock et al. 2024, was acquired, screened and **excluded on
+2026-08-18** — the deposit publishes no E-scores and its own statistic has no transferable
+scale ([`reports/kock2024_excluded.md`](reports/kock2024_excluded.md)). Two of its other leads
+were already parsed and one fails condition 2 outright. See
+[`docs/DECISIONS.md`](docs/DECISIONS.md) §9.
 
 ---
 
@@ -78,69 +80,6 @@ substring of the construct it came from. Use `canonical.place` instead of `dbd i
 Note the construct-architecture covariate (`T13`, closed 2026-08-17) rides on the same
 columns: flank length is `dbd_start` and `len(construct_seq) - dbd_end`, so whatever fixes the
 placement fixes that too.
-
-### T11 — Kock et al. 2024: screened 2026-08-18, **decision open**
-Steps 1-3 are done and written up in
-[`reports/kock2024_screening.md`](reports/kock2024_screening.md), with the measurements behind
-every claim. Nothing was downloaded into `data/raw/` and no parser was written: **whether and
-how this source enters is the owner's call.** In brief —
-
-- **Identifiers verified.** Nat Commun 15:3110, `10.1038/s41467-024-47396-0`, PMC11006913;
-  data at **GEO `GSE233827`** (missing from the old note, and the important one) plus Harvard
-  Dataverse `10.7910/DVN/FDQHCF`, CC0. The reported Zenodo DOI is **not data** — it is the
-  `upbm` R package.
-- **Yield: 87 of 93 clones admitted, 67 new domains.** The whole PAX4 series fails
-  `mixed_families` (PAX + homeodomain in one construct). Variants 202 → ~269, and 13 singleton
-  clusters become variant-bearing. Homeodomain share 29.7% → 33.3%, not the ~58% projected
-  before CIS-BP landed.
-- **DNA axis is exact** — 32,896 8-mers per allele, matching our stored `dna_seq` strings
-  directly. Step 3 closed.
-- **The published scores do not fit our scale.** No E-scores exist anywhere in the deposit.
-  `affinityEstimate` ranks agree with our E-scores (Spearman 0.83-0.93) but have **no
-  transferable scale**: the value at our `E = 0.45` boundary spans 10.82-12.14 across four
-  proteins while the `E = 0.35` boundary spans 10.08-11.16. A rate-calibrated label agrees
-  with our BAR15A labels at Jaccard 0.51-0.79 — inside the measured noise floor. Four options
-  costed in §8 of the report; **the recommendation is `T19`**, which makes the scale question
-  disappear rather than answering it.
-- **37 of its 131 records are Barrera 2016 reprocessed** — our own `BAR15A` arrays, not a
-  second experiment. Parse `This study` only, or `reports/overlap.md` measures a source
-  agreeing with itself.
-
-Two things fall out regardless of the decision: `BAR15A:SIX6` carries the wrong full-length
-accession (`Q6P051`, a 305 aa fragment entry, not `O95475`), which is why Kock's SIX6
-numbering sits 59 residues off ours; and the same-raw-data-two-pipelines agreement in §6 is an
-independent read on the noise floor that belongs in `docs/METHODS.md`.
-
-### T19 — E-scores from raw arrays: built and measured, **one decision left**
-Done 2026-08-18 and written up in
-[`reports/escore_recomputation.md`](reports/escore_recomputation.md). The pipeline is
-[`src/snp2prot/rawpbm.py`](src/snp2prot/rawpbm.py) with
-[`scripts/validate_escores.py`](scripts/validate_escores.py) and 9 tests; ~2 s per array.
-Validated on **32 arrays / 14 `BAR15A` alleles** rescored from Barrera's own raw scans in
-`GSE233827` and compared with the E-scores we already hold.
-
-**The ranking reproduces; the values do not.** Spearman 0.78-0.91 over the 8-mers a protein
-binds, rank-matched positive sets at Jaccard 0.57-0.77 (median 0.64) — the band between the
-corpus's cross-source floor (0.458) and its within-source replicates (0.70-0.72). But
-`E >= 0.45` selects 0-32 8-mers where the stored values select 129-204. The cutoff that
-matches the stored positive **count** is 0.312-0.343 across all 11 live alleles, median 0.321.
-
-So `T19`'s premise was half right: no new `score_type`, no new scale, no new
-`neg_provenance` — but **one recalibrated cutoff**, near 0.32-0.35, derived from the `BAR15A`
-overlap rather than chosen. Still far better than the `affinityQ` route (`T11`), and it
-resolves `T20`'s dilemma: the three dead `ARX` variants top out at 0.33-0.43 and yield 0-2
-positives, so an absolute floor on a recomputed E-score does what a rank rule cannot.
-
-Three findings worth keeping: **keep saturated spots** (260 of one array's top 1,000 probes
-are saturated; masking them decapitates the statistic), **normalise Cy3 as a sequence-model
-residual, not a ratio** (raw division drops agreement 0.489 → 0.123), and join by
-`(Column, Row)`, never `probeID`. Spatial detrending was tried and is not worth a knob.
-
-Two things do not work and bound the method: **more replicates do not restore the range** (five
-`HOXD13_REF` arrays give 11 positives against 144), most likely because Barrera's masliner
-multi-power scan stitching cannot be reproduced from one scan per array; and **array QC is
-unsolved** — upper-tail width separates good arrays from bad, but a dead variant is
-indistinguishable from a bad array by that measure, so nothing filters on it yet.
 
 ### T20 — Fixed cutoff or rank-matched rule?
 **Measured, not speculative** — [`reports/threshold_review.md`](reports/threshold_review.md).
@@ -156,7 +95,8 @@ The catch is `T21`'s other half: a naive rank rule would manufacture ~100 positi
 of `BAR15A`'s 18 dead variants, which is precisely the signal the corpus exists to carry. A
 rule that survives both failure modes is a **rank cap under an absolute floor**, which is two
 parameters, which by convention invalidates the dataset and every report. Not to be decided
-in passing — but note `T19` removes the pressure to decide it at all.
+in passing, and now nothing external forces the timing: it is a question about the corpus we
+already hold.
 
 ### T21 — `Cell09` and `LIU18B` are label-dead at the current cutoff
 `Cell09`'s per-domain **maximum** E-score has a median of **0.428**: 12 of its 17 domains
@@ -208,33 +148,10 @@ mouse and human is entirely possible, so this may be two correct records — but
 disagree (Jaccard 0.097, `reports/overlap.md`), and one deposit having the wrong protein would
 explain both facts at once. Related: `D4`.
 
-**`T11` would multiply this by ten and add a worse variant of it.** 9 of Kock's human domains
-are byte-identical to `Cell08` mouse domains, so each becomes another species disagreement.
-One is not a species question at all: **`HOXC9-K195R`, a human disease variant, is
-byte-identical to `Cell08`'s mouse `Hoxc9` wild type.** One `dbd_seq`, two identities, two
-labels from two assays — a sequence model would see identical input with different labels,
-which is the failure condition 3 of the admission policy exists to prevent. Worth deciding the
-general rule here before it arrives: does the corpus store one row per sequence or one per
-(sequence, protein)?
-
-### T24 — Parse-time gotchas held for `T11`, if it is admitted
-Found during screening, all verified, none of them blocking on their own:
-- **PAX4's whole series is rejected** (`PAX` + `Homeodomain` in one 234 aa construct,
-  6 alleles). Expected and correct; worth stating in the parser's rejection report rather
-  than discovering later.
-- **3 HOXB9 clones carry only 8 aa of C-flank**, so the ±10 window cannot be filled from the
-  construct — `canonical` must extend from the UniProt reference for those.
-- **`NKX2-6-REF` appears twice** in Supplementary Data 4 (`NKX2-6` and `NKX2-6series2`),
-  one clone assayed in two batches. Two records, one sequence.
-- **SD4 is already replicate-collapsed** — one value per (allele, 8-mer). `per_experiment`
-  binarization and `reconcile_replicates` have nothing to act on, and no within-source
-  replicate agreement can be computed. 4 alleles rest on a single array. `T19` removes this
-  too: the raw `.gpr`s are per-array.
-- **Supplementary Data 3 is legacy `.xls`** and needs `xlrd`; the project reads `.xlsx` via
-  `openpyxl` and has no `.xls` reader. One new dev dependency for one 84 KB file.
-- **The Barrera-set rows must not enter the training table** — 37 of 131 records are our own
-  `BAR15A` arrays reprocessed, 1,217,152 rows of a source agreeing with itself, which would
-  corrupt the one report that measures cross-source agreement.
+The general rule behind it is still undecided and applies to the two sources we hold: does
+the corpus store one row per sequence, or one per (sequence, protein)? Today two sources can
+give one `dbd_seq` two identities and two labels, which is the input a sequence model cannot
+tell apart.
 
 ### T25 — Free terminal gaps can call two unrelated domains near-identical
 `align.edit_profile` with `free_end_gaps: true` reports **3 edits** between a 60 aa
@@ -253,9 +170,8 @@ plus a sweep of existing clusters for any member joined on a short overlap.
 `data/raw/*` excludes the *directory*, so git never descends into it and the
 `!data/**/README.md` / `!data/**/HOWTO.md` negations below can never fire — a directory
 excluded at one level cannot have its contents re-included. Two files are affected today and
-neither is in the repo: `data/raw/weirauch2014/README.md` (has been missing all along) and
-`data/external/pbm_design/README.md` (written 2026-08-18, and the only place the
-join-by-position finding is recorded outside `reports/`).
+neither is in the repo: `data/raw/weirauch2014/README.md` has been missing all along, and
+any future `data/**/README.md` or `HOWTO.md` would go the same way.
 
 Fix is to ignore files rather than directories, per data root:
 

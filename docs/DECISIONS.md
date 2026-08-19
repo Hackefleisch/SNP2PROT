@@ -611,6 +611,93 @@ are right at evaluation time and would still be wrong in `build_clusters.py`.
 **Cost: none.** The same 1,338 x 1,338 distance matrix is built anyway for the nearest-neighbour
 baseline (`ML_PLAN.md` §8.1, step 0 of the build order).
 
+**Superseded in one parameter on 2026-08-19 — see `D5` below.** The grouping stands; the
+threshold that defines an edge moved from `<= 5 edits` to `>= 0.5 identity`, because the
+baseline measured how little the 5-edit version changed.
+
+### 2026-08-19 — `D5`: the `S2` edge is 50% identity, not 5 edits
+
+**Raised by the nearest-neighbour baseline, which [`ML_PLAN.md`](ML_PLAN.md) §8.1 put in step 0
+to raise exactly this**: *"if NN-lookup scores near-ceiling under `S2`, the split groups leak"*.
+
+**What the measurement said** ([`reports/nn_baseline.md`](../reports/nn_baseline.md)). Grouping
+by connected component at 5 edits did the job `T27` specified — the share of held-out domains
+with a >= 90% identical neighbour still in training fell from **24% under `S1` to 7%** — and it
+cost the lookup **0.018 AUPR**, 0.769 to 0.751. The two facts are consistent because removing
+near-twins was never where the performance came from:
+
+| nearest training neighbour | share of `S2` holdouts | lookup AUPR |
+|---|---:|---:|
+| >= 0.9 identity | 7% | 0.947 |
+| 0.7 - 0.9 | 42% | 0.927 |
+| 0.5 - 0.7 | 26% | 0.778 |
+| < 0.5 | 25% | 0.359 |
+
+Copying a **70-90% identical** neighbour already scores 0.927. 5 edits on a 77 aa domain is
+about 94% identity, so the old floor removed only the top row of that table.
+
+**The decision, by the owner: group at `>= 0.5` identity.** The regime exists to be hard —
+*"this should actually be something difficult for an ML algorithm to solve"* — and 0.5 is well
+below the 60-70% band Weirauch et al. 2014 set for transferring a motif between TFs by DBD
+identity. The parameter is `splits.s2_min_identity` in `configs/experiment.yaml`, not in
+`thresholds.yaml`: the grouping is evaluation-time only and changes no stored table.
+
+**It chains, and that was measured rather than assumed:**
+
+| edge rule | components | largest | largest component's median internal identity |
+|---|---:|---:|---|
+| `<= 5` edits | 1,154 | 8 | — |
+| `>= 0.9` identity | 1,103 | 8 | — |
+| `>= 0.7` identity | 746 | 36 | — |
+| **`>= 0.5` identity** | **396** | **273** | **0.377**, with 12% of its pairs at the floor |
+| `>= 0.4` identity | 242 | 406 | — |
+
+The 273-domain component is 64% of the homeodomain family, and it is a **chain** — most of its
+members are not within 50% of each other, only of something that is. Two consequences, both
+accepted deliberately:
+
+1. **Chaining is the safe direction for a split.** Over-grouping removes more from training than
+   strictly necessary but can never leak. The cost is statistical power, not validity — the same
+   asymmetry that makes single linkage wrong in `build_clusters.py` and right here.
+2. **One of the five `S2` folds is now close to a homeodomain holdout**, so `S2` and `P1`
+   partly overlap and fold-to-fold spread will be wide. Per-fold numbers are reported and the
+   spread is the honest reading; a pooled `S2` mean now hides more than it did.
+
+### 2026-08-19 — `D6`: C1 is evaluated on the variants where the wild-type copy fails
+
+**The problem, measured.** `P3/all` holds out every variant and leaves every wild type in
+training, so the nearest-neighbour baseline copies each variant's own wild type — which *is* the
+hypothesis "the mutation has no effect" ([`ML_PLAN.md`](ML_PLAN.md) §6.1). It scores **mean AUPR
+0.928 and median 1.000**. For most of the 173 variants the wild-type profile simply is the right
+answer, because most single substitutions do not measurably change which 8-mers a domain binds.
+A model could be perfect and gain two points.
+
+**The decision, by the owner: report C1 on the part where the baseline goes wrong.** A held-out
+variant enters the **C1 evaluation set** when its wild-type copy scores below
+`c1_set.max_baseline_aupr` (0.7), or when it scores nothing at all because the variant has no
+positive 8-mer — a `dead_variant`, whose AUPR is undefined rather than zero.
+
+**29 of 173 variants**: 18 that lost binding entirely and 11 whose profile changed enough that
+their own wild type does not predict it, across 5 families (Homeodomain 17, Forkhead 5, zf-C4 4,
+HLH 2, THAP 1). Built by `snp2prot.evaluation.c1`, written to
+`data/processed/c1_variants.parquet`, fixed before any model runs so every arm is scored on the
+same variants.
+
+The cut at 0.7 sits in the sparse part of the distribution — 8 variants fall below 0.6 and 14
+below 0.8 — so it is not perched on a cliff. `no_evidence` records are excluded as everywhere:
+with no control there is no telling a true non-binder from a failed assay (`T21`).
+
+**The caveat is part of the decision.** The set is *defined* by the baseline scoring badly on it,
+so the baseline scores badly on it by construction and "the model beats the baseline here" is
+close to vacuous. What makes it mean something is the model's **absolute** number on the set,
+reported next to its number on the complement — a model that had merely learned to distrust wild
+types everywhere would gain here and lose there, which is a shifted prior and not C1. And with
+5 families carrying the whole set, any C1 claim from it is a claim about those folds.
+
+**This settles half of `T30`.** The 20 `dead_variant` records are 18 of these 29 (two are cluster
+references rather than variants, so no `P3` fold holds them out). Whether the 34 `no_evidence`
+records ever become training signal through the `null` anchor is still open.
+
 ## 3. Composition decisions
 
 ### 2026-08-17 — `T4` closed: the label noise floor is measured, and it is not small

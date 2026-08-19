@@ -1,0 +1,91 @@
+# Modelling configuration: split regimes, seeds, baseline and metric settings.
+#
+# THE SECOND CONFIG FILE, and deliberately not part of `thresholds.yaml`
+# (docs/ML_PLAN.md section 9.2, decided 2026-08-19). Changing a threshold invalidates the
+# dataset, every report and every provenance row; changing a fold count or a seed does not.
+# Two things with different blast radii do not belong in one file.
+#
+# Read it via `snp2prot.experiment`, never by opening the path. Seeds live here rather than
+# in code or at a call site, so that a run records the seed it actually used.
+
+version: 1
+
+splits:
+  # Regimes S1 and S2 (docs/ML_PLAN.md section 5). The whole protein axis is in play in every
+  # regime -- no subsetting -- and only the designated group is ever removed.
+  n_folds: 5
+
+  # S2 holds out connected components of the domain graph, with an edge wherever two domains
+  # of the same family reach this percent identity over an alignment covering at least
+  # cluster.min_overlap of the shorter one.
+  #
+  # THIS IS AN EVALUATION-TIME GROUPING and it lives here rather than in thresholds.yaml
+  # because it changes no stored table: wt_id, mut_positions and the cluster inventory are
+  # untouched by it (docs/ML_PLAN.md section 5).
+  #
+  # 0.5, decided 2026-08-19 (docs/DECISIONS.md). The grouping began at `<= 5 edits`, which is
+  # ~94% identity on a 77 aa domain, and the nearest-neighbour baseline measured what that
+  # bought: 0.018 AUPR against a random split, because copying a 70-90% identical neighbour
+  # already scores 0.927. The split is meant to be hard, so the floor sits well below the
+  # 60-70% band Weirauch et al. 2014 set for transferring a motif by identity.
+  #
+  # It chains -- at 0.5 the largest component is 273 domains with a median internal identity
+  # of 0.377 -- and that is the safe direction: over-grouping removes more from training than
+  # strictly necessary but can never leak. The cost is statistical power, not validity.
+  s2_min_identity: 0.5
+
+  # One seed for every fold assignment and every P3 draw. Recorded with each run; a fold's
+  # membership is also hashed into the report, because the seed alone does not pin it if the
+  # corpus changes underneath.
+  seed: 20260819
+
+  # P1 holds out one whole Pfam family. Homeodomain is 428 of 1,338 domains and carries 84 of
+  # the 173 variants -- the only family large enough to be a real test whose removal does not
+  # empty the training set (docs/ML_PLAN.md section 6.1).
+  p1_family: Homeodomain
+
+  # P3 removes a fraction of the 173 variants from training and tests on the removed ones: a
+  # data-efficiency curve whose `all` row is the zero-shot extreme where training holds wild
+  # types only. `half` and `quarter` are repeated over seeded draws because which variants get
+  # dropped matters at n = 86 and n = 43.
+  p3:
+    fractions:
+      all: 1.0
+      half: 0.5
+      quarter: 0.25
+    repeats:
+      all: 1
+      half: 3
+      quarter: 3
+
+baseline:
+  nn_lookup:
+    # k = 1 is the primary form: the pure lookup table, and the thing to beat. The secondary
+    # form averages the top `top_k` neighbours weighted by identity -- one extra line and a
+    # slightly stronger bar (docs/ML_PLAN.md section 8.1).
+    top_k: 5
+
+# The C1 evaluation set: the held-out variants where copying the wild type FAILS.
+#
+# Decided 2026-08-19 (docs/DECISIONS.md). Under P3/all no variant is in training, so the
+# nearest-neighbour baseline copies each variant's own wild type -- which is the hypothesis
+# "the mutation has no effect". It scores mean AUPR 0.928 and MEDIAN 1.000, so for most
+# variants that hypothesis is simply true and there is no headroom to measure anything in.
+# Claim C1 lives in the variants where it is false, and this block defines them.
+c1_set:
+  # A variant enters the set when the wild-type copy scores below this, or when it scores
+  # nothing at all because the variant lost binding entirely (a `dead_variant`, whose AUPR is
+  # undefined rather than zero). 0.7 sits in the sparse part of the distribution: 8 variants
+  # fall below 0.6 and 14 below 0.8, so the cut is not perched on a cliff.
+  max_baseline_aupr: 0.7
+  # `no_evidence` records are excluded here as everywhere: with no control there is no way to
+  # tell a true non-binder from a failed assay, so their silence is not evidence of anything.
+  keep_no_evidence: false
+
+metrics:
+  # Secondary metrics, read as "of the k 8-mers we called, how many bind". Positives per
+  # domain run 1 to 236 with a median of 49, so k spans that range.
+  precision_at: [10, 50, 100]
+  # Recall once the ranking is thresholded at this precision. Undefined for a domain whose
+  # ranking never reaches it, and reported as such rather than as zero.
+  recall_at_precision: 0.5

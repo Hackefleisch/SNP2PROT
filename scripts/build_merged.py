@@ -43,9 +43,9 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from snp2prot import label_health, merge, schema
-from snp2prot.config import PROCESSED_DIR, REPORTS_DIR, source_tables
+from snp2prot.config import MERGED_TABLE, REPORTS_DIR, source_tables
 
-DEFAULT_OUT = PROCESSED_DIR / "training.parquet"
+DEFAULT_OUT = MERGED_TABLE
 BATCH_ROWS = 2_000_000
 
 

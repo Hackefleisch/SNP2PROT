@@ -826,7 +826,11 @@ drift.
 ### 10.1 Determinism
 
 Every parameter that affects dataset content lives in one configuration file,
-`configs/thresholds.yaml`. Reports summarizing binarization, cluster inventory, validation and
+`configs/thresholds.yaml`. Modelling parameters — split regimes, fold count, seeds, baseline and
+metric settings — live in a second file, `configs/experiment.yaml`, deliberately kept apart:
+changing a threshold invalidates the dataset and every report and provenance row with it, while
+changing a fold count does not. The `S2` grouping threshold lives there for the same reason: it
+is applied at evaluation time and rewrites no stored table. Reports summarizing binarization, cluster inventory, validation and
 cross-source overlap are regenerated and version-controlled, so a change in the dataset appears
 as a diff.
 
@@ -867,14 +871,27 @@ records by positive count and by whether they belong to a variant series).
 | 8 | `python scripts/make_results.py` | 5 s | `docs/RESULTS.md` |
 | 9 | `python scripts/audit_sources.py` | 2 min 22 s | cross-source invariant sweep |
 
-Steps 1–9 total about **15 minutes**. Step 1 is dominated by CIS-BP, which is 29 of the 45.5
+Steps 1–9 total about **15 minutes**.
+
+Three further steps build the **modelling** artifacts. They read the merged table and write
+nothing the dataset depends on, so they are downstream of the build rather than part of it, and
+they are cheap enough to re-run at will (measured 2026-08-19):
+
+| # | command | time | produces |
+|---|---|---:|---|
+| 10 | `python scripts/build_matrix.py` | 5 s | `data/processed/kmer_matrix.npz` — the merged table as a 1,338 × 32,896 E-score array and label array |
+| 11 | `python scripts/build_distances.py` | 11 s | `data/processed/distances.npz` — all-vs-all domain alignment counts, 894,453 pairs across 24 processes |
+| 12 | `python scripts/run_nn_baseline.py` | 2 min 35 s | `reports/nn_baseline.md`, `data/processed/nn_baseline_domains.parquet`, `data/processed/c1_variants.parquet` |
+
+Step 12 is dominated by the per-protein metrics: 19 folds × up to 1,338 held-out domains, each
+ranking 32,896 8-mers. Step 1 is dominated by CIS-BP, which is 29 of the 45.5
 million rows; within it, one source (2.3 GB of text) is the critical path, so parallelising
 across sources alone cannot go below what that one source costs. The build is currently serial;
 processes give ~7.6× on this workload where threads give nothing, because the CSV parser holds
 the interpreter lock.
 
-Software: Python 3.11.13, pandas 3.0.5, pyarrow 25.0.1, pyhmmer 0.12.1 (HMMER3), Biopython
-1.88. Test suite: `python -m pytest -q`, 183 tests, under a second.
+Software: Python 3.11.13, pandas 3.0.5, numpy 2.4.6, pyarrow 25.0.1, pyhmmer 0.12.1 (HMMER3),
+Biopython 1.88. Test suite: `python -m pytest -q`, 211 tests, about a second.
 
 ### 10.3 Consistency assertions after a build
 

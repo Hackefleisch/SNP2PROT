@@ -40,6 +40,12 @@ cluster:
   # hamming   -> substitutions only, equal lengths required (the old behaviour)
   distance: alignment
 
+  # Two domains are one cluster when no more than this many residues differ. 5 was the value
+  # `scripts/build_clusters.py` had as a CLI default from the start; it is written down here
+  # because `snp2prot.splits` needs the same number for the S2 grouping and two copies of a
+  # threshold in two files is how they drift apart (docs/ML_PLAN.md section 5).
+  max_edits: 5
+
   # Terminal gaps cost nothing. dbd_seq is the Pfam envelope plus padding, CLIPPED where the
   # assayed construct ends -- in ROG18A every bare domain is 83-85 aa but the padded ones run
   # 95-105 aa purely because some constructs allowed the full 10 residues of padding and

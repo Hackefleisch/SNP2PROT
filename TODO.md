@@ -71,6 +71,32 @@ Per-step timings and the order to run them in are `docs/METHODS.md` §10.2. **Th
 be pressed once per machine — `python scripts/press_pfam.py`** — or every source pays 19.5 s to
 re-read 2.2 GB of text.
 
+**The nearest-neighbour baseline is built and measured** ([`reports/nn_baseline.md`](reports/nn_baseline.md),
+2026-08-19) — step 0 of the modelling plan, and it did both jobs §8.1 gave it.
+
+**The bar**, mean per-protein AUPR, `k = 1`:
+
+| regime | AUPR | median NN identity |
+|---|---:|---:|
+| `S1` random domains | **0.769** | 0.742 |
+| `S2` components at >= 0.5 identity | **0.296** | 0.386 |
+| `P1` homeodomain holdout | **0.024** | 0.268 |
+| `P2` non-homeodomain variant clusters | **0.882** | 0.824 |
+| `P3/all` every variant, wild types kept | **0.928** | 0.986 |
+
+The pure `k = 1` lookup beats the identity-weighted top-5 average almost everywhere, so the
+primary form stays the primary form.
+
+**And it checked the splits, which is where it earned its place.** Both findings went to the
+owner and both are now settled (`docs/DECISIONS.md` §2): **`S2`'s edge threshold moved from 5
+edits to 0.5 identity** (`D5`), which took it from 0.751 — barely below `S1` — to 0.296; and
+**C1 is evaluated on the 29 variants where the wild-type copy fails** (`D6`), because `P3/all`'s
+median is 1.000 and the claim is invisible in the mean.
+
+The whole lookup curve is one variable, which is the most useful thing the report says: AUPR by
+nearest-neighbour identity runs 0.032 / 0.365 / 0.771 / 0.946 / 0.910 across the bands below 0.3,
+0.3-0.5, 0.5-0.7, 0.7-0.9 and above 0.9. Any model's number has to be read against its own band.
+
 **Modelling has a plan of record now: [`docs/ML_PLAN.md`](docs/ML_PLAN.md)** (2026-08-19).
 It adds a second dataset — Codebook SELEX, Jolma et al. 2026 *Nature*
 `10.1038/s41586-026-10798-9` — and a contrastive two-tower model over 1 DNA and 3 protein
@@ -83,8 +109,8 @@ embeddings, for a talk. §1-§9 is the owner's plan; §10 is a review of it, una
 |---|---|---|
 | 1 | **Extend PBM coverage** beyond UniPROBE | **closed 2026-08-18** — Kock 2024 screened and excluded ([`reports/kock2024_excluded.md`](reports/kock2024_excluded.md)); `T2`/`T2b` dropped 2026-08-17. `T14` is the one small lead left open |
 | 2 | **Deepen the protein axis in what we already hold** | **done 2026-08-17** — clustering by sequence distance, and the cluster inventory (`T3`) with it |
-| 3 | **Merge**: single table, splits, NN baseline | **merge done 2026-08-18** — `data/processed/training.parquet`, 44,014,848 rows = 1,338 x 32,896. Splits and the NN baseline are still docstring stubs |
-| 4 | **Modelling** | **planned 2026-08-19** — [`docs/ML_PLAN.md`](docs/ML_PLAN.md). Build order starts with PBM + sequence embeddings, which is unblocked today |
+| 3 | **Merge**: single table, splits, NN baseline | **done 2026-08-19** — `data/processed/training.parquet`, 44,014,848 rows = 1,338 x 32,896; five split regimes in `snp2prot.splits`; the baseline in [`reports/nn_baseline.md`](reports/nn_baseline.md) |
+| 4 | **Modelling** | **step 0 done 2026-08-19** — [`docs/ML_PLAN.md`](docs/ML_PLAN.md). Next is the PBM + sequence arms `A1`/`A4`, which are unblocked today; `D5` and `D6` are the two things worth settling first |
 
 A research sweep on 2026-08-14 surveyed the literature for PBM sources with designed protein
 variation. Its one large find, Kock et al. 2024, was acquired, screened and **excluded on
@@ -325,11 +351,27 @@ are derived and need no row of their own, but the row should say the library get
 
 ## Open decisions
 
-_None open._
+_None open._ `D5` (the `S2` identity floor) and `D6` (the C1 evaluation set) were settled by the
+owner on 2026-08-19 and are recorded in [`docs/DECISIONS.md`](docs/DECISIONS.md) §2.
 
 ---
 
 ## Notes
+
+### N9 — `gene` and `wt_id` disagree for ~100 domains, `weirauch2014` mostly
+Noticed 2026-08-19 while building `snp2prot.corpus`. Of the 1,057 singleton clusters, **129 have
+a `gene` that is not the gene their `wt_id` is named after** — 114 of them in `weirauch2014`,
+and about 15 of those are only `(unnamed)`. A singleton cluster is one domain, so the two names
+describe the same record and one of them is wrong: `C:weirauch2014:hoxd13a` is a zebrafish
+homeodomain and the protein table calls it `TCP20`, which is a different family entirely.
+
+**Nothing downstream depends on it.** `gene` is a display column; labels, sequences, clusters and
+every split are keyed on `dbd_seq`. It matters when a person reads a report and when a variant
+has to be checked against the paper that describes it, which is `T23`'s job.
+
+The likely site is the `weirauch2014` join — GEO SOFT and Table S6 are joined on plasmid ID
+(`docs/METHODS.md`), and `wt_id` and `gene` come from different sides of it. Worth an hour before
+any figure carries gene names.
 
 ### N8 — Kock et al. 2024 is excluded, but the work is not lost
 Screened, rescored and **excluded 2026-08-18** (`docs/DECISIONS.md` §1). Everything is in

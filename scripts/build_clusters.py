@@ -67,7 +67,12 @@ def subsumed(domains: pd.DataFrame) -> dict[str, str]:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--max-edits", type=int, default=5)
+    ap.add_argument(
+        "--max-edits",
+        type=int,
+        default=None,
+        help="residues that may differ within a cluster; default from thresholds.yaml",
+    )
     ap.add_argument(
         "--min-overlap",
         type=float,
@@ -79,6 +84,8 @@ def main() -> None:
 
     cfg = thresholds.load()["cluster"]
     min_overlap = float(cfg["min_overlap"]) if args.min_overlap is None else args.min_overlap
+    if args.max_edits is None:
+        args.max_edits = int(cfg["max_edits"])
 
     domains = load_domains()
     print(f"{len(domains)} distinct canonical domains")

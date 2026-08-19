@@ -1,15 +1,147 @@
-"""Nearest-neighbour lookup baseline. Phase 5.
+"""Nearest-neighbour lookup: copy the most identical training domain's E-score profile.
 
-For a held-out DBD, copy the binary binding profile of the most sequence-similar DBD in
-the training set (% identity over the aligned domain). Under leave-one-cluster-out this is
-the number that decides whether the dataset supports learning at all: a model that cannot
-beat it is a lookup table with extra steps, and we want to know that cheaply and early.
+**The bar, and not a strawman.** Transferring a motif to an uncharacterised TF by DBD
+sequence identity is how CIS-BP does inference, and Weirauch et al. 2014 established the
+per-family identity thresholds for exactly that — a paper that is one of this dataset's own 19
+sources. It is the standard method in the field and the first question a biologist asks of any
+model here: *isn't this just copying the most similar protein's motif?* Any model that does not
+beat it under `S2` has learned nothing transferable (`CLAUDE.md`; `docs/ML_PLAN.md` §8.1).
+
+**It predicts an E-score profile, not labels.** The neighbour's E-scores rank all 32,896
+8-mers, which is the same output shape the contrastive model produces, so AUPR, precision@k
+and Spearman compare the two directly with no special-casing.
+
+**Selection is percent identity over the aligned domain, under the overlap guard.** Identity
+is `1 - n_edits / n_aligned` from `snp2prot.distances`, and a candidate is only eligible if the
+alignment covered at least `cluster.min_overlap` of the shorter domain. The guard is mandatory
+rather than tidy: with free terminal gaps the aligner can park almost all of both sequences in
+gaps that cost nothing and report a handful of edits over the sliver that survives, which is
+how 31 false cluster memberships were formed before it was caught (`T25`). Under `P1` every
+candidate is cross-family by construction, so that degenerate case is the *typical* one there,
+not an edge case. Measured on this corpus every domain has at least 128 guarded candidates,
+so the guard never empties the pool — `MEAN_PROFILE` below is defined for completeness and
+does not fire.
+
+**The training pool is the caller's to choose.** `fit_predict` copies from exactly the rows it
+is given, so a caller that has dropped the `no_evidence` records (`label_health.usable`) gets a
+baseline that never copies an unverifiable silent profile.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
+import numpy as np
 import pandas as pd
 
+from snp2prot.data.matrix import KmerMatrix
+from snp2prot.distances import DomainDistances
 
-def fit_predict(train: pd.DataFrame, test: pd.DataFrame) -> pd.Series:
-    raise NotImplementedError("Phase 5")
+#: What a held-out domain is predicted when no training domain clears the overlap guard: the
+#: mean training profile, i.e. the corpus's average 8-mer preference. The lookup has no
+#: neighbour to copy and says so; falling back to the best *unguarded* candidate instead would
+#: copy the profile of whichever unrelated domain the aligner mangled most favourably.
+MEAN_PROFILE = "mean"
+
+
+@dataclass(frozen=True)
+class Prediction:
+    """Predicted profiles for the held-out domains, and which neighbour produced each."""
+
+    #: (n_test, n_kmers) float32 — the copied (or averaged) E-score profile.
+    profile: np.ndarray
+    #: One row per held-out domain: the neighbour chosen and how close it was.
+    neighbours: pd.DataFrame
+
+    @property
+    def n_without_neighbour(self) -> int:
+        return int((self.neighbours.neighbour == MEAN_PROFILE).sum())
+
+
+def choose(
+    distances: DomainDistances,
+    test_rows: np.ndarray,
+    train_rows: np.ndarray,
+    min_overlap: float,
+    k: int = 1,
+) -> tuple[np.ndarray, np.ndarray]:
+    """The `k` most identical guarded training rows for each test row, best first.
+
+    Returns positions into `train_rows` and their identities; a test row with fewer than `k`
+    eligible candidates is padded with `-1` and `nan`, which `fit_predict` reads as "use what
+    there is".
+
+    Ties in identity break towards the lower training row, which is the alphabetically earlier
+    `dbd_seq` — arbitrary, but fixed, so a rerun reproduces the same neighbour.
+    """
+    block = distances.identity()[np.ix_(test_rows, train_rows)]
+    guarded = distances.comparable(min_overlap)[np.ix_(test_rows, train_rows)]
+    eligible = np.where(guarded & np.isfinite(block), block, -np.inf)
+
+    k = min(k, eligible.shape[1])
+    top = np.argpartition(-eligible, k - 1, axis=1)[:, :k]
+    values = np.take_along_axis(eligible, top, axis=1)
+    order = np.argsort(-values, axis=1, kind="stable")
+    top = np.take_along_axis(top, order, axis=1)
+    values = np.take_along_axis(values, order, axis=1)
+
+    empty = ~np.isfinite(values)
+    top = np.where(empty, -1, top)
+    return top, np.where(empty, np.nan, values)
+
+
+def fit_predict(
+    matrix: KmerMatrix,
+    distances: DomainDistances,
+    test_rows: np.ndarray,
+    train_rows: np.ndarray,
+    min_overlap: float,
+    k: int = 1,
+) -> Prediction:
+    """Predict every held-out domain's 8-mer profile by copying its nearest training domain.
+
+    `k = 1` is the primary form — the pure lookup table, and the thing to beat. Above 1 the
+    profile is the identity-weighted mean of the top `k` neighbours, which is a slightly
+    stronger bar and one extra line (`docs/ML_PLAN.md` §8.1).
+    """
+    test_rows = np.asarray(test_rows, dtype=np.int64)
+    train_rows = np.asarray(train_rows, dtype=np.int64)
+    if not len(train_rows):
+        raise ValueError("empty training pool: there is nothing to copy from")
+
+    picks, identities = choose(distances, test_rows, train_rows, min_overlap, k)
+    escore = matrix.escore
+    fallback = escore[train_rows].mean(axis=0)
+    overlap = distances.overlap()
+
+    profile = np.empty((len(test_rows), escore.shape[1]), dtype=np.float32)
+    records = []
+    for i, row in enumerate(test_rows):
+        usable = picks[i] >= 0
+        if not usable.any():
+            profile[i] = fallback
+            records.append((matrix.domains[row], MEAN_PROFILE, np.nan, -1, np.nan))
+            continue
+        chosen = train_rows[picks[i][usable]]
+        weights = identities[i][usable].astype(np.float64)
+        # Identity is bounded below by 0 in practice but the formula does not guarantee it;
+        # a negative weight would be nonsense, so the floor is explicit.
+        weights = np.clip(weights, 0.0, None)
+        total = weights.sum()
+        weights = weights / total if total > 0 else np.full(len(chosen), 1 / len(chosen))
+        profile[i] = np.average(escore[chosen], axis=0, weights=weights).astype(np.float32)
+        best = int(chosen[0])
+        records.append(
+            (
+                matrix.domains[row],
+                matrix.domains[best],
+                float(identities[i][0]),
+                int(distances.n_edits[row, best]),
+                float(overlap[row, best]),
+            )
+        )
+
+    neighbours = pd.DataFrame(
+        records, columns=["domain", "neighbour", "identity", "n_edits", "overlap"]
+    )
+    return Prediction(profile, neighbours)

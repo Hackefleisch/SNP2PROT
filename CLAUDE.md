@@ -62,9 +62,14 @@ concrete consequences that shape the code:
 1. **Never pool sources without checking `dna_len`.** PBM gives 8 bp, B1H 9 bp, SNP-SELEX
    19 bp, and each has a different positive rate, so length alone leaks assay identity and
    with it the label prior. Mitigated at *featurization* time, never in the stored table.
-2. **The nearest-neighbour baseline is the bar.** `snp2prot.baselines.nn_lookup` copies the
-   binding profile of the most similar training DBD. Any model that does not beat it under
-   leave-one-cluster-out has learned nothing transferable.
+2. **The nearest-neighbour baseline is the bar, and it is now measured.**
+   `snp2prot.baselines.nn_lookup` copies the E-score profile of the most similar training DBD.
+   [reports/nn_baseline.md](reports/nn_baseline.md), 2026-08-19: mean per-protein AUPR **0.769**
+   under the random split `S1`, **0.296** under `S2`, **0.024** under the `P1` homeodomain
+   holdout, **0.882** under `P2` and **0.928** under `P3/all` — where copying the wild type *is*
+   the hypothesis that a mutation does nothing. Those are the numbers a model has to be read
+   against, and the report bands them by nearest-neighbour identity, which is what actually
+   drives every one of them.
 
 ## Layout
 
@@ -87,12 +92,15 @@ docs/RESULTS.md             what the finished dataset contains, generated from t
 src/snp2prot/
   schema.py       unified 22-column row schema + validate(); the gate every parser passes
   thresholds.py   reads configs/thresholds.yaml
+  experiment.py   reads configs/experiment.yaml -- the MODELLING config, deliberately separate
   config.py       every path in the project; nothing builds a path by hand
   domains.py      Pfam/HMMER annotation + the three-condition admission policy
   canonical.py    the project-internal canonical domain sequence  <- READ BEFORE dbd_seq
   references.py   identifier -> reference protein, cached; only used when a construct is short
   clusters.py     CD-HIT greedy incremental clustering + the cluster inventory (size lookup)
   label_health.py which records carry positive evidence; the training-time filter (T21)
+  corpus.py       one row per domain of the merged table: the view splits and baselines read
+  distances.py    all-vs-all domain identity, cached; feeds S2, the NN baseline and §5.2
   merge.py        one record per domain: which of two sources' measurements survives (T15/D4)
   proteins.py     the protein-side companion table (bare/padded domain, construct, full-length)
   parsers/        one module per source, each exposing parse() -> pd.DataFrame
@@ -101,10 +109,11 @@ src/snp2prot/
     weirauch2014.py  CIS-BP / Weirauch 2014: GEO SOFT + Table S6, joined on plasmid ID
   metadata/       CIS-BP / Pfam+HMMER / UniProt lookups shared by all parsers
   reports.py      binarization summary, cluster inventory, overlap report
-  splits.py       leave-one-variant / -cluster / -family out
+  splits.py       the five regimes: S1, S2 (components at >= 0.5 identity), P1, P2, P3
   baselines/      nn_lookup — the number a model must beat
-  evaluation/     metrics for scoring the baseline per split regime; Phase 5
-  data/           featurization (padded20 vs common_core); Phase 6+
+  evaluation/     metrics.py — per-protein AUPR / precision@k / Spearman, macro-averaged
+                  c1.py — the C1 evaluation set: variants the wild-type copy fails on (D6)
+  data/matrix.py  the merged table as a dense domain x 8-mer array pair, for modelling
 
 data/raw/<source>/       append-only, never edited          (git-ignored)
 data/interim/<source>/   per-source parsed Parquet          (git-ignored)
@@ -114,6 +123,10 @@ data/interim/label_health/ one row per (domain, source): verdict, label counts, 
 data/external/pfam/      Pfam HMMs for boundary annotation
 data/external/uniprot/   cached canonical sequences
 data/processed/          merged training table: 1,338 domains x 32,896 8-mers  (git-ignored)
+                         plus the cached modelling artifacts: kmer_matrix.npz (the same
+                         table as arrays), distances.npz (all-vs-all domain identity),
+                         nn_baseline_domains.parquet (per-domain baseline scores) and
+                         c1_variants.parquet (the C1 evaluation set)
 data/testsets/           held-out sets, kept physically apart; empty  (git-ignored)
 ```
 
@@ -168,14 +181,15 @@ names — **do not create the left-hand paths**, that would fork the structure i
 
 - **`configs/thresholds.yaml` holds only live blocks** — `pbm:`, `domain:`, `cluster:`.
   `b1h:`, `snp_selex:` and `tier4:` were removed on 2026-08-17 with the phases they configured.
-- **`configs/thresholds.yaml` is the dataset's only config.** There is no `default.yaml` and no
-  per-run config for a build, because a "run" *is* a dataset build and the thresholds are the only
-  thing that varies. **Phase 7 adds a second file for modelling** — hyperparameters, split regime,
-  seeds — decided 2026-08-19 ([docs/ML_PLAN.md](docs/ML_PLAN.md) §9.2) and deliberately **not**
-  merged into this one: changing a threshold invalidates the dataset, every report and every
-  provenance row, while changing a learning rate does not. Two things with different blast radii
-  do not belong in one file. Runs are tracked with MLflow on a local backend, and a run records
-  **which domains were held out**, not just its hyperparameters.
+- **There are exactly two config files, and the split between them is the point.**
+  `configs/thresholds.yaml` configures the *dataset* (read via `snp2prot.thresholds`);
+  `configs/experiment.yaml` configures *modelling* — split regimes, folds, seeds, baseline and
+  metric settings — read via `snp2prot.experiment`. Added 2026-08-19 with the NN baseline, as
+  [docs/ML_PLAN.md](docs/ML_PLAN.md) §9.2 specified. They are not merged because changing a
+  threshold invalidates the dataset, every report and every provenance row, while changing a fold
+  count or a seed does not. Two things with different blast radii do not belong in one file.
+  Runs are to be tracked with MLflow on a local backend, and a run records **which domains were
+  held out**, not just its hyperparameters — `snp2prot.splits.Fold.digest` is that record.
 - **Paper PDFs go in `docs/papers/`**, git-ignored, named `<firstauthor><year>_<slug>.pdf`
   (`_supp`, `_supp-<what>`, `_fig<N>` for the rest). The manifest is `docs/papers/README.md`;
   `scripts/check_papers.py` reports what is missing, unlisted, or waiting in the inbox.
@@ -220,6 +234,9 @@ uv venv --python 3.11 .venv && uv pip install --python .venv -e ".[dev]"
 .venv/bin/python scripts/build_label_health.py             # which records carry positive evidence, ~12 s
 .venv/bin/python scripts/build_merged.py                   # one record per domain -> data/processed/, ~1 min
 .venv/bin/python scripts/make_results.py                   # regenerate docs/RESULTS.md, ~5 s
+.venv/bin/python scripts/build_matrix.py                  # domain x 8-mer arrays for modelling, ~5 s
+.venv/bin/python scripts/build_distances.py               # all-vs-all domain identity, ~15 s
+.venv/bin/python scripts/run_nn_baseline.py [--top-k]     # the bar -> reports/nn_baseline.md, ~2.5 min
 .venv/bin/python -m ruff check . && .venv/bin/python -m ruff format .
 .venv/bin/python scripts/record_provenance.py data/raw/<source>/<file> --url ... --desc ...
 ```
@@ -236,10 +253,10 @@ Use `uv` (already installed at `~/.local/bin/uv`).
 | 2 | remaining UniPROBE family panels | **done** — Cell08, EMBO10, PNAS13, then SCI09, GR09, MAR17A, SHO18A, ROG18A to rebuild breadth after the policy. Survey in `docs/UNIPROBE_ACCESSIONS.md`; `GB11` (27 bHLH) is the best remaining candidate. |
 | 3 | ~~Persikov B1H + Najafabadi C2H2~~ | **DROPPED** — C2H2 arrays fail condition 2; Persikov varies a different subunit than the one that binds. ~8,000 domains excluded. |
 | 4 | ~~SNP-SELEX, trimmed to a 19 bp window~~ | **DROPPED 2026-08-14** — the dataset is PBM only, so every row is an 8-mer and the `dna_len` leak cannot occur |
-| 5 | merge, overlap report, splits, NN baseline | **merge and overlap done 2026-08-18** (`data/processed/training.parquet`, `reports/merge.md`, `docs/RESULTS.md`); splits and the NN baseline are still stubs |
+| 5 | merge, overlap report, splits, NN baseline | **done 2026-08-19** — merge and overlap on 2026-08-18 (`data/processed/training.parquet`, `reports/merge.md`, `docs/RESULTS.md`); splits and the NN baseline on 2026-08-19 (`reports/nn_baseline.md`) |
 | — | **extend PBM coverage beyond UniPROBE** | **CLOSED 2026-08-18** — CIS-BP landed as `weirauch2014`; Kock 2024 screened and excluded (`reports/kock2024_excluded.md`). The corpus is UniPROBE + CIS-BP and grows no further |
 | 6 | ~~Tier 4 test sets, in `data/testsets/`~~ | **DROPPED 2026-08-17** — the owner no longer wants the bHLH dimer sets. `data/testsets/` stays as empty scaffolding for any future held-out set |
-| 7 | **modelling** — contrastive two-tower over Codebook SELEX + PBM | **planned 2026-08-19**, see [docs/ML_PLAN.md](docs/ML_PLAN.md). Build order is PBM + sequence embeddings first (no collaborator dependency); SELEX and structure ensembles are blocked on others. Splits hold out **connected components**, not clusters (`T27` settled 2026-08-19, `docs/DECISIONS.md` §2) |
+| 7 | **modelling** — contrastive two-tower over Codebook SELEX + PBM | **step 0 done 2026-08-19** ([reports/nn_baseline.md](reports/nn_baseline.md)); next is the PBM + sequence arms A1/A4. Plan: [docs/ML_PLAN.md](docs/ML_PLAN.md). Build order is PBM + sequence embeddings first (no collaborator dependency); SELEX and structure ensembles are blocked on others. `S2` holds out **connected components at >= 0.5 identity**, not clusters (`T27`, then `D5` on 2026-08-19 — `docs/DECISIONS.md` §2) |
 
 ## Deferred to the owner — flag, do not resolve
 

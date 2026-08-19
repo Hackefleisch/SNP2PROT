@@ -51,6 +51,19 @@ PROTEIN_TABLE = INTERIM_DIR / "proteins" / "proteins.parquet"
 #: `scripts/build_label_health.py`; read via `snp2prot.label_health` (`TODO.md` T21).
 LABEL_HEALTH_TABLE = INTERIM_DIR / "label_health" / "label_health.parquet"
 
+#: The merged training table: one record per domain, 1,338 x 32,896 rows. Written by
+#: `scripts/build_merged.py`.
+MERGED_TABLE = PROCESSED_DIR / "training.parquet"
+
+#: The same table as a dense domain x 8-mer array pair, for modelling. Written by
+#: `scripts/build_matrix.py`; read via `snp2prot.data.matrix`.
+KMER_MATRIX = PROCESSED_DIR / "kmer_matrix.npz"
+
+#: All-vs-all domain distances, the shared input of the nearest-neighbour baseline, the `S2`
+#: split grouping and the nearest-neighbour-identity histogram (`ML_PLAN.md` §8.1). Written by
+#: `scripts/build_distances.py`; read via `snp2prot.distances`.
+DISTANCE_MATRIX = PROCESSED_DIR / "distances.npz"
+
 #: One row per cluster: size, family, variant count. Written by `scripts/build_clusters.py`
 #: so that selecting on cluster size costs a 1,133-row read instead of a 45-million-row
 #: group-by (`TODO.md` T3).

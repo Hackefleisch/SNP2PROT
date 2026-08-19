@@ -23,11 +23,22 @@ dev = [
     "ruff",
     "ipykernel",
     "matplotlib",        # score-distribution plots in the binarization reports
+    "torch>=2.0",        # protein arms A1/A4, and the two-tower model
+    "fair-esm>=2.0",     # ESM-2 650M; also the architecture ESM-DBP's state_dict loads into
 ]
 
 # Modelling dependencies go in `dev` above as they are added (decided 2026-08-19,
 # docs/ML_PLAN.md 9.2). Splitting a runtime subset out into its own extra is a question for
 # publication or deployment; answering it now would be guessing.
+#
+# `torch` is deliberately unpinned to a CUDA build here, because the right wheel depends on the
+# machine's driver rather than on the project. The reference machine runs driver 535 (CUDA 12.2),
+# which the default PyPI wheel — cu130 as of torch 2.13 — refuses; it needs the cu121 index:
+#
+#     uv pip install --python .venv --index-url https://download.pytorch.org/whl/cu121 "torch==2.5.1"
+#
+# Everything here runs on CPU as well, about 40x slower for the embedding pass (19 s on an
+# RTX 3070) and not worth it for the training grid.
 
 [tool.setuptools.packages.find]
 where = ["src"]

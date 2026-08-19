@@ -882,9 +882,18 @@ they are cheap enough to re-run at will (measured 2026-08-19):
 | 10 | `python scripts/build_matrix.py` | 5 s | `data/processed/kmer_matrix.npz` — the merged table as a 1,338 × 32,896 E-score array and label array |
 | 11 | `python scripts/build_distances.py` | 11 s | `data/processed/distances.npz` — all-vs-all domain alignment counts, 894,453 pairs across 24 processes |
 | 12 | `python scripts/run_nn_baseline.py` | 2 min 35 s | `reports/nn_baseline.md`, `data/processed/nn_baseline_domains.parquet`, `data/processed/c1_variants.parquet` |
+| 13 | `python scripts/build_embeddings.py --arm A1` | 19 s | `data/processed/embeddings/A1.npz` — pooled ESM-2 650M vectors, one per domain (first run also fetches the 2.6 GB checkpoint) |
+| 14 | `python scripts/build_embeddings.py --arm A4` | 19 s | `data/processed/embeddings/A4.npz` — the same, from ESM-DBP |
+| 15 | `python scripts/check_pooling.py` | 9 s | `reports/pooling_check.md` — the §3.1 pre-flight, which must pass before any training run |
 
 Step 12 is dominated by the per-protein metrics: 19 folds × up to 1,338 held-out domains, each
-ranking 32,896 8-mers. Step 1 is dominated by CIS-BP, which is 29 of the 45.5
+ranking 32,896 8-mers. Steps 13-15 need a GPU to be this fast — the embedding pass is about 40×
+slower on CPU, though everything still runs there.
+
+**The CUDA wheel is a property of the machine, not of the project.** The reference machine's
+driver is 535 (CUDA 12.2) and the default PyPI `torch` wheel is built for CUDA 13, which refuses
+to initialise on it; the cu121 index supplies a working build. `pyproject.toml` records the exact
+command. Step 1 is dominated by CIS-BP, which is 29 of the 45.5
 million rows; within it, one source (2.3 GB of text) is the critical path, so parallelising
 across sources alone cannot go below what that one source costs. The build is currently serial;
 processes give ~7.6× on this workload where threads give nothing, because the CSV parser holds

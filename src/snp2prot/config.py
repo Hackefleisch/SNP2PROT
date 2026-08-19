@@ -64,6 +64,19 @@ KMER_MATRIX = PROCESSED_DIR / "kmer_matrix.npz"
 #: `scripts/build_distances.py`; read via `snp2prot.distances`.
 DISTANCE_MATRIX = PROCESSED_DIR / "distances.npz"
 
+#: Pooled protein-language-model embeddings, one vector per domain, per arm. Written by
+#: `scripts/build_embeddings.py`; read via `snp2prot.embeddings`.
+EMBEDDING_DIR = PROCESSED_DIR / "embeddings"
+
+#: Downloaded model weights. Under `data/external/` with the Pfam HMMs and the UniProt cache,
+#: because they are the same kind of thing: a large third-party artifact the build depends on,
+#: fetched once and recorded in `PROVENANCE.md`.
+MODEL_DIR = EXTERNAL_DIR / "models"
+
+#: ESM-DBP's published checkpoint (arm `A4`). A bare `state_dict` for the ESM-2 650M
+#: architecture, so it is loaded into that rather than through a loader of its own.
+ESM_DBP_CHECKPOINT = MODEL_DIR / "esm_dbp" / "ESM-DBP.model"
+
 #: One row per cluster: size, family, variant count. Written by `scripts/build_clusters.py`
 #: so that selecting on cluster size costs a 1,133-row read instead of a 45-million-row
 #: group-by (`TODO.md` T3).
@@ -82,6 +95,11 @@ def source_tables() -> dict[str, Path]:
             continue
         found[path.parent.name] = path
     return found
+
+
+def embedding_table(arm: str) -> Path:
+    """Pooled embeddings for one protein arm, e.g. `embedding_table("A1")`."""
+    return EMBEDDING_DIR / f"{arm}.npz"
 
 
 def raw_dir(source: str, create: bool = False) -> Path:

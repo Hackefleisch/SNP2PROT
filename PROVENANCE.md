@@ -1,7 +1,9 @@
 # Provenance
 
-One row per file under `data/raw/`. Append-only: never edit or delete a row, and never edit
-the file it describes. This table is publication evidence, not a convenience log.
+One row per file under `data/raw/`, plus the third-party artifacts under `data/external/`
+that the build depends on and cannot regenerate — the Pfam HMMs and the language-model
+checkpoints. Append-only: never edit or delete a row, and never edit the file it describes.
+This table is publication evidence, not a convenience log.
 
 Regenerate the hash/size columns for a file with:
 
@@ -45,6 +47,10 @@ python scripts/record_provenance.py data/raw/<source>/<file>
 | weirauch2014 | `weirauch2014/filelist.txt` | https://ftp.ncbi.nlm.nih.gov/geo/series/GSE53nnn/GSE53348/suppl/filelist.txt | GSE53348 | 2026-08-14T17:53:13Z | 165,160 | `deea5f21f732623a2864f92c76cd43ce4f38cf53c0eaaec1e16f10f315fc0094` | GEO member manifest for `GSE53348_RAW.tar`: 2,064 8-mer files across 1,032 plasmids on the HK and ME array designs, plus both GPL11260 array design files. Plasmid IDs match Table S6 exactly, 1,032/1,032 both ways. |
 | weirauch2014 | `weirauch2014/GSE53348_RAW.tar` | https://ftp.ncbi.nlm.nih.gov/geo/series/GSE53nnn/GSE53348/suppl/GSE53348_RAW.tar | GSE53348 | 2026-08-14T17:55:23Z | 2,758,072,320 | `3dafdef7e2d1186a02509b51c3e01f2a388d218ffc87dc4f330c52fab0b8774a` | GEO RAW archive, 2,066 members. **Probe-level intensities, NOT 8-mer tables** — each member is 40,631 array spots with `pbm_sequence`, `linker_sequence`, `mean_signal_intensity`, `mean_background_intensity`. The 8-mer E-scores are in `GSE53348_family.soft.gz` instead. Kept because it is the only route to recomputing E-scores from probes, and because member names carry the plasmid ID. Includes both GPL11260 array design files. |
 | weirauch2014 | `weirauch2014/GSE53348_family.soft.gz` | https://ftp.ncbi.nlm.nih.gov/geo/series/GSE53nnn/GSE53348/soft/GSE53348_family.soft.gz | GSE53348 | 2026-08-14T17:57:32Z | 1,696,958,189 | `2f49d6478a21ee5b7b6d8044252c2c0a6c82842d8bd5cd68251c12b91038112b` | **This is the file the parser reads.** GEO SOFT family record, 2,064 sample blocks. Each `!Sample_title` is `<plasmidID>_<HK|ME>_8mer_<n>`, joining to Table S6 on plasmid ID, and each sample table is `ID_REF / VALUE / E-Score / Z-Score` over exactly 32,896 8-mers. Same E-score statistic and [-0.5, 0.5] scale as UniPROBE; the paper quotes E > 0.45 as its own significance cutoff. |
+
+| models | `../external/models/checkpoints/esm2_t33_650M_UR50D.pt` | https://dl.fbaipublicfiles.com/fair-esm/models/esm2_t33_650M_UR50D.pt | esm2_t33_650M_UR50D | 2026-08-19T12:21:26Z | 2,604,537,549 | `ea9d0522b335a8778dea6535a65301f10208dece28cd5865482b0b1fc446168c` | ESM-2 650M protein language model (Lin et al. 2023), 1280-d, 33 layers. **Protein arm A1** (`docs/ML_PLAN.md` §4.2); pooled to one vector per domain in `data/processed/embeddings/A1.npz`. Fetched by `fair-esm` through `torch.hub`, with `torch.hub.set_dir` pointed at `data/external/models/` so the artifact lives in the project rather than in a home-directory cache. |
+
+| models | `../external/models/esm_dbp/ESM-DBP.model` | https://huggingface.co/zengwenwu/ESM-DBP/resolve/main/ESM-DBP.model | zengwenwu/ESM-DBP | 2026-08-19T12:26:58Z | 2,604,382,731 | `f29dd05b83c477504f7c81731fd66ebd02cd6b33d074a75a10157f799640b5b7` | ESM-DBP (Zeng et al. 2024, *Nat Commun* 15:7838, `10.1038/s41467-024-52293-7`): ESM-2 650M domain-adaptively pretrained on 170,264 non-redundant DNA-binding protein sequences. **Protein arm A4** (`docs/ML_PLAN.md` §4.2); pooled per domain into `data/processed/embeddings/A4.npz`. A bare `state_dict` saved from a `DataParallel` wrapper (`module.` prefix on every key) matching `esm2_t33_650M_UR50D` exactly — 572 tensors, none missing, none extra, no shape disagreement — so it is loaded into that architecture with `strict=True`. The repository's other three `.model` files are downstream task heads and are not used. |
 
 ## Sources attempted and rejected
 

@@ -97,6 +97,28 @@ The whole lookup curve is one variable, which is the most useful thing the repor
 nearest-neighbour identity runs 0.032 / 0.365 / 0.771 / 0.946 / 0.910 across the bands below 0.3,
 0.3-0.5, 0.5-0.7, 0.7-0.9 and above 0.9. Any model's number has to be read against its own band.
 
+**The sequence arms are built and the pooling pre-flight passes**
+([`reports/pooling_check.md`](reports/pooling_check.md), 2026-08-19). `A1` (ESM-2 650M) and `A4`
+(ESM-DBP) are cached as pooled 1280-d vectors per domain, 20 s each on the GPU.
+
+`ML_PLAN.md` §3.1 required this measurement before any training run, because mean pooling could
+in principle dilute a single-residue change to nothing:
+
+| arm | variant vs family scale | own reference nearest | displacement ~ edits | C1 signal (AUC) |
+|---|---:|---:|---:|---:|
+| `A1` ESM-2 650M | 0.028 | 73% | 0.408 | 0.622 (1.3σ) |
+| `A4` ESM-DBP | 0.026 | 79% | 0.410 | **0.709 (2.4σ)** |
+
+**Pooling stays** — variants are separated, the separation scales with the number of edits, and
+96% of variants sit within the nearest 5% of their family. Attention pooling (`T32`) is not to be
+reached for, per §3.1's own instruction.
+
+**And the `A1` -> `A4` comparison is already visible before any training.** The domain-adapted
+model is better on every column, and on the one that matters most for C1 — does the vector move
+*further* for the mutations that actually changed binding — it is 2.4 standard errors from chance
+against A1's 1.3. Weak evidence at n = 28 vs 62, and a property of the embeddings rather than a
+result about binding, but it is the first evidence in the project bearing on §4.2's question.
+
 **Modelling has a plan of record now: [`docs/ML_PLAN.md`](docs/ML_PLAN.md)** (2026-08-19).
 It adds a second dataset — Codebook SELEX, Jolma et al. 2026 *Nature*
 `10.1038/s41586-026-10798-9` — and a contrastive two-tower model over 1 DNA and 3 protein
@@ -110,7 +132,7 @@ embeddings, for a talk. §1-§9 is the owner's plan; §10 is a review of it, una
 | 1 | **Extend PBM coverage** beyond UniPROBE | **closed 2026-08-18** — Kock 2024 screened and excluded ([`reports/kock2024_excluded.md`](reports/kock2024_excluded.md)); `T2`/`T2b` dropped 2026-08-17. `T14` is the one small lead left open |
 | 2 | **Deepen the protein axis in what we already hold** | **done 2026-08-17** — clustering by sequence distance, and the cluster inventory (`T3`) with it |
 | 3 | **Merge**: single table, splits, NN baseline | **done 2026-08-19** — `data/processed/training.parquet`, 44,014,848 rows = 1,338 x 32,896; five split regimes in `snp2prot.splits`; the baseline in [`reports/nn_baseline.md`](reports/nn_baseline.md) |
-| 4 | **Modelling** | **step 0 done 2026-08-19** — [`docs/ML_PLAN.md`](docs/ML_PLAN.md). Next is the PBM + sequence arms `A1`/`A4`, which are unblocked today; `D5` and `D6` are the two things worth settling first |
+| 4 | **Modelling** | **step 0 and the sequence embeddings done 2026-08-19** — [`docs/ML_PLAN.md`](docs/ML_PLAN.md). `A1` and `A4` are cached and the §3.1 pre-flight passes ([`reports/pooling_check.md`](reports/pooling_check.md)); next is the two-tower harness itself |
 
 A research sweep on 2026-08-14 surveyed the literature for PBM sources with designed protein
 variation. Its one large find, Kock et al. 2024, was acquired, screened and **excluded on

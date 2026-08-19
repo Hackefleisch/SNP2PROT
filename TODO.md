@@ -71,6 +71,12 @@ Per-step timings and the order to run them in are `docs/METHODS.md` §10.2. **Th
 be pressed once per machine — `python scripts/press_pfam.py`** — or every source pays 19.5 s to
 re-read 2.2 GB of text.
 
+**Modelling has a plan of record now: [`docs/ML_PLAN.md`](docs/ML_PLAN.md)** (2026-08-19).
+It adds a second dataset — Codebook SELEX, Jolma et al. 2026 *Nature*
+`10.1038/s41586-026-10798-9` — and a contrastive two-tower model over 1 DNA and 3 protein
+embeddings, for a talk. §1-§9 is the owner's plan; §10 is a review of it, unacted on.
+`T28`-`T31` below are the items that review raised.
+
 **The plan, in order:**
 
 | # | step | state |
@@ -78,7 +84,7 @@ re-read 2.2 GB of text.
 | 1 | **Extend PBM coverage** beyond UniPROBE | **closed 2026-08-18** — Kock 2024 screened and excluded ([`reports/kock2024_excluded.md`](reports/kock2024_excluded.md)); `T2`/`T2b` dropped 2026-08-17. `T14` is the one small lead left open |
 | 2 | **Deepen the protein axis in what we already hold** | **done 2026-08-17** — clustering by sequence distance, and the cluster inventory (`T3`) with it |
 | 3 | **Merge**: single table, splits, NN baseline | **merge done 2026-08-18** — `data/processed/training.parquet`, 44,014,848 rows = 1,338 x 32,896. Splits and the NN baseline are still docstring stubs |
-| 4 | **Modelling** | after step 3 |
+| 4 | **Modelling** | **planned 2026-08-19** — [`docs/ML_PLAN.md`](docs/ML_PLAN.md). Build order starts with PBM + sequence embeddings, which is unblocked today |
 
 A research sweep on 2026-08-14 surveyed the literature for PBM sources with designed protein
 variation. Its one large find, Kock et al. 2024, was acquired, screened and **excluded on
@@ -90,6 +96,157 @@ were already parsed and one fails condition 2 outright. See
 ---
 
 ## Open tasks
+
+### T33 — Codebook publishes PBM data too; check whether we already hold it
+Unhurried, and **not a proposal to reopen acquisition** — that closed 2026-08-18
+(`reports/kock2024_excluded.md`). But <https://codebook.ccbr.utoronto.ca/v2/index_v2.php> lists a
+**PBM** panel alongside the SELEX data, with raw scanner data, Z-scores, **E-scores and 8-mer
+statistics** — the same assay, the same score type and, if it is a universal PBM, the same 32,896
+8-mer space our 19 sources share.
+
+So the usual cost of a new source does not apply: no new binarization rule, no new negative
+semantics, no `dna_len` question. The only real questions are whether it overlaps what we already
+parsed and whether it clears the three-condition admission policy.
+
+An hour of checking, whenever. Run `scripts/audit_sources.py` and the `N3` checklist if it turns
+out to be new.
+
+### T32 — Encoder variants, to test once a first result exists
+The encoder is fixed for now at **plain one-hot with reverse-complement mean pooling**
+([`ML_PLAN.md`](docs/ML_PLAN.md) §4.1, decided 2026-08-19). These four are the deferred
+alternatives. All are **one-encoder swaps against a fixed pipeline**, so once the training
+harness exists each is cheap — the whole label matrix fits in GPU memory (`ML_PLAN.md` §10.10).
+
+**Protein side — attention pooling instead of mean pooling.** Protein embeddings are pooled to one
+1280-d vector per domain ([`ML_PLAN.md`](docs/ML_PLAN.md) §3.1), which is what makes the four arms
+comparable and matches TransBind. The risk it carries is on claim C1: pooling dilutes a
+single-residue change, and §3.1 specifies a pre-flight check that measures how much. **If that
+check comes back bad, attention pooling is the fallback** — still one fixed-width vector per
+domain, so every reason for pooling survives, but learned rather than uniform weighting over
+residues. Do not reach for it before the measurement says it is needed.
+
+**DNA side — the four below.**
+
+**a. Other symmetry pooling.** Mean is the chosen default; **max** is the DeepBind/Basset
+convention and is not obviously worse — mean averages the two strands' evidence, max takes the
+better-matching strand, which is arguably closer to what a TF does. `logsumexp` sits between
+them. Cheapest of the four.
+
+**b. Chemical feature channels.** Three binary channels alongside the four one-hot ones:
+**S/W** (`GC`/`AT`, 3 vs 2 hydrogen bonds), **R/Y** (`AG`/`CT`, purine vs pyrimidine ring),
+**M/K** (`AC`/`GT`, amino vs keto). These are the groupings a TF actually reads in the major and
+minor groove. Note they **uniquely determine the base** — A=WRM, C=SYM, G=SRK, T=WYK — so they
+are a complete encoding on their own, not redundancy; the point is to offer the network a second,
+chemically grouped view. Seven channels, ~5 lines, no new dependency.
+
+**c. DNAshape** (Rohs lab: minor groove width, propeller twist, roll, helical twist, from
+pentamer lookups). Genuinely **the established biophysical DNA encoding in the TF-binding
+field** — a far better answer than a genomic LM if anyone asks what "the accepted method" is.
+Costs a real build: a pentamer table, and 8-mers have edge effects because a pentamer window only
+covers 4 of the 8 positions.
+
+**d. Brute-force symmetry by augmentation.** Instead of pooling architecturally, present **both
+reverse complements during training** as separate examples with the same label, and drop the
+pooling. Tests whether the inductive bias is needed or whether data augmentation buys the same
+thing — the classic equivariance-vs-augmentation trade, and worth knowing for this task.
+
+Note the comparison in **d** has a clean quantitative readout beyond AUPR: augmentation makes the
+embedding only *approximately* symmetric, so measure `||f(s) - f(revcomp(s))||` over held-out
+8-mers. Architectural pooling drives it to exactly zero by construction; augmentation does not,
+and how close it gets is the answer.
+
+### T31 — Two things to agree with the structure colleague
+Everything else about the ensembles is hers to decide or ours to discuss — she is in the lab and
+knows the project. Only these two need flagging, because both are cheaper to settle before the run
+than after.
+
+**a. Fix the ensemble size.** Arm A3 represents an ensemble by its **spread**
+([`ML_PLAN.md`](docs/ML_PLAN.md) §4.2), and a standard deviation estimated from 10 structures is
+both noisier and differently biased than one from 50. If `N` varies per domain, A3 silently
+encodes *how many structures that domain got* — which correlates with nothing biological. A fixed
+`N` for every domain is the clean fix; variable `N` subsampled down to the smallest before
+computing spread also works. Mixed sizes used as-is is the one option that is wrong.
+
+**b. We may only need the variant-bearing clusters.** The full ask is 1,338 domains; the
+**108 variant-bearing clusters hold 281 domains**, so scoping to those cuts the run to ~21% of the
+structures. That is where the ensemble earns its cost — the singletons answer no question that
+needs a spread.
+
+**But it has a consequence worth deciding with her, not around her.** Structures for only 281
+domains means arms **A2 and A3 cannot run the full-axis `S1`/`S2` regimes** (§5), which use all
+1,338. The comparison would then have to be either (i) restricted so *every* arm — A1 included —
+sees only the 281-domain subset, keeping it apples-to-apples on a smaller axis, or (ii) full
+structures after all. Option (i) is cheap and still valid; it just makes the headline
+sequence-vs-structure number a subset result, and that has to be said on the slide.
+
+### T30 — What to do with the 54 zero-positive records
+`label_health.usable()` drops all 54. They are not one group, and the choice differs per group
+([`ML_PLAN.md`](docs/ML_PLAN.md) §3.1):
+
+| verdict | n | what it is |
+|---|---:|---|
+| `dead_variant` | 20 | a variant that measurably **lost** binding, with a control in its own series |
+| `no_evidence` | 34 | no positives **and** no control to read that against |
+
+**The 20 are the sharpest evidence in the corpus for claim C1.** A model that returns the
+wild-type profile for a dead variant has failed in exactly the way the project exists to detect —
+and under §6.1's `P3` regime the NN baseline predicts precisely that. Proposal: hold them out as a
+dedicated C1 evaluation set, never trained on, reported separately.
+
+**The 34 are a different question, raised 2026-08-19 by the InfoNCE decision.** An all-negative row
+is genuine training signal — it pushes every 8-mer away from that protein — and §3.1 specifies a
+`null` anchor as the mechanism that lets InfoNCE express it. The catch is that **without a control
+you cannot tell a true non-binder from a failed assay**, so training on the 34 risks teaching the
+model that a perfectly good TF binds nothing. Options: exclude (status quo), include via the null
+anchor, or include as an ablation and report the difference.
+
+Both decisions are the owner's, and both want settling before the split code is written. The
+mechanism is worth building either way — it will matter more on SELEX, where all-negative proteins
+may be commoner.
+
+### T29 — Measure how reliable the SELEX negatives are, once the data lands
+**Mostly resolved before it started.** The collaborators can score **every** 8-mer, positives and
+negatives, so a SELEX negative is *measured and scored below threshold* — `assayed_unbound`, not
+`selection_absent` — and rule 4 is satisfied ([`ML_PLAN.md`](docs/ML_PLAN.md) §2.3).
+
+What is left is a measurement, not a decision. A SELEX negative still comes from **depletion in a
+selection** rather than a direct spot reading, and enrichment is noisy for 8-mers poorly covered
+in the input library, so SELEX may be **less reliable on the negative side** than PBM. Do not
+assume it either way — check:
+
+- the enrichment-score distribution and per-8-mer read coverage, when the table arrives;
+- **cross-assay agreement on the shared proteins**, which the §7 transfer experiment's *easy* set
+  gives for free. Compare agreement on positives against agreement on negatives; if the negative
+  side is much worse, that is a property of the assay pair and gets reported as one rather than
+  absorbed into a model score.
+
+Related and already folded into `ML_PLAN.md` §7: the measured **45.8%** median cross-lab
+agreement (`reports/overlap.md`) goes on the transfer figure as an explicit ceiling. Two labs
+running the *same* assay agree that much; two different assays will not do better.
+
+### T28 — Send the SELEX collaborators the k-mer spec
+**The decision is made — 8-mers only** ([`ML_PLAN.md`](docs/ML_PLAN.md) §2.3, 2026-08-19). What
+is left is the task of sending it, and it wants sending **before** they start work, not after.
+
+The spec, in four lines:
+
+- **k = 8**, nothing else;
+- over the **same 32,896** non-redundant 8-mers the PBM tables already use;
+- canonicalised as the **lexicographically smaller** of `(s, revcomp(s))`;
+- with a **continuous score** per 8-mer, so we set our own cutoff rather than inherit theirs.
+
+**And decide the provenance treatment when they arrive.** The k-mers are neither a download nor
+our own parse, so rule 3 has no obvious slot for them. Recommended: **treat them as raw for us** —
+`data/raw/codebook_selex/`, append-only, with a `PROVENANCE.md` row naming the collaborator, the
+date, a one-line method description and the file's sha256, plus their code archived alongside. The
+paper's own accessions (`ML_PLAN.md` §2.1, read from its data-availability statement, never
+guessed) go in the same row so the chain from publication to our table is unbroken. Rule 3 makes
+this publication evidence, not a convenience log.
+
+The third line is the one that fails silently if it is missed. Verified against the tables
+2026-08-19: all 19 sources carry one identical 8-mer set, and every entry is the lexicographically
+smaller member of its reverse-complement pair (the 256 palindromes trivially). A table
+canonicalised the other way validates, looks the right size, and joins on almost nothing.
 
 ### T23 — Do stored domains match the reference proteome inside the padding?
 Kock's `HOXD13` clone carries `T` where `P35453` carries `D`, at protein position 261 — six
@@ -110,24 +267,6 @@ is reported at Dryad `10.5061/dryad.pm3g4r3` with a companion GitHub repo — un
 Small, but it is ancestral reconstruction, so every sequence is stated explicitly and there is
 no accession chasing. Reconstructed-ancestor series are also the one place where designed
 protein-axis depth exists outside homeodomain point mutants.
-
-### T27 — Near-identical domains can sit in different clusters
-Surfaced by the `T25` sweep, and **not caused by it** — this is the greedy algorithm's known
-order dependence, now measured for the first time. A domain joins the *first* seed
-within 5 edits, not the best, so two paralogues that are 1-5 edits apart can end up in separate
-clusters if one of them matched an earlier seed first.
-
-**13 such pairs exist** across the four families swept (Homeodomain, Myb, AP2, HLH), all at
-full overlap: `BAR15A:VAX2`/`Cell08:Vax1` at 1 edit, `BAR15A:HOXC4`/`Cell08:Hoxb4` at 1-2,
-`weirauch2014:six3`/`Optix` at 2-3, `Cell08:Hoxc10`/`Hoxa10` at 4, `BAR15A:VSX1`/`Cell08:Vsx1`
-and `Cell08:Irx4`/`Irx6` and `BAR15A:PITX2`/`Cell08:Pitx3` at 5.
-
-**This is leakage in leave-one-cluster-out**: hold out one cluster and a near-identical
-sequence remains in training. Options are a post-pass that merges clusters whose
-seeds are within the threshold (reintroducing some chaining, which single-linkage
-was rejected for), a stricter split regime that groups clusters by connected component at
-evaluation time only, or accepting and reporting it. The last is cheapest and honest, and the
-split code is not written yet — decide it there rather than in the clustering.
 
 ### T26 — `.gitignore` silently drops the docs it promises to keep
 `data/raw/*` excludes the *directory*, so git never descends into it and the

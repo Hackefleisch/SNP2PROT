@@ -69,6 +69,8 @@ Phase = when it is needed. `!` = blocking that phase. Supplement rows carry `↳
 | `hastings2025_max-selectivity.pdf` | P6 | Hastings et al. 2025, *Nat Commun* 16:636 | [10.1038/s41467-024-55672-2](https://doi.org/10.1038/s41467-024-55672-2) |
 | `hastings2025_max-selectivity_supp.pdf` | P6 | ↳ supplementary information (73 pp) | |
 | `hastings2025_max-selectivity_supp-data-index.pdf` | P6 | ↳ index of supplementary data files | |
+| `jolma2026_expanded-codebook.pdf` | ! P7 | Jolma, Laverty et al. 2026, *Nature* (55 authors; Hughes & Kulakovskiy senior) | [10.1038/s41586-026-10798-9](https://doi.org/10.1038/s41586-026-10798-9) |
+| `basnet2026_transbind.pdf` | P7 | Basnet & Cheng 2026, *NAR Genom Bioinform* 8(2):lqag047 | [10.1093/nargab/lqag047](https://doi.org/10.1093/nargab/lqag047) |
 
 ## Known gaps
 
@@ -83,6 +85,11 @@ Phase = when it is needed. `!` = blocking that phase. Supplement rows carry `↳
 - **UniPROBE database papers** (Hume, Newburger) have no supplement; nothing missing.
 - **Jolma preprint** supplementary files are hosted separately on bioRxiv; low priority, since
   Codebook is the brief's lowest-priority source.
+- ~~**Jolma 2026 main article**~~ — **closed 2026-08-19**, filed as
+  `jolma2026_expanded-codebook.pdf`. Identified from its own metadata (title, `doi:10.1038/
+  s41586-026-10798-9`, author Arttu Jolma, Springer, 2026-08-04), matching the Crossref record.
+  **Its supplementary files are not collected**, and the SELEX binarization rule still has to be
+  read out of the methods before a parser is written — see `TODO.md` `T28`.
 
 Tables and pure figure sets were deliberately skipped — only documents were collected. The one
 exception is `persikov2015_..._fig3.pdf`, which arrived alongside that paper's supplements and

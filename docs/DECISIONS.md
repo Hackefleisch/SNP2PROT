@@ -575,6 +575,42 @@ larger defect, `#39` below.
 
 ---
 
+### 2026-08-19 — `T27`: splits group by connected component, clustering is unchanged
+
+**The problem.** CD-HIT greedy clustering is order-dependent: a domain joins the *first* seed
+within `max_edits`, not the best. Two paralogues 1-5 edits apart can therefore land in different
+clusters — 13 such pairs were measured across Homeodomain, Myb, AP2 and HLH, including
+`BAR15A:VAX2`/`Cell08:Vax1` at 1 edit. Holding out one cluster left its near-twin in training,
+which is leakage in exactly the regime that claims to test generalisation to new proteins.
+
+**The decision.** Splits hold out **connected components** of the domain graph — an edge wherever
+two domains are within `cluster.max_edits` (5) at `cluster.min_overlap` (0.6) — not CD-HIT
+clusters. **Evaluation-time only: the stored clusters are untouched**, so `wt_id`,
+`mut_positions` and the cluster inventory keep their meaning. Specified in
+[`ML_PLAN.md`](ML_PLAN.md) §5 as the `S2` regime.
+
+**Why this is not the single-linkage that was already rejected.** `snp2prot.clusters` rejects
+single-linkage because it produced a 35-domain blob at 5 edits. **That measurement predates
+`T25`'s overlap floor.** Re-measured 2026-08-19 with `min_overlap = 0.6`, over all 1,338 domains
+(111,992 within-family alignments, 23 s):
+
+| | groups | largest |
+|---|---:|---:|
+| connected components | 1,154 | 8 domains |
+| CD-HIT clusters | 1,165 | 8 domains |
+
+Only **11 components merge more than one cluster**, the largest 6 domains from 2 clusters. The
+chaining the earlier rejection was based on does not occur once a membership must also cover 60%
+of the shorter sequence.
+
+**And chaining would be the safe direction here anyway.** For *splitting*, over-grouping removes
+more from training than strictly necessary but never leaks. For *clustering*, it makes false
+claims about which domains are variants of one another. That asymmetry is why connected components
+are right at evaluation time and would still be wrong in `build_clusters.py`.
+
+**Cost: none.** The same 1,338 x 1,338 distance matrix is built anyway for the nearest-neighbour
+baseline (`ML_PLAN.md` §8.1, step 0 of the build order).
+
 ## 3. Composition decisions
 
 ### 2026-08-17 — `T4` closed: the label noise floor is measured, and it is not small

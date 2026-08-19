@@ -35,7 +35,8 @@ and the DBD boundary convention all come from the methods section, not from the 
 |---|---|---|---|
 | SNP-SELEX / GVAT | Yan et al. 2021, *Nature* 591:147 — "Systematic analysis of binding of transcription factors to noncoding variants" | [`10.1038/s41586-021-03211-0`](https://doi.org/10.1038/s41586-021-03211-0) | Defines OBS and PBS. Needed before the Phase 4 OBS cutoff can be chosen (open item #5). |
 | Codebook (optional) | Vorontsov et al. 2025, *Commun Biol* — "Cross-platform motif discovery and benchmarking to explore binding specificities of poorly studied human transcription factors" | [`10.1038/s42003-025-08909-9`](https://doi.org/10.1038/s42003-025-08909-9) | Peer-reviewed Codebook/GRECO-BIT consortium paper. Citation taken from the PDF's own metadata. |
-| Codebook (optional) | Jolma et al. 2024, bioRxiv **preprint** (v2 posted Oct 2025) — "GHT-SELEX demonstrates unexpectedly high intrinsic sequence specificity and complex DNA binding of many human transcription factors" | [`10.1101/2024.11.11.618478`](https://doi.org/10.1101/2024.11.11.618478) | ⚠️ **Not peer reviewed.** Codebook is a consortium with several companion papers; the brief marks it lowest priority. Do not cite this where the Vorontsov paper covers the same ground. |
+| Codebook (optional) | Jolma et al. 2024, bioRxiv **preprint** (v2 posted Oct 2025) — "GHT-SELEX demonstrates unexpectedly high intrinsic sequence specificity and complex DNA binding of many human transcription factors" | [`10.1101/2024.11.11.618478`](https://doi.org/10.1101/2024.11.11.618478) | ⚠️ **Not peer reviewed.** Codebook is a consortium with several companion papers; the brief marks it lowest priority. Do not cite this where the Vorontsov paper covers the same ground. **Superseded by the peer-reviewed *Nature* version in the row below** — cite that one. |
+| `codebook_selex` | Jolma, Laverty et al. 2026, *Nature* — "An expanded codebook of human transcription factor DNA-binding specificity" | [`10.1038/s41586-026-10798-9`](https://doi.org/10.1038/s41586-026-10798-9) | **The SELEX phase's source paper** ([`ML_PLAN.md`](ML_PLAN.md) §2). Crossref-verified 2026-08-19: 55 authors, Hughes and Kulakovskiy senior, published 2026-08-05. This is the peer-reviewed version of the preprint above — cite this one. Deposit: <https://codebook.ccbr.utoronto.ca/v2/index_v2.php>. PDF not yet downloaded; the binarization rule must come from its methods. |
 
 ## Tier 4 — held-out quantitative test sets (never trained on)
 
@@ -44,6 +45,20 @@ and the DBD boundary convention all come from the methods section, not from the 
 | BET-seq | Le et al. 2018, *PNAS* 115:E3702 — "Comprehensive, high-resolution binding energy landscapes reveal context dependencies of transcription factor binding" | [`10.1073/pnas.1715888115`](https://doi.org/10.1073/pnas.1715888115) | Pho4 / Cbf1, ~10⁶ × 16 bp with real ΔG. (Preprint version is `10.1101/193904` — cite the PNAS one.) |
 | STAMMP | Aditham et al. 2021, *Cell Systems* 12(2):112–127 — "High-Throughput Affinity Measurements of Transcription Factor and DNA Mutations Reveal Affinity and Specificity Determinants" | [`10.1016/j.cels.2020.11.012`](https://doi.org/10.1016/j.cels.2020.11.012) | ~210 Pho4 variants × 9 oligos. |
 | MAX / k-STAMMP | Hastings et al. 2025, *Nat Commun* 16:636 — "Mutations to transcription factor MAX allosterically increase DNA selectivity by altering folding and binding pathways" | [`10.1038/s41467-024-55672-2`](https://doi.org/10.1038/s41467-024-55672-2) | Volume 16, article 636 — matches the brief. Note the `2024` in the DOI despite the 2025 issue; that is correct. |
+
+## Modelling comparators
+
+Not data sources — published methods the modelling phase measures itself against.
+
+| method | paper | DOI | notes |
+|---|---|---|---|
+| TransBind | Basnet & Cheng 2026, *NAR Genomics and Bioinformatics* 8(2):lqag047 — "Integrating protein and DNA embeddings for improving genome-wide transcription factor binding site prediction" | [`10.1093/nargab/lqag047`](https://doi.org/10.1093/nargab/lqag047) | Crossref-verified 2026-08-19. ESM-DBP protein embeddings + cross-attention over DNA; 690 ChIP-seq experiments, 161 TFs. ⚠️ Trained on 101 bp genomic regions, so its released weights **cannot** be run on our 8-mers — it is an architecture baseline to re-implement, or a citation ([`ML_PLAN.md`](ML_PLAN.md) §8, §10.13). Code: <https://github.com/jianlin-cheng/TransBind>, archived `10.5281/zenodo.19462292`. |
+
+### Embedding models used
+
+| model | paper | DOI | notes |
+|---|---|---|---|
+| ESM-DBP | Zeng, Dou, Pan, Xu et al. 2024, *Nat Commun* 15:7838 — "Improving prediction performance of general protein language model by domain-adaptive pretraining on DNA-binding protein" | [`10.1038/s41467-024-52293-7`](https://doi.org/10.1038/s41467-024-52293-7) | Crossref-verified 2026-08-19. **Protein arm A4** ([`ML_PLAN.md`](ML_PLAN.md) §4.2): ESM-2 fine-tuned on 170,264 non-redundant DNA-binding protein sequences from UniProtKB, width 1280 — the same as ESM-2, so A1 and A4 enter the common projection on equal terms. Also TransBind's protein encoder, which is what makes that baseline near-controlled against A4. |
 
 ## Supporting metadata
 

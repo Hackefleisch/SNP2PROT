@@ -25,7 +25,9 @@ dev = [
     "matplotlib",        # score-distribution plots in the binarization reports
 ]
 
-# Modeling dependencies are deliberately unpinned until after Phase 6 (see CLAUDE.md).
+# Modelling dependencies go in `dev` above as they are added (decided 2026-08-19,
+# docs/ML_PLAN.md 9.2). Splitting a runtime subset out into its own extra is a question for
+# publication or deployment; answering it now would be guessing.
 
 [tool.setuptools.packages.find]
 where = ["src"]

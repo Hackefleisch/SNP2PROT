@@ -76,6 +76,7 @@ docs/REFERENCES.md          dataset -> paper -> Crossref-verified DOI, plus read
 docs/UNIPROBE_ACCESSIONS.md all 36 UniPROBE accessions, citations, family survey
 docs/DOMAIN_POLICY.md       what dbd_seq is, the padding, and what gets excluded  <- READ THIS
 docs/METHODS.md             publication-quality account of how the dataset was built
+docs/ML_PLAN.md             the modelling plan for the talk; §10 is a review, not the plan
 docs/papers/                paper PDFs (git-ignored); README.md there is the manifest
 docs/papers_inbox/          the owner drops papers here; Claude identifies and files them
 PROVENANCE.md               one row per raw file: URL, accession, timestamp, size, sha256
@@ -167,12 +168,14 @@ names — **do not create the left-hand paths**, that would fork the structure i
 
 - **`configs/thresholds.yaml` holds only live blocks** — `pbm:`, `domain:`, `cluster:`.
   `b1h:`, `snp_selex:` and `tier4:` were removed on 2026-08-17 with the phases they configured.
-- **One config file: `configs/thresholds.yaml`.** There is no `default.yaml` and no per-run
-  config, because at this stage a "run" *is* a dataset build and the thresholds are the only
-  thing that varies. When modeling arrives (post-Phase 6) its hyperparameters get their own
-  file — deliberately not merged into this one, because changing a threshold invalidates the
-  dataset, every report and every provenance row, while changing a learning rate does not.
-  Two things with different blast radii do not belong in one file.
+- **`configs/thresholds.yaml` is the dataset's only config.** There is no `default.yaml` and no
+  per-run config for a build, because a "run" *is* a dataset build and the thresholds are the only
+  thing that varies. **Phase 7 adds a second file for modelling** — hyperparameters, split regime,
+  seeds — decided 2026-08-19 ([docs/ML_PLAN.md](docs/ML_PLAN.md) §9.2) and deliberately **not**
+  merged into this one: changing a threshold invalidates the dataset, every report and every
+  provenance row, while changing a learning rate does not. Two things with different blast radii
+  do not belong in one file. Runs are tracked with MLflow on a local backend, and a run records
+  **which domains were held out**, not just its hyperparameters.
 - **Paper PDFs go in `docs/papers/`**, git-ignored, named `<firstauthor><year>_<slug>.pdf`
   (`_supp`, `_supp-<what>`, `_fig<N>` for the rest). The manifest is `docs/papers/README.md`;
   `scripts/check_papers.py` reports what is missing, unlisted, or waiting in the inbox.
@@ -236,12 +239,17 @@ Use `uv` (already installed at `~/.local/bin/uv`).
 | 5 | merge, overlap report, splits, NN baseline | **merge and overlap done 2026-08-18** (`data/processed/training.parquet`, `reports/merge.md`, `docs/RESULTS.md`); splits and the NN baseline are still stubs |
 | — | **extend PBM coverage beyond UniPROBE** | **CLOSED 2026-08-18** — CIS-BP landed as `weirauch2014`; Kock 2024 screened and excluded (`reports/kock2024_excluded.md`). The corpus is UniPROBE + CIS-BP and grows no further |
 | 6 | ~~Tier 4 test sets, in `data/testsets/`~~ | **DROPPED 2026-08-17** — the owner no longer wants the bHLH dimer sets. `data/testsets/` stays as empty scaffolding for any future held-out set |
+| 7 | **modelling** — contrastive two-tower over Codebook SELEX + PBM | **planned 2026-08-19**, see [docs/ML_PLAN.md](docs/ML_PLAN.md). Build order is PBM + sequence embeddings first (no collaborator dependency); SELEX and structure ensembles are blocked on others. Splits hold out **connected components**, not clusters (`T27` settled 2026-08-19, `docs/DECISIONS.md` §2) |
 
 ## Deferred to the owner — flag, do not resolve
 
 Tracked in [TODO.md](TODO.md), the working file for open tasks, open decisions and notes.
 Currently open: whether 70% full-length UniProt coverage is enough (before embedding work),
 and whether to drop `MAR17A:Esrrb` for its 2 unresolved `X` residues (before structure work).
+Phase 7 adds four: the SELEX k-mer format to request (`T28`), how to score the transfer
+experiment against weak negatives (`T29`), whether the 20 `dead_variant` records become the
+point-mutation evaluation set (`T30`), and the structure-ensemble spec (`T31`).
+**Both of the older two are now live** — Phase 7 *is* the embedding and structure work.
 If parsing turns up evidence bearing on either, add it to that file rather than acting on it.
 
 Anything decided or finished moves to [docs/DECISIONS.md](docs/DECISIONS.md) — read it before

@@ -110,8 +110,8 @@ answerable only weakly from the families that carry a handful.
 
 ## Evidence quality, per record
 
-A record is one domain as one source measured it. `label_health.md` carries the detail;
-the filter is `label_health.usable(df)` and it is applied at featurization, not here.
+A record is one domain as one source measured it. `reports/label_health.md` carries the
+detail; the filter is `label_health.usable(df)`, applied at featurization, not here.
 
 | verdict | records | meaning |
 |---|---:|---|
@@ -135,8 +135,8 @@ the filter is `label_health.usable(df)` and it is applied at featurization, not 
 
 1. **A held-out score above the noise floor is not a better model.** 47 domains are
    measured by two sources; the median pair agrees on **45.8%** of the 8-mers either
-   called positive (`overlap.md`). Two replicates within one source agree on 70-72%.
-   Anything much past that is reproducing a laboratory.
+   called positive (`reports/overlap.md`). Two replicates within one source agree on
+   70-72%. Anything much past that is reproducing a laboratory.
 2. **Cross-fold transfer is thin.** See the family table: most families carry no variant
    at all, so a claim about transfer rests on a handful of clusters.
 3. **Near-identical domains can sit in different clusters.** Greedy assignment puts a

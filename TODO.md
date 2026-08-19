@@ -54,9 +54,9 @@ rejected: it would turn negatives into a ranking artifact and invent ~100 positi
 differing 1.6x in positive count on one protein — is now recorded in `docs/METHODS.md` §5.1
 instead.
 
-**The merged table exists** (`reports/merge.md`, `reports/RESULTS.md`): 44,014,848 rows, one
-record per domain, 48 duplicate records dropped. `RESULTS.md` is generated from the tables and
-is the thing to read first.
+**The merged table exists** (`reports/merge.md`, [`docs/RESULTS.md`](docs/RESULTS.md)):
+44,014,848 rows, one record per domain, 48 duplicate records dropped. `RESULTS.md` is
+generated from the tables and is the thing to read first.
 
 **Records with no positive evidence are flagged, not re-binarized** (`reports/label_health.md`,
 `T21` closed 2026-08-18). 54 of 1,386 records have no positive 8-mer: 20 are variants that

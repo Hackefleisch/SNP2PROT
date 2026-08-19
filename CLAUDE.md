@@ -81,7 +81,7 @@ docs/papers_inbox/          the owner drops papers here; Claude identifies and f
 PROVENANCE.md               one row per raw file: URL, accession, timestamp, size, sha256
 configs/thresholds.yaml     the ONLY config file; all binarization cutoffs live here
 reports/                    generated markdown, committed; the phase-boundary deliverables
-reports/RESULTS.md          what the finished dataset contains, generated from the tables
+docs/RESULTS.md             what the finished dataset contains, generated from the tables
 
 src/snp2prot/
   schema.py       unified 22-column row schema + validate(); the gate every parser passes
@@ -216,7 +216,7 @@ uv venv --python 3.11 .venv && uv pip install --python .venv -e ".[dev]"
 .venv/bin/python scripts/make_overlap_report.py            # cross-source label agreement, ~5 s
 .venv/bin/python scripts/build_label_health.py             # which records carry positive evidence, ~12 s
 .venv/bin/python scripts/build_merged.py                   # one record per domain -> data/processed/, ~1 min
-.venv/bin/python scripts/make_results.py                   # regenerate reports/RESULTS.md, ~5 s
+.venv/bin/python scripts/make_results.py                   # regenerate docs/RESULTS.md, ~5 s
 .venv/bin/python -m ruff check . && .venv/bin/python -m ruff format .
 .venv/bin/python scripts/record_provenance.py data/raw/<source>/<file> --url ... --desc ...
 ```
@@ -233,7 +233,7 @@ Use `uv` (already installed at `~/.local/bin/uv`).
 | 2 | remaining UniPROBE family panels | **done** — Cell08, EMBO10, PNAS13, then SCI09, GR09, MAR17A, SHO18A, ROG18A to rebuild breadth after the policy. Survey in `docs/UNIPROBE_ACCESSIONS.md`; `GB11` (27 bHLH) is the best remaining candidate. |
 | 3 | ~~Persikov B1H + Najafabadi C2H2~~ | **DROPPED** — C2H2 arrays fail condition 2; Persikov varies a different subunit than the one that binds. ~8,000 domains excluded. |
 | 4 | ~~SNP-SELEX, trimmed to a 19 bp window~~ | **DROPPED 2026-08-14** — the dataset is PBM only, so every row is an 8-mer and the `dna_len` leak cannot occur |
-| 5 | merge, overlap report, splits, NN baseline | **merge and overlap done 2026-08-18** (`data/processed/training.parquet`, `reports/merge.md`, `reports/RESULTS.md`); splits and the NN baseline are still stubs |
+| 5 | merge, overlap report, splits, NN baseline | **merge and overlap done 2026-08-18** (`data/processed/training.parquet`, `reports/merge.md`, `docs/RESULTS.md`); splits and the NN baseline are still stubs |
 | — | **extend PBM coverage beyond UniPROBE** | **CLOSED 2026-08-18** — CIS-BP landed as `weirauch2014`; Kock 2024 screened and excluded (`reports/kock2024_excluded.md`). The corpus is UniPROBE + CIS-BP and grows no further |
 | 6 | ~~Tier 4 test sets, in `data/testsets/`~~ | **DROPPED 2026-08-17** — the owner no longer wants the bHLH dimer sets. `data/testsets/` stays as empty scaffolding for any future held-out set |
 

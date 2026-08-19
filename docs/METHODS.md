@@ -816,7 +816,7 @@ property of the dataset (§5.1).
 
 The result is `data/processed/training.parquet`: **44,014,848 rows = 1,338 domains × 32,896
 8-mers**, in the same 22 columns every source table uses, one file, zstd-compressed to under a
-gigabyte. `reports/RESULTS.md` describes what is in it, generated from the tables so it cannot
+gigabyte. [`docs/RESULTS.md`](RESULTS.md) describes what is in it, generated from the tables so it cannot
 drift.
 
 ---
@@ -864,7 +864,7 @@ records by positive count and by whether they belong to a variant series).
 | 5 | `python scripts/make_reports.py --source <S>` ×19 | 1 min 33 s | per-source binarization, cluster inventory, validation |
 | 6 | `python scripts/make_overlap_report.py` | 6 s | `reports/overlap.md`, including which record survives the merge |
 | 7 | `python scripts/build_merged.py` | 1 min 10 s | `data/processed/training.parquet` (0.97 GB), `reports/merge.md` |
-| 8 | `python scripts/make_results.py` | 5 s | `reports/RESULTS.md` |
+| 8 | `python scripts/make_results.py` | 5 s | `docs/RESULTS.md` |
 | 9 | `python scripts/audit_sources.py` | 2 min 22 s | cross-source invariant sweep |
 
 Steps 1–9 total about **15 minutes**. Step 1 is dominated by CIS-BP, which is 29 of the 45.5

@@ -297,6 +297,57 @@ exposed: `T22` (`BAR15A:SIX6` carries a TrEMBL fragment accession, 59 residues o
 (padded windows have never been checked against the reference proteome). `T20` is untouched
 and now stands on its own.
 
+### 2026-08-25 — `T33`: the Codebook PBM panel is excluded, on story grounds
+
+**Checked, and it is good data — which is exactly the problem.** Jolma, Laverty et al. 2026
+*Nature* ([`10.1038/s41586-026-10798-9`](https://doi.org/10.1038/s41586-026-10798-9)) does run
+PBMs, and runs them on the same platform we already parse: *"we analysed proteins on two
+different **universal PBM arrays (HK and ME)**"* — the two array designs `weirauch2014` uses,
+standard protocol, so the 8-mer E-scores on the portal would need no new binarization rule.
+
+Three findings decided it.
+
+**1. It would break the SELEX transfer experiment.** The study assayed **393 proteins across up
+to five assays**, drawn from one pool:
+
+| assay | TFs assayed | motifs identified |
+|---|---:|---:|
+| GHT-SELEX | 392 | 179 |
+| HT-SELEX | 392 | 184 |
+| ChIP–seq | 373 | 179 |
+| SMiLE-seq | 299 | 84 |
+| **PBM** | **173** | **63** |
+
+So **at least 172 of the 173 PBM proteins were also SELEX-assayed.** [`ML_PLAN.md`](ML_PLAN.md)
+§7 splits the SELEX test set into *easy* (protein seen in training) and *hard* (not seen).
+Training on the Codebook PBM would move nearly the whole SELEX panel into *easy*, empty the hard
+set, and reduce the finale to measuring the same protein on two platforms — which is the
+transfer claim itself.
+
+**2. It adds no protein-axis depth, which is the axis that matters.** The paper contains **zero**
+occurrences of "mutant", "substitution", "point mutation", "missense", "alanine" or "wild type",
+and no engineered constructs. Its 41 mentions of SNPs and 21 of alleles are all **DNA-side** —
+allele-specific binding at genomic SNPs in ChIP–seq and GHT-SELEX peaks. The only within-protein
+multiplicity is construct architecture (full-length versus DBD) and protein source, which our
+policy treats as replicates of one domain, not a variant series. The only within-family
+multiplicity is *"the handful of paralogues analysed"* — SP140/SP140L, DACH1/DACH2,
+CAMTA1/CAMTA2, ZXDA/ZXDB/ZXDC — natural relatives with no wild-type control, and far enough
+apart to land in separate clusters anyway.
+
+So the yield would be **singleton proteins**: 63 motifs, of which 39 are novel Codebook TFs and
+the rest controls we likely already hold. [`ML_RESULTS.md`](ML_RESULTS.md) §3.2 is the reason
+that settles it — the one fold where the model beat the baseline is the one with 155 same-family
+training domains, so depth is what predicts success and 39 more singletons buy none of it.
+
+**3. The 8-mers there are PBM 8-mers, not SELEX-derived.** The paper never uses the terms
+"8-mer" or "E-score"; those come from the PBM deposit. The SELEX→k-mer conversion the
+collaborators have described is a separate capability and remains `T28`'s ask.
+
+**What is not excluded.** The paper stays the source of record for the SELEX phase
+([`ML_PLAN.md`](ML_PLAN.md) §2), and its PBM panel remains a legitimate *external validation*
+set if one is ever wanted — held out entirely, never trained on. That use has none of the
+problems above.
+
 ### 2026-08-14 — The dataset is PBM only
 **Decided by the owner.** B1H and SNP-SELEX are out; the corpus grows by extending PBM
 coverage instead. Then merge, then modelling. Tier 4 held-out sets are still wanted.

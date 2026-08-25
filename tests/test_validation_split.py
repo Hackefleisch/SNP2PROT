@@ -105,6 +105,29 @@ def test_a_grouping_that_would_leave_no_training_data_falls_back(corpus_frame, d
     assert len(degenerate[0]) and len(degenerate[1])
 
 
+def test_a_component_too_large_for_the_slice_is_skipped_not_taken(corpus_frame, dist):
+    """Measured on the first grid run: without this, `S2/fold-1` drew the 273-domain component
+    and gave up 38% of its training pool where the other folds gave 15%, leaving it a
+    different experiment from its own siblings."""
+    frame = corpus_frame.copy()
+    # A tight block of 12 near-identical domains, far larger than a 15% slice of the corpus.
+    block = [mutate(BASE, *range(60, 60 + i)) for i in range(12)]
+    frame = pd.concat(
+        [frame, pd.DataFrame({"dbd_seq": block, "dbd_family": "Homeodomain",
+                              "wt_id": "blk", "is_variant": False})],
+        ignore_index=True,
+    ).drop_duplicates("dbd_seq").sort_values("dbd_seq").reset_index(drop=True)
+    d = distances.build(frame.dbd_seq.to_numpy(), processes=1)
+
+    fold = splits.s1_random(frame, n_folds=5, seed=1)[0]
+    _, validation = splits.validation_split(
+        fold, frame, d, 0.15, seed=1, grouping="component", min_identity=0.9
+    )
+    wanted = 0.15 * len(fold.train)
+    assert len(validation) <= wanted * (1 + splits.OVERSHOOT)
+    assert len(validation) >= 1
+
+
 def test_the_validation_set_gets_its_own_digest(corpus_frame, dist):
     """A run records which domains were held out, and that applies to the validation slice as
     much as to the test set (`ML_PLAN.md` §9.2)."""

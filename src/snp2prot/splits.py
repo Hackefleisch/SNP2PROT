@@ -226,6 +226,12 @@ def p3_variants(
     return _fold("P3", label, test, len(domains), held_out=held_out)
 
 
+#: How far past the requested validation size a carve may go before it refuses a group. The
+#: slice is a stopping signal, so a little slack is harmless and an unbounded overshoot is not:
+#: a component larger than this is worth more as training data than as validation.
+OVERSHOOT = 0.25
+
+
 def validation_split(
     fold: Fold,
     domains: pd.DataFrame,
@@ -253,6 +259,14 @@ def validation_split(
     those regimes validation measures "held-out proteins" and is a stopping signal, not a proxy
     for the score being reported.
 
+    **A group too large to fit the slice is skipped, not taken.** Components are wildly uneven —
+    the largest holds 273 domains against a median of 1 — so a carve that simply accumulates
+    groups until it reaches its target overshoots catastrophically whenever it happens to draw
+    the big one. Measured on the first grid run: `S2/fold-1` gave up **38% of its training pool**
+    to validation where the other folds gave 15%, leaving it 635 training domains against 864
+    and making one of five folds a different experiment. A group is therefore admitted only if
+    it fits within `OVERSHOOT` of the target, and the search continues past one that does not.
+
     Returns `(train, validation)` positions. A `fraction` of 0 returns the fold's training set
     unchanged and an empty validation set, which is the fixed-step-budget mode.
     """
@@ -278,13 +292,20 @@ def validation_split(
     sizes = {g: int((groups == g).sum()) for g in ids}
 
     wanted = max(1, int(round(fraction * len(fold.train))))
+    cap = int(round(wanted * (1 + OVERSHOOT)))
     chosen: set = set()
     taken = 0
     for g in ids:
         if taken >= wanted:
             break
+        if taken + sizes[g] > cap:
+            continue  # too big for what is left of the slice; leave it in training
         chosen.add(g)
         taken += sizes[g]
+    if not chosen:
+        # Every group individually exceeds the cap. Take the smallest, so the slice is at
+        # least non-empty and the run still has a stopping signal.
+        chosen = {min(ids, key=lambda g: sizes[g])}
 
     held = np.isin(groups, list(chosen))
     if held.all():

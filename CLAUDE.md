@@ -82,6 +82,7 @@ docs/UNIPROBE_ACCESSIONS.md all 36 UniPROBE accessions, citations, family survey
 docs/DOMAIN_POLICY.md       what dbd_seq is, the padding, and what gets excluded  <- READ THIS
 docs/METHODS.md             publication-quality account of how the dataset was built
 docs/ML_PLAN.md             the modelling plan for the talk; §10 is a review, not the plan
+docs/ML_RESULTS.md          what phase 7 measured and what it rules out  <- READ WITH ML_PLAN
 docs/TRAINING.md            how the two-tower model is trained: loss, null anchor, batch shape
                             <- READ BEFORE TOUCHING src/snp2prot/models/ OR training.py
 docs/papers/                paper PDFs (git-ignored); README.md there is the manifest

@@ -226,6 +226,86 @@ def p3_variants(
     return _fold("P3", label, test, len(domains), held_out=held_out)
 
 
+def validation_split(
+    fold: Fold,
+    domains: pd.DataFrame,
+    distances: DomainDistances,
+    fraction: float,
+    seed: int,
+    grouping: str = "regime",
+    min_identity: float | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Carve a validation slice out of a fold's **training** domains.
+
+    A `Fold` is a train/test division and nothing else, so early stopping on its test set would
+    leak (`docs/TRAINING.md` §7a). This splits the training side again, and the result is logged
+    with its own digest like any other holdout.
+
+    `grouping` decides the unit:
+
+    - `"regime"` (the default) uses the regime's own unit where one exists — whole connected
+      components for `S2`, random domains everywhere else;
+    - `"component"` and `"random"` force one.
+
+    **`P1` and `P3` carry a mismatch no setting removes, and it is recorded rather than papered
+    over.** `P1`'s test task is transfer to an unseen *family*; `P3/all`'s training set contains
+    no variants at all, by construction, so no slice of it can imitate holding variants out. On
+    those regimes validation measures "held-out proteins" and is a stopping signal, not a proxy
+    for the score being reported.
+
+    Returns `(train, validation)` positions. A `fraction` of 0 returns the fold's training set
+    unchanged and an empty validation set, which is the fixed-step-budget mode.
+    """
+    if fraction <= 0:
+        return fold.train, np.array([], dtype=np.int64)
+
+    by_component = grouping == "component" or (grouping == "regime" and fold.regime == "S2")
+    if by_component:
+        if min_identity is None:
+            min_identity = float(experiment.section("splits")["s2_min_identity"])
+        components = distances_module.connected_components(
+            distances,
+            min_identity,
+            float(thresholds.load()["cluster"]["min_overlap"]),
+            domains.dbd_family.to_numpy(),
+        )
+        groups = components[fold.train]
+    else:
+        groups = np.arange(len(fold.train))
+
+    rng = np.random.default_rng(seed)
+    ids = rng.permutation(np.unique(groups))
+    sizes = {g: int((groups == g).sum()) for g in ids}
+
+    wanted = max(1, int(round(fraction * len(fold.train))))
+    chosen: set = set()
+    taken = 0
+    for g in ids:
+        if taken >= wanted:
+            break
+        chosen.add(g)
+        taken += sizes[g]
+
+    held = np.isin(groups, list(chosen))
+    if held.all():
+        # One group covers the whole training set — single linkage at a loose floor can do
+        # that on a narrow corpus. Taking it would leave nothing to train on, so fall back to
+        # the ungrouped carve rather than returning an empty training set.
+        if by_component:
+            return validation_split(fold, domains, distances, fraction, seed, "random")
+        raise ValueError(
+            f"a {fraction:.0%} validation carve consumed all {len(fold.train)} training "
+            "domains; the fold is too small to hold one out"
+        )
+    return fold.train[~held], fold.train[held]
+
+
+def digest_of(domains: pd.DataFrame, rows: np.ndarray) -> str:
+    """The same hash `Fold.digest` computes, for any set of domain positions."""
+    held = sorted(domains.dbd_seq.to_numpy()[rows])
+    return hashlib.sha256("\n".join(held).encode()).hexdigest()[:12]
+
+
 def all_regimes(
     domains: pd.DataFrame, distances: DomainDistances, config: dict | None = None
 ) -> Iterator[Fold]:

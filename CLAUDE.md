@@ -82,6 +82,8 @@ docs/UNIPROBE_ACCESSIONS.md all 36 UniPROBE accessions, citations, family survey
 docs/DOMAIN_POLICY.md       what dbd_seq is, the padding, and what gets excluded  <- READ THIS
 docs/METHODS.md             publication-quality account of how the dataset was built
 docs/ML_PLAN.md             the modelling plan for the talk; §10 is a review, not the plan
+docs/TRAINING.md            how the two-tower model is trained: loss, null anchor, batch shape
+                            <- READ BEFORE TOUCHING src/snp2prot/models/ OR training.py
 docs/papers/                paper PDFs (git-ignored); README.md there is the manifest
 docs/papers_inbox/          the owner drops papers here; Claude identifies and files them
 PROVENANCE.md               one row per raw file: URL, accession, timestamp, size, sha256
@@ -102,6 +104,9 @@ src/snp2prot/
   corpus.py       one row per domain of the merged table: the view splits and baselines read
   distances.py    all-vs-all domain identity, cached; feeds S2, the NN baseline and §5.2
   embeddings.py   pooled protein-LM vectors, one per domain, per arm (A1, A4)
+  models/         the two towers, the null anchor and the InfoNCE loss  <- docs/TRAINING.md
+  training.py     the training loop and the per-fold run driver
+  tracking.py     MLflow behind a wrapper; a run cannot exist without its split digests
   merge.py        one record per domain: which of two sources' measurements survives (T15/D4)
   proteins.py     the protein-side companion table (bare/padded domain, construct, full-length)
   parsers/        one module per source, each exposing parse() -> pd.DataFrame
@@ -128,7 +133,9 @@ data/processed/          merged training table: 1,338 domains x 32,896 8-mers  (
                          table as arrays), distances.npz (all-vs-all domain identity),
                          nn_baseline_domains.parquet (per-domain baseline scores),
                          c1_variants.parquet (the C1 evaluation set) and
-                         embeddings/<arm>.npz (pooled protein-LM vectors)
+                         embeddings/<arm>.npz (pooled protein-LM vectors) and
+                         training_folds.parquet / training_domains.parquet (grid results)
+mlruns/                  local MLflow backend: mlflow.db + artifacts  (git-ignored)
 data/external/models/    language-model checkpoints; README.md there says how they arrive
 data/testsets/           held-out sets, kept physically apart; empty  (git-ignored)
 ```
@@ -247,6 +254,8 @@ uv venv --python 3.11 .venv && uv pip install --python .venv -e ".[dev]"
 .venv/bin/python scripts/run_nn_baseline.py [--top-k]     # the bar -> reports/nn_baseline.md, ~2.5 min
 .venv/bin/python scripts/build_embeddings.py --arm A1     # pooled ESM-2 vectors, ~20 s on the GPU
 .venv/bin/python scripts/check_pooling.py                 # the ML_PLAN 3.1 pre-flight, ~10 s
+.venv/bin/python scripts/train.py --arm A1 --fold P3/all  # one fold, ~2.5 min -- the fast check
+.venv/bin/python scripts/run_grid.py                      # 19 folds x 2 arms -> reports/training.md, ~2 h
 .venv/bin/python -m ruff check . && .venv/bin/python -m ruff format .
 .venv/bin/python scripts/record_provenance.py data/raw/<source>/<file> --url ... --desc ...
 ```
@@ -266,7 +275,7 @@ Use `uv` (already installed at `~/.local/bin/uv`).
 | 5 | merge, overlap report, splits, NN baseline | **done 2026-08-19** — merge and overlap on 2026-08-18 (`data/processed/training.parquet`, `reports/merge.md`, `docs/RESULTS.md`); splits and the NN baseline on 2026-08-19 (`reports/nn_baseline.md`) |
 | — | **extend PBM coverage beyond UniPROBE** | **CLOSED 2026-08-18** — CIS-BP landed as `weirauch2014`; Kock 2024 screened and excluded (`reports/kock2024_excluded.md`). The corpus is UniPROBE + CIS-BP and grows no further |
 | 6 | ~~Tier 4 test sets, in `data/testsets/`~~ | **DROPPED 2026-08-17** — the owner no longer wants the bHLH dimer sets. `data/testsets/` stays as empty scaffolding for any future held-out set |
-| 7 | **modelling** — contrastive two-tower over Codebook SELEX + PBM | **steps 0 and the arm-1 embeddings done 2026-08-19** ([reports/nn_baseline.md](reports/nn_baseline.md), [reports/pooling_check.md](reports/pooling_check.md)); A1 and A4 are built and the §3.1 pooling pre-flight passes, so the next thing is the two-tower harness itself. Plan: [docs/ML_PLAN.md](docs/ML_PLAN.md). Build order is PBM + sequence embeddings first (no collaborator dependency); SELEX and structure ensembles are blocked on others. `S2` holds out **connected components at >= 0.5 identity**, not clusters (`T27`, then `D5` on 2026-08-19 — `docs/DECISIONS.md` §2) |
+| 7 | **modelling** — contrastive two-tower over Codebook SELEX + PBM | **the harness is built, 2026-08-20** — [docs/TRAINING.md](docs/TRAINING.md) is the design and records what the first runs measured; the remaining step is the owner running `scripts/run_grid.py` (~2 h). Steps 0 and the sequence arms done 2026-08-19 ([reports/nn_baseline.md](reports/nn_baseline.md), [reports/pooling_check.md](reports/pooling_check.md)). Plan: [docs/ML_PLAN.md](docs/ML_PLAN.md). Build order is PBM + sequence embeddings first (no collaborator dependency); SELEX and structure ensembles are blocked on others. `S2` holds out **connected components at >= 0.5 identity**, not clusters (`T27`, then `D5` on 2026-08-19 — `docs/DECISIONS.md` §2) |
 
 ## Deferred to the owner — flag, do not resolve
 

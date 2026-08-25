@@ -25,6 +25,7 @@ dev = [
     "matplotlib",        # score-distribution plots in the binarization reports
     "torch>=2.0",        # protein arms A1/A4, and the two-tower model
     "fair-esm>=2.0",     # ESM-2 650M; also the architecture ESM-DBP's state_dict loads into
+    "mlflow>=2.0",       # experiment tracking, local SQLite backend (docs/TRAINING.md 8.5)
 ]
 
 # Modelling dependencies go in `dev` above as they are added (decided 2026-08-19,

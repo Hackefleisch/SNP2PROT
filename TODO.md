@@ -119,6 +119,25 @@ model is better on every column, and on the one that matters most for C1 — doe
 against A1's 1.3. Weak evidence at n = 28 vs 62, and a property of the embeddings rather than a
 result about binding, but it is the first evidence in the project bearing on §4.2's question.
 
+**The two-tower harness is built** (2026-08-20). [`docs/TRAINING.md`](docs/TRAINING.md) is the
+design document and now also records what the first runs measured: multi-positive InfoNCE over
+the complete 8-mer axis with a learned null anchor, batches drawn on the protein axis, everything
+resident on the GPU. A step is **26.7 ms** and a fold **~2.5 min**, so the 19-fold grid is under
+an hour per arm.
+
+Three things the first runs settled, none of them guessed:
+
+- **the step budget is 6,000**, from the curve: validation AUPR is flat from ~3,500 while the
+  training loss keeps falling to 0.007, which is the overfitting §5 predicted from 1,338 proteins
+  against a 1,280-d input;
+- **the learned temperature reaches its clamp** (`1/τ = 100`) by step ~4,000 and pins there, so it
+  is a fixed hyperparameter from that point. `max_logit_scale` is now in the config and every run
+  reports whether the clamp is binding;
+- **MLflow's file store is gone** — it refuses to open in maintenance mode — so the backend is
+  local SQLite at `mlruns/mlflow.db`. Every requirement `ML_PLAN.md` §9.2 gave is still met.
+
+**The grid itself is the owner's to run** (rule 10, ~2 h): `python scripts/run_grid.py`.
+
 **Modelling has a plan of record now: [`docs/ML_PLAN.md`](docs/ML_PLAN.md)** (2026-08-19).
 It adds a second dataset — Codebook SELEX, Jolma et al. 2026 *Nature*
 `10.1038/s41586-026-10798-9` — and a contrastive two-tower model over 1 DNA and 3 protein
@@ -132,7 +151,7 @@ embeddings, for a talk. §1-§9 is the owner's plan; §10 is a review of it, una
 | 1 | **Extend PBM coverage** beyond UniPROBE | **closed 2026-08-18** — Kock 2024 screened and excluded ([`reports/kock2024_excluded.md`](reports/kock2024_excluded.md)); `T2`/`T2b` dropped 2026-08-17. `T14` is the one small lead left open |
 | 2 | **Deepen the protein axis in what we already hold** | **done 2026-08-17** — clustering by sequence distance, and the cluster inventory (`T3`) with it |
 | 3 | **Merge**: single table, splits, NN baseline | **done 2026-08-19** — `data/processed/training.parquet`, 44,014,848 rows = 1,338 x 32,896; five split regimes in `snp2prot.splits`; the baseline in [`reports/nn_baseline.md`](reports/nn_baseline.md) |
-| 4 | **Modelling** | **step 0 and the sequence embeddings done 2026-08-19** — [`docs/ML_PLAN.md`](docs/ML_PLAN.md). `A1` and `A4` are cached and the §3.1 pre-flight passes ([`reports/pooling_check.md`](reports/pooling_check.md)); next is the two-tower harness itself |
+| 4 | **Modelling** | **harness built 2026-08-20** — [`docs/TRAINING.md`](docs/TRAINING.md). Step 0, the sequence arms and the §3.1 pre-flight were done 2026-08-19; what remains is running the grid and reading it against the baseline |
 
 A research sweep on 2026-08-14 surveyed the literature for PBM sources with designed protein
 variation. Its one large find, Kock et al. 2024, was acquired, screened and **excluded on

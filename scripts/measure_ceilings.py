@@ -1,18 +1,21 @@
 #!/usr/bin/env python
-"""What the protein representation allows, before any question of how well a model trains.
+"""Is the shared space wide enough to express this data at all?
 
-    python scripts/measure_ceilings.py [--arm A1 --arm A4] [--fold S2/fold-0 ...]
+    python scripts/measure_ceilings.py [--out reports/representation_ceiling.md]
 
-`T35`. The three measurements [`docs/ML_RESULTS.md`](../docs/ML_RESULTS.md) §4 rests on, which
-between them decide **which link is at fault** when the two-tower model loses to nearest-neighbour
-lookup: the width of the shared space, the tower's strength, or the protein representation itself.
+`T35`, reduced on 2026-08-26 to the one measurement that licenses a conclusion. Seconds, and it
+reads a single cached artifact — the 8-mer matrix.
 
-Roughly three minutes. Reads only cached artifacts — the 8-mer matrix, the embeddings and the
-distances — and writes `reports/representation_ceiling.md`.
+**This script used to run three probes and present them as a decomposition** — *which link is at
+fault when the two-tower model loses to nearest-neighbour lookup?* The ridge and RBF probes were
+removed because that reading does not follow: every probe of this kind is a **lower** bound on
+its model class, so it can rule a component out when the number is high and can conclude nothing
+when the number is low. The ridge probe additionally minimised squared error while being scored
+by AUPR, and was violated on 5 of the 8 rows it was printed on. `snp2prot.evaluation.ceilings`
+carries the full account.
 
-This is also the harness for `T34`: a new pooling scheme is compared by rebuilding
-`embeddings/<arm>.npz` and re-running this, which reports it against the same ceilings on the
-same folds.
+What replaced them: whether a stronger or non-linear protein tower helps is settled by training
+one and reading the AUPR off the same folds (`TODO.md` `T36`), not by bounding it.
 """
 
 from __future__ import annotations
@@ -21,10 +24,9 @@ import argparse
 import time
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
-from snp2prot import corpus, distances, embeddings, experiment, splits, tracking
+from snp2prot import experiment, tracking
 from snp2prot.config import PROCESSED_DIR, REPORTS_DIR
 from snp2prot.data.matrix import KmerMatrix
 from snp2prot.evaluation import ceilings
@@ -32,168 +34,106 @@ from snp2prot.evaluation import ceilings
 DEFAULT_OUT = REPORTS_DIR / "representation_ceiling.md"
 GRID = PROCESSED_DIR / "training_folds.parquet"
 
-#: The folds the probes run on. Not all 19 — the probes cost minutes each and the question is
-#: about the hard regimes, where the model and the baseline disagree most.
-DEFAULT_FOLDS = ("S2/fold-0", "S2/fold-2", "S2/fold-4", "P1/Homeodomain")
-
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--arm", action="append", dest="arms", help="repeatable; default A1 and A4")
-    ap.add_argument("--fold", action="append", dest="folds", help="repeatable")
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    ap.add_argument("--rank", action="append", type=int, dest="ranks", help="repeatable")
     args = ap.parse_args()
-    arms = args.arms or ["A1", "A4"]
-    wanted = tuple(args.folds) if args.folds else DEFAULT_FOLDS
 
     started = time.time()
-    domains = corpus.domains()
     matrix = KmerMatrix.load()
-    dist = distances.DomainDistances.load()
-    folds = {f.label: f for f in splits.all_regimes(domains, dist)}
-    missing = [f for f in wanted if f not in folds]
-    if missing:
-        raise SystemExit(f"unknown folds: {missing}\nhave: {', '.join(folds)}")
-
-    cfg = experiment.load()
-    trainable = corpus.trainable(domains).to_numpy()
-
-    print("rank ceiling (oracle) ...", flush=True)
-    ranks = ceilings.rank_ceiling(matrix)
-    for rank, score in ranks.items():
+    ranks = tuple(args.ranks) if args.ranks else (16, 64, 256, 512)
+    print(f"rank ceiling over {matrix.shape[0]} x {matrix.shape[1]} ...", flush=True)
+    scores = ceilings.rank_ceiling(matrix, ranks)
+    for rank, score in scores.items():
         print(f"  rank {rank:>4}: {score:.4f}")
 
-    rows = []
-    for arm in arms:
-        vectors = embeddings.DomainEmbeddings.load(arm)
-        if list(vectors.domains) != list(domains.dbd_seq):
-            raise SystemExit(f"{arm} embeddings were built for a different domain set")
-        for label in wanted:
-            fold = folds[label]
-            # The same pool the model and the baseline both train on (`training.run_fold`):
-            # a probe is only a bound on what they could have done if it sees what they saw.
-            pool = fold.train[trainable[fold.train]]
-            inner = splits.Fold(fold.regime, fold.name, fold.test, pool, fold.held_out)
-            train, validation = splits.validation_split(
-                inner,
-                domains,
-                dist,
-                float(cfg["splits"]["validation"]["fraction"]),
-                int(cfg["splits"]["seed"]),
-                str(cfg["splits"]["validation"]["grouping"]),
-            )
-            linear = ceilings.ridge_probe(matrix, vectors.vectors, train, validation, fold.test)
-            kernel = ceilings.kernel_probe(matrix, vectors.vectors, train, validation, fold.test)
-            rows.append(
-                {
-                    "arm": arm,
-                    "regime": fold.regime,
-                    "fold": fold.name,
-                    "n_train": len(train),
-                    "n_test": len(fold.test),
-                    "linear_ceiling": linear["ceiling"],
-                    "linear_honest": linear.get("honest"),
-                    "kernel_ceiling": kernel["ceiling"],
-                    "kernel_honest": kernel.get("honest"),
-                }
-            )
-            print(
-                f"  {arm} {label:<16} linear {linear['ceiling']:.4f}"
-                f" ({linear.get('honest', float('nan')):.4f})"
-                f"  rbf {kernel['ceiling']:.4f} ({kernel.get('honest', float('nan')):.4f})"
-                f"  [{time.time() - started:.0f}s]",
-                flush=True,
-            )
-
-    frame = pd.DataFrame(rows)
-    write_report(args.out, ranks, frame, cfg)
+    write_report(args.out, scores, experiment.load())
     print(f"wrote {args.out} in {time.time() - started:.0f}s")
 
 
-def _model_and_baseline() -> pd.DataFrame:
-    """The grid's own numbers, so the ceilings are read next to what was achieved."""
+def _achieved() -> pd.Series | None:
+    """Mean achieved AUPR per regime, for the comparison that carries the point.
+
+    Per regime rather than the single best run: the rank floor is computed **in sample over all
+    1,338 domains**, so setting it beside a held-out number is not like for like. The comparison
+    is only decisive where the gap is large, which is the hard regimes — and those are where the
+    question is live anyway.
+    """
     if not GRID.exists():
-        return pd.DataFrame()
-    return pd.read_parquet(GRID)[["arm", "regime", "fold", "aupr", "baseline_aupr"]]
+        return None
+    return pd.read_parquet(GRID).groupby("regime").aupr.mean()
 
 
-def _fmt(value, places: int = 4) -> str:
-    if value is None or not np.isfinite(value):
-        return "n/a"
-    return f"{value:.{places}f}"
-
-
-def write_report(path: Path, ranks: dict, frame: pd.DataFrame, cfg: dict) -> None:
-    grid = _model_and_baseline()
-    merged = frame.merge(grid, on=["arm", "regime", "fold"], how="left") if len(grid) else frame
-
+def write_report(path: Path, scores: dict[int, float], cfg: dict) -> None:
+    width = int(cfg["model"]["width"])
+    achieved = _achieved()
     lines = [
-        "# What the protein representation allows",
+        "# Is the shared space wide enough?",
         "",
-        "Generated by `scripts/measure_ceilings.py` (`T35`). These are the measurements",
-        "[`ML_RESULTS.md`](../docs/ML_RESULTS.md) §4 rests on. They answer one question —",
-        "**when the",
-        "two-tower model loses to nearest-neighbour lookup, which link is at fault?** — by",
-        "bounding",
-        "each link separately.",
+        "Generated by `scripts/measure_ceilings.py` (`T35`). One measurement, because it is the",
+        "one that supports a conclusion.",
         "",
-        "## 1. Is the shared space wide enough?",
-        "",
-        "Best macro AUPR from a rank-`r` approximation of the E-score matrix. An **oracle**: the",
-        "factors are fitted to the matrix being scored, so this bounds what a bilinear model of",
-        "that",
-        "width could represent and says nothing about generalisation.",
+        "The two-tower's score matrix is `(B x D) @ (D x K)`, so it is rank `D` at most whatever",
+        "the towers do. This truncates the SVD of the E-score matrix itself and asks whether a",
+        "rank-`D` matrix can order these 8-mers at all.",
         "",
         "| rank | macro AUPR |",
         "|---:|---:|",
     ]
-    for rank, score in ranks.items():
-        marker = "  ← the configured `model.width`" if rank == int(cfg["model"]["width"]) else ""
+    for rank, score in scores.items():
+        marker = "  ← the configured `model.width`" if rank == width else ""
         lines.append(f"| {rank} | {score:.4f}{marker} |")
 
+    at_width = scores.get(width)
+    hard = ("S2", "P1")
     lines += [
         "",
-        "## 2. Is the protein tower too weak, and would non-linearity help?",
+        "## How to read it — and how not to",
         "",
-        "**Linear** is a ridge regression from the pooled embedding straight onto all 32,896",
-        "8-mers",
-        "— unconstrained output, no shared space, no DNA tower — so it strictly upper-bounds any",
-        "model whose protein side is a linear map of the same vector, ours included. **RBF** is",
-        "the",
-        "same in kernel form, which isolates non-linearity from width and depth.",
+        "**This is a lower bound, not a ceiling, despite the function's name.** The factors are",
+        "fitted to the matrix being scored, so it says nothing about generalisation; and the",
+        "truncated SVD is optimal in *Frobenius norm*, which is not the metric, so the true best",
+        "rank-`D` matrix scores higher still. Both errors point the same way, which is what makes",
+        "it usable:",
         "",
-        "Each is given twice. **ceiling** picks its regularisation on the *test* fold and is an",
-        "oracle — an upper bound on the model class, not an achievable score. **honest** picks",
-        "it on",
-        "the fold's own validation slice, which is what a real run would get. A bound that is too",
-        "tight cannot rule a class out, which is why the oracle is the one to compare against.",
+        "> A lower bound licenses a conclusion only when the number comes out **high**. It can",
+        "> rule a component *out* — a solution this good exists, so this is not what stops us. It",
+        "> can never rule one *in*.",
         "",
-        "| arm | fold | linear ceiling | (honest) | RBF ceiling | (honest) | two-tower "
-        "| NN baseline |",
-        "|---|---|---:|---:|---:|---:|---:|---:|",
     ]
-    for row in merged.itertuples():
-        model = _fmt(getattr(row, "aupr", None))
-        base = _fmt(getattr(row, "baseline_aupr", None))
-        lines.append(
-            f"| `{row.arm}` | {row.regime}/`{row.fold}` | {_fmt(row.linear_ceiling)} | "
-            f"{_fmt(row.linear_honest)} | {_fmt(row.kernel_ceiling)} | {_fmt(row.kernel_honest)} | "
-            f"**{model}** | {base} |"
-        )
+    if at_width is not None and achieved is not None:
+        rendered = ", ".join(f"{r} {achieved[r]:.3f}" for r in achieved.index)
+        lines += [
+            f"At the configured width the floor is **{at_width:.4f}**. The grid's mean AUPR per",
+            f"regime is {rendered}.",
+            "",
+            "**The floor is measured in sample over all 1,338 domains and the grid numbers are",
+            "held out, so this is not a like-for-like comparison and is only decisive where the",
+            "gap is wide.** On the easiest regimes it is not: `P3` runs within a few percent of",
+            "the floor, and nothing can be concluded there. On the regimes where the question is",
+            "actually live it is unambiguous — "
+            + ", ".join(f"{r} at {achieved[r]:.3f}" for r in hard if r in achieved.index)
+            + f" against a floor of {at_width:.4f}. Those failures are not the shared space",
+            f"running out of room at `D = {width}`; a representable solution exists far above",
+            "them. **Width is not the binding constraint on the hard regimes.**",
+        ]
+    elif at_width is not None:
+        lines += [
+            f"At the configured width the floor is **{at_width:.4f}**. Compare it against the",
+            "grid's per-regime AUPR once `scripts/run_grid.py` has run.",
+        ]
 
     lines += [
         "",
-        "## How to read it",
-        "",
-        "- **two-tower ≈ linear ceiling** — the tower is already extracting what a linear map of",
-        "  this embedding can extract. Widening or deepening it is not the lever.",
-        "- **RBF ≈ linear** — non-linearity in the protein map is not the missing ingredient",
-        "  either.",
-        "- **rank ceiling far above everything else** — the shared space is not the constraint.",
-        "",
-        "All three together leave the **protein representation itself**: what a mean-pooled",
-        "protein-LM vector does and does not carry. That is the conclusion `ML_RESULTS.md` §4.4",
-        "draws, and `T34` is the experiment that tests it.",
+        "**Two probes were removed from this report on 2026-08-26.** A ridge regression and an",
+        "RBF kernel ridge were presented as upper bounds on the protein tower — *the tower is",
+        "already extracting what a linear map of this embedding can extract* — and neither was a",
+        "bound. The ridge minimised squared error on E-scores while being scored by AUPR, and the",
+        "two-tower model (whose protein side *is* a linear map, fitted with a ranking loss)",
+        "exceeded it on 5 of the 8 rows it was printed beside, by up to 68%. Whether a stronger",
+        "or non-linear tower helps is now settled by training one — `TODO.md` `T36`.",
         "",
         "```bash",
         "python scripts/measure_ceilings.py",

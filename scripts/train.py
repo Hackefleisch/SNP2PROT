@@ -91,7 +91,10 @@ def main() -> None:
         f"best at {int(summary['best_step'])}"
     )
     print(f"  validation AUPR {summary['validation_aupr']:.4f}")
+    chance, p95 = summary["chance_aupr"], summary["null_p95"]
+    verdict = "AT CHANCE" if summary["aupr"] <= p95 else f"{summary['aupr'] / chance:.0f}x chance"
     print(f"  test AUPR       {summary['aupr']:.4f}  (median {summary['aupr_median']:.4f})")
+    print(f"  chance {chance:.4f}, null 95th {p95:.4f}  ->  {verdict}")
     print(
         f"  test AUROC {summary['auroc']:.3f}  Spearman {summary['spearman']:.3f}  "
         f"P@50 {summary['precision_at_50']:.3f}"

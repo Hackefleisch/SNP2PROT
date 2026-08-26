@@ -117,6 +117,49 @@ def _fmt(value: float, places: int = 4) -> str:
     return "n/a" if not np.isfinite(value) else f"{value:.{places}f}"
 
 
+def _lift(value: float, chance: float) -> str:
+    """An AUPR as a multiple of the fold's random-ranking null."""
+    if not (np.isfinite(value) and np.isfinite(chance)) or chance <= 0:
+        return "n/a"
+    return f"{value / chance:.0f}x"
+
+
+def _null_section(frame: pd.DataFrame, repeats: int) -> list[str]:
+    """Which results are, and are not, distinguishable from a random ranking.
+
+    A multiple near 1 is an eyeball, not a test. `metrics.null_aupr` samples the macro statistic
+    under a random ranking of the same held-out labels, and a result at or below the 95th
+    percentile of that null is reported as **at chance** rather than as a small number.
+    """
+    at_chance = frame[frame.aupr <= frame.null_p95]
+    lines = [
+        "",
+        "## Is it better than random?",
+        "",
+        "The null is the macro AUPR of a *random* ranking of the same held-out domains, sampled",
+        f"{repeats} times (`snp2prot.evaluation.metrics.null_aupr`). A result at or below the",
+        "95th percentile of that null is indistinguishable from guessing, whatever its delta",
+        "against the baseline looks like.",
+        "",
+    ]
+    if not len(at_chance):
+        return lines + ["Every fold scored above its null. ✅", ""]
+
+    lines += [
+        f"⚠️ **{len(at_chance)} of {len(frame)} run{'s' if len(at_chance) != 1 else ''}"
+        f"{' are' if len(at_chance) != 1 else ' is'} at chance.**",
+        "",
+        "| arm | regime | fold | model AUPR | null mean | null 95th | verdict |",
+        "|---|---|---|---:|---:|---:|---|",
+    ]
+    for row in at_chance.itertuples():
+        lines.append(
+            f"| `{row.arm}` | {row.regime} | `{row.fold}` | {_fmt(row.aupr)} | "
+            f"{_fmt(row.null_mean)} | {_fmt(row.null_p95)} | **at chance** |"
+        )
+    return lines + [""]
+
+
 def _provenance_line(frame: pd.DataFrame) -> str:
     """Which commit produced these rows, and whether the tree was modified.
 

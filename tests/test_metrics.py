@@ -97,3 +97,60 @@ def test_the_macro_average_reports_how_many_domains_it_skipped():
     assert summary["n_scored"] == 1
     assert summary["n_undefined"] == 1
     assert summary["aupr"] == 1.0
+
+
+def test_chance_is_the_mean_positive_rate_of_the_domains_the_aupr_mean_covers():
+    """A domain with no positives has no AUPR, so it must not be averaged into the null either.
+
+    `run_nn_baseline.positive_rate` used to include them at rate 0, which pushed the null down
+    and every reported `x chance` ratio up — by 15% on the P3 folds, where 19 of 173 held-out
+    variants have no positive 8-mer.
+    """
+    labels = np.array(
+        [
+            [1, 1, 0, 0],  # rate 0.5
+            [1, 0, 0, 0],  # rate 0.25
+            [0, 0, 0, 0],  # no positives — skipped, not counted as 0.0
+        ]
+    )
+    assert metrics.chance_aupr(labels) == pytest.approx(0.375)
+
+
+def test_chance_ignores_the_no_call_band_like_every_other_ranking_metric():
+    labels = np.array([[1, 0, -1, -1]])  # 1 of 2 scored cells, not 1 of 4
+    assert metrics.chance_aupr(labels) == pytest.approx(0.5)
+
+
+def test_chance_is_nan_when_no_domain_has_a_positive():
+    assert np.isnan(metrics.chance_aupr(np.array([[0, 0, -1], [0, -1, 0]])))
+
+
+def test_the_null_band_brackets_the_chance_level_and_a_random_ranking_falls_inside_it():
+    rng = np.random.default_rng(0)
+    labels = np.zeros((6, 400), dtype=np.int8)
+    for i in range(6):
+        labels[i, rng.choice(400, 8, replace=False)] = 1
+
+    band = metrics.null_aupr(labels, repeats=200, seed=1)
+    assert band["null_mean"] < band["null_p95"]
+
+    drawn = [
+        np.mean([metrics.average_precision(labels[i], rng.random(400)) for i in range(6)])
+        for _ in range(40)
+    ]
+    # A genuinely random ranking should clear the 95th percentile about 5% of the time.
+    assert np.mean(np.array(drawn) > band["null_p95"]) < 0.25
+
+
+def test_a_perfect_ranking_sits_far_above_the_null_and_the_null_is_near_chance():
+    labels = np.zeros((4, 500), dtype=np.int8)
+    labels[:, :10] = 1
+    band = metrics.null_aupr(labels, repeats=100, seed=0)
+    assert band["null_p95"] < 0.15
+    assert metrics.chance_aupr(labels) == pytest.approx(0.02)
+    assert band["null_mean"] > metrics.chance_aupr(labels)  # AP is biased up at small n_pos
+
+
+def test_the_null_is_nan_rather_than_zero_when_there_is_nothing_to_rank():
+    band = metrics.null_aupr(np.array([[0, 0, -1]]), repeats=5)
+    assert np.isnan(band["null_mean"]) and np.isnan(band["null_p95"])

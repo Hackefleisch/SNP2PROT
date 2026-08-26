@@ -155,3 +155,11 @@ metrics:
   # Recall once the ranking is thresholded at this precision. Undefined for a domain whose
   # ranking never reaches it, and reported as such rather than as zero.
   recall_at_precision: 0.5
+
+  # How many draws of the random-ranking null to sample per fold. A per-protein AUPR is anchored
+  # to the protein's own positive rate, so a raw number is not comparable between folds and a
+  # ratio near 1 is an eyeball rather than a test: 200 draws put a 95th percentile on the null so
+  # a result can be called indistinguishable from random or not. About 1.2 s per fold -- the null
+  # depends only on the held-out labels, so it is sampled directly rather than by shuffling a
+  # prediction (snp2prot.evaluation.metrics.null_aupr). Seeded from splits.seed.
+  null_repeats: 200

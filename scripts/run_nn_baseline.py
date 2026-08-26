@@ -108,14 +108,9 @@ def score_fold(
 
 
 def positive_rate(matrix: KmerMatrix, rows: np.ndarray) -> float:
-    """The AUPR a random ranking would score: the macro-average of each domain's own rate."""
-    rates = []
-    for row in rows:
-        scored = matrix.label[row] != -1
-        n = int(scored.sum())
-        if n:
-            rates.append(float((matrix.label[row] == 1).sum() / n))
-    return float(np.mean(rates)) if rates else float("nan")
+    """The AUPR a random ranking would score. Shared with `reports/training.md` so the two
+    reports anchor to the same null (`snp2prot.evaluation.metrics.chance_aupr`)."""
+    return metrics.chance_aupr(matrix.label[rows])
 
 
 def main() -> None:

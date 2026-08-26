@@ -370,6 +370,14 @@ def run_fold(
             for i, row in enumerate(fold.test)
         ]
         summary = metrics.macro_average(scored)
+        # What a random ranking would score on exactly these domains. A per-protein AUPR is
+        # anchored to the protein's own positive rate, which varies 2.3-fold between folds, so
+        # the number above is not readable — or comparable — without it.
+        held_out_labels = matrix.label[fold.test]
+        summary["chance_aupr"] = metrics.chance_aupr(held_out_labels)
+        summary |= metrics.null_aupr(
+            held_out_labels, repeats=int(config["metrics"]["null_repeats"]), seed=seed
+        )
         run.log_metrics({f"test.{k}": v for k, v in summary.items()})
         run.log_metrics({f"params.{k}": v for k, v in result.parameter_counts.items()})
 

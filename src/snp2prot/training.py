@@ -95,6 +95,22 @@ class Trainer:
             max_logit_scale=float(model_cfg["max_logit_scale"]),
         ).to(self.device)
 
+    #: Parameters weight decay must not touch. `logit_scale` is a temperature and `null` is a
+    #: direction on the unit sphere — neither is a weight, and decaying them pulls each toward a
+    #: value that means something specific rather than toward "smaller". CLIP excludes the first
+    #: for the same reason; the second is normalised in `dna_table`, so its magnitude only ever
+    #: rescales its own gradient.
+    NOT_WEIGHTS = ("logit_scale", "null")
+
+    def _parameter_groups(self, weight_decay: float) -> list[dict]:
+        """Two AdamW groups, so decay applies to the weights and nothing else."""
+        special = [p for n, p in self.model.named_parameters() if n in self.NOT_WEIGHTS]
+        rest = [p for n, p in self.model.named_parameters() if n not in self.NOT_WEIGHTS]
+        return [
+            {"params": rest, "weight_decay": weight_decay},
+            {"params": special, "weight_decay": 0.0},
+        ]
+
     def loss_for(self, rows: torch.Tensor, dna_table: torch.Tensor) -> tuple:
         logits = self.model.score(self.proteins[rows], dna_table)
         return multi_positive_infonce(logits, self.labels[rows])
@@ -175,9 +191,8 @@ class Trainer:
         warmup = int(cfg["warmup_steps"])
 
         optimiser = torch.optim.AdamW(
-            self.model.parameters(),
+            self._parameter_groups(float(cfg["weight_decay"])),
             lr=float(cfg["learning_rate"]),
-            weight_decay=float(cfg["weight_decay"]),
         )
         pool = torch.from_numpy(np.asarray(train_rows, dtype=np.int64)).to(self.device)
         generator = torch.Generator(device=self.device).manual_seed(seed)
@@ -202,6 +217,8 @@ class Trainer:
             optimiser.zero_grad(set_to_none=True)
             loss.backward()
             optimiser.step()
+            # After the step, not inside the forward pass: see `TwoTower.clamp_temperature`.
+            self.model.clamp_temperature()
             result.steps_run = step
 
             if step % eval_every == 0 or step == steps:

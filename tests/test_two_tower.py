@@ -12,6 +12,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
+from snp2prot.evaluation import metrics  # noqa: E402
 from snp2prot.models import DNAEncoder, ProteinTower, TwoTower, tokenise  # noqa: E402
 from snp2prot.models.encoders import reverse_complement  # noqa: E402
 
@@ -65,9 +66,48 @@ def test_the_temperature_is_clamped_so_a_learned_scale_cannot_saturate_the_softm
     model = TwoTower(protein_features=8, width=4, dna_channels=4)
     with torch.no_grad():
         model.logit_scale.fill_(50.0)  # far past any sane value
+    model.clamp_temperature()
+    with torch.no_grad():
         logits = model(torch.randn(2, 8), torch.tensor(tokenise(KMERS)))
     assert torch.isfinite(logits).all()
     assert logits.abs().max() <= 100.0 + 1e-3
+    assert model.temperature_is_clamped
+
+
+def test_the_scale_keeps_its_gradient_at_the_ceiling():
+    """Clamping the forward pass instead left a dead zone: past the ceiling the gradient was
+    exactly 0, so the parameter oscillated on weight decay alone, or froze solid without it
+    (measured on `P3/all`, 2026-08-26). Clamping the value keeps the loss able to see it."""
+    model = TwoTower(protein_features=8, width=4, dna_channels=4)
+    with torch.no_grad():
+        model.logit_scale.fill_(50.0)
+    model.clamp_temperature()
+    model(torch.randn(2, 8), torch.tensor(tokenise(KMERS))).sum().backward()
+    assert model.logit_scale.grad is not None
+    assert model.logit_scale.grad.abs() > 0
+
+
+def test_clamping_never_raises_the_scale():
+    """It is a ceiling, not a target: a model below it must be left alone."""
+    model = TwoTower(protein_features=8, width=4, dna_channels=4, temperature=0.5)
+    before = float(model.logit_scale)
+    model.clamp_temperature()
+    assert float(model.logit_scale) == before
+    assert not model.temperature_is_clamped
+
+
+def test_every_reported_metric_is_invariant_to_the_temperature():
+    """`score` is `scale x cosine` and every metric ranks within one domain, so the temperature
+    cannot reorder anything. This is why the clamp value is not a hyperparameter that needs
+    sweeping — measured end to end at 0.8558 clamped to 100 against 0.8554 running free to 148."""
+    rng = np.random.default_rng(0)
+    labels = np.zeros(500, dtype=np.int64)
+    labels[rng.choice(500, 20, replace=False)] = 1
+    cosine = rng.normal(size=500) * 0.3
+    reference = metrics.average_precision(labels, cosine)
+    for scale in (1.0, 100.0, 10_000.0):
+        assert metrics.average_precision(labels, cosine * scale) == reference
+        assert metrics.auroc(labels, cosine * scale) == metrics.auroc(labels, cosine)
 
 
 def test_parameter_counts_are_reported_per_tower():

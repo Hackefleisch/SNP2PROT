@@ -89,19 +89,42 @@ class ProteinTower(nn.Module):
 
     Linear by default, for the reason in the module docstring: with 1,338 training proteins,
     a hidden layer is a deliberate experiment and not the obvious choice. `hidden` makes it one.
+
+    **The input is LayerNormed, and without it the arm comparison measures the wrong thing.**
+    Every arm ends in a learned projection to a common `D` so that `A1` and `A4` "enter that
+    projection on equal terms" (`snp2prot.embeddings`) — but they did not. Measured 2026-08-26:
+    ESM-2's pooled vectors have norms 4.83-9.85 while ESM-DBP's have 0.76-1.24, so with a bias on
+    the projection `‖b‖ / ‖Wx‖` was **0.13 for `A1` and 1.16 for `A4`** — for one arm the bias was
+    a correction, for the other it outweighed the signal and set the output direction.
+
+    The cost was not a handicap but an erasure. `A4`'s embeddings are the better separated of the
+    two (mean pairwise cosine 0.752 against `A1`'s 0.874), yet at initialisation the tower emitted
+    **0.8930 for both arms, identical to four decimals**: the bias had flattened away exactly the
+    difference the `A1` -> `A4` delta exists to measure. With the `LayerNorm` the arms come
+    through as 0.891 and 0.759, which is what their own structure says.
+
+    LayerNorm rather than an L2-normalised input, which is a trap: it sets `‖Wx‖ ≈ 0.26` beside
+    `‖b‖ = 0.251` and reproduces the same bias domination for *both* arms, equalising them at
+    0.94 / 0.87 by collapsing both. It also discards the embedding norm, which is worth losing —
+    it correlates with domain length at +0.243 on `A4` against +0.077 on `A1`, so it is closer to
+    an artefact of pooling than to anything about the protein.
     """
 
     def __init__(self, in_features: int, width: int, hidden: int = 0, dropout: float = 0.0):
         super().__init__()
+        # LayerNorm first: dropping features and then renormalising would rescale whatever
+        # survived, which is not what the dropout is for.
+        layers: list[nn.Module] = [nn.LayerNorm(in_features)]
         if hidden:
-            self.net: nn.Module = nn.Sequential(
+            layers += [
                 nn.Linear(in_features, hidden),
                 nn.GELU(),
                 nn.Dropout(dropout),
                 nn.Linear(hidden, width),
-            )
+            ]
         else:
-            self.net = nn.Sequential(nn.Dropout(dropout), nn.Linear(in_features, width))
+            layers += [nn.Dropout(dropout), nn.Linear(in_features, width)]
+        self.net = nn.Sequential(*layers)
 
     def forward(self, vectors: torch.Tensor) -> torch.Tensor:
         return nn.functional.normalize(self.net(vectors), dim=-1)

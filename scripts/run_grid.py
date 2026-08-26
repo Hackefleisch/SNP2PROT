@@ -118,10 +118,16 @@ def _fmt(value: float, places: int = 4) -> str:
 
 
 def _lift(value: float, chance: float) -> str:
-    """An AUPR as a multiple of the fold's random-ranking null."""
+    """An AUPR as a multiple of the fold's random-ranking null.
+
+    A decimal below 10x, because that is where the number decides something: `A4` on `P1` is
+    1.4x and rendering it as `1x` reads as "exactly chance" when the null test says otherwise.
+    Above 10x the decimal is noise.
+    """
     if not (np.isfinite(value) and np.isfinite(chance)) or chance <= 0:
         return "n/a"
-    return f"{value / chance:.0f}x"
+    lift = value / chance
+    return f"{lift:.0f}x" if lift >= 10 else f"{lift:.1f}x"
 
 
 def _null_section(frame: pd.DataFrame, repeats: int) -> list[str]:

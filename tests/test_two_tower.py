@@ -74,7 +74,8 @@ def test_parameter_counts_are_reported_per_tower():
     """Equal `D` controls the shared space but not the capacity feeding it, so a cross-arm
     comparison is only readable next to these (`ML_PLAN.md` §4.2)."""
     counts = TwoTower(protein_features=1280, width=256, dna_channels=64).parameter_counts()
-    assert counts["protein_tower"] == 1280 * 256 + 256
+    # projection + bias, plus the input LayerNorm's gain and shift.
+    assert counts["protein_tower"] == 1280 * 256 + 256 + 2 * 1280
     assert (
         counts["total"] == sum(v for k, v in counts.items() if k != "total") + 1
     )  # the learned temperature
@@ -91,3 +92,44 @@ def test_a_protein_tower_with_a_hidden_layer_is_opt_in():
 def test_tokenise_rejects_a_non_acgt_base():
     with pytest.raises(ValueError, match="non-ACGT"):
         tokenise(np.array(["AAAANAAA"]))
+
+
+def test_the_protein_tower_is_invariant_to_a_rescale_of_its_input():
+    """`A1`'s pooled norms are 4.8-9.9 and `A4`'s are 0.8-1.2, and the delta between the two arms
+    is supposed to isolate the pretraining corpus. A tower that answers differently to the same
+    directions at a different scale cannot do that.
+
+    Invariance is exact up to `LayerNorm`'s `eps`, which is a fixed absolute term added to a
+    variance that scales with the input. On the real arms the residual is 8e-7 for `A1` and 3e-5
+    for `A4` — the arm whose per-dimension variance is 5.4e-4, so `eps` is 1.85% of it — against
+    unit-norm outputs, which is four orders of magnitude below anything that reorders a ranking.
+    """
+    torch.manual_seed(0)
+    tower = ProteinTower(64, 16)
+    vectors = torch.randn(12, 64)
+    for scale in (0.11, 0.5, 7.0, 100.0):
+        torch.testing.assert_close(tower(vectors), tower(vectors * scale), rtol=0, atol=1e-3)
+
+
+def test_a_better_separated_embedding_stays_better_separated_through_the_tower():
+    """Without the input LayerNorm this failed: at ESM-DBP's scale the projection bias outweighed
+    the signal, and both arms came out of an untrained tower at 0.8930 whatever went in."""
+
+    def spread(out):
+        gram = out @ out.T
+        return float(gram[torch.triu_indices(len(out), len(out), offset=1).unbind()].mean())
+
+    torch.manual_seed(0)
+    common = torch.randn(1, 64)
+    tight = torch.nn.functional.normalize(common + 0.2 * torch.randn(40, 64), dim=-1)
+    loose = torch.nn.functional.normalize(common + 2.0 * torch.randn(40, 64), dim=-1)
+    assert spread(tight) > spread(loose)
+
+    tower = ProteinTower(64, 16)
+    # …and at a tenth the norm, which is the case that used to collapse.
+    assert spread(tower(tight)) > spread(tower(loose * 0.1))
+
+
+def test_both_protein_tower_shapes_normalise_their_input():
+    assert isinstance(ProteinTower(32, 8).net[0], torch.nn.LayerNorm)
+    assert isinstance(ProteinTower(32, 8, hidden=16).net[0], torch.nn.LayerNorm)

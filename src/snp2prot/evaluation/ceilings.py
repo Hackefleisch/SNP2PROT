@@ -141,9 +141,9 @@ def kernel_probe(
     targets = matrix.escore.astype(np.float64)
     unit = embeddings.astype(np.float64)
     unit = unit / np.linalg.norm(unit, axis=1, keepdims=True)
-    squared = (
-        np.sum(unit**2, 1)[:, None] + np.sum(unit**2, 1)[None, :] - 2 * unit @ unit.T
-    ).clip(min=0)
+    squared = (np.sum(unit**2, 1)[:, None] + np.sum(unit**2, 1)[None, :] - 2 * unit @ unit.T).clip(
+        min=0
+    )
     median = float(np.median(squared[np.triu_indices(len(unit), 1)]))
 
     on_test: dict[tuple, float] = {}

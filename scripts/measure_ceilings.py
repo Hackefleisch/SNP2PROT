@@ -24,14 +24,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from snp2prot import corpus, distances, embeddings, experiment, splits
+from snp2prot import corpus, distances, embeddings, experiment, splits, tracking
 from snp2prot.config import PROCESSED_DIR, REPORTS_DIR
 from snp2prot.data.matrix import KmerMatrix
 from snp2prot.evaluation import ceilings
 
 DEFAULT_OUT = REPORTS_DIR / "representation_ceiling.md"
 GRID = PROCESSED_DIR / "training_folds.parquet"
-C1_SET = PROCESSED_DIR / "c1_variants.parquet"
 
 #: The folds the probes run on. Not all 19 — the probes cost minutes each and the question is
 #: about the hard regimes, where the model and the baseline disagree most.
@@ -58,7 +57,6 @@ def main() -> None:
 
     cfg = experiment.load()
     trainable = corpus.trainable(domains).to_numpy()
-    excluded = domains.dbd_seq.isin(_c1_domains()).to_numpy()
 
     print("rank ceiling (oracle) ...", flush=True)
     ranks = ceilings.rank_ceiling(matrix)
@@ -72,10 +70,14 @@ def main() -> None:
             raise SystemExit(f"{arm} embeddings were built for a different domain set")
         for label in wanted:
             fold = folds[label]
-            pool = fold.train[trainable[fold.train] & ~excluded[fold.train]]
+            # The same pool the model and the baseline both train on (`training.run_fold`):
+            # a probe is only a bound on what they could have done if it sees what they saw.
+            pool = fold.train[trainable[fold.train]]
             inner = splits.Fold(fold.regime, fold.name, fold.test, pool, fold.held_out)
             train, validation = splits.validation_split(
-                inner, domains, dist,
+                inner,
+                domains,
+                dist,
                 float(cfg["splits"]["validation"]["fraction"]),
                 int(cfg["splits"]["seed"]),
                 str(cfg["splits"]["validation"]["grouping"]),
@@ -84,10 +86,15 @@ def main() -> None:
             kernel = ceilings.kernel_probe(matrix, vectors.vectors, train, validation, fold.test)
             rows.append(
                 {
-                    "arm": arm, "regime": fold.regime, "fold": fold.name,
-                    "n_train": len(train), "n_test": len(fold.test),
-                    "linear_ceiling": linear["ceiling"], "linear_honest": linear.get("honest"),
-                    "kernel_ceiling": kernel["ceiling"], "kernel_honest": kernel.get("honest"),
+                    "arm": arm,
+                    "regime": fold.regime,
+                    "fold": fold.name,
+                    "n_train": len(train),
+                    "n_test": len(fold.test),
+                    "linear_ceiling": linear["ceiling"],
+                    "linear_honest": linear.get("honest"),
+                    "kernel_ceiling": kernel["ceiling"],
+                    "kernel_honest": kernel.get("honest"),
                 }
             )
             print(
@@ -101,12 +108,6 @@ def main() -> None:
     frame = pd.DataFrame(rows)
     write_report(args.out, ranks, frame, cfg)
     print(f"wrote {args.out} in {time.time() - started:.0f}s")
-
-
-def _c1_domains() -> set[str]:
-    if not C1_SET.exists():
-        raise SystemExit(f"no C1 set at {C1_SET}\nrun scripts/run_nn_baseline.py first")
-    return set(pd.read_parquet(C1_SET).domain)
 
 
 def _model_and_baseline() -> pd.DataFrame:
@@ -197,6 +198,8 @@ def write_report(path: Path, ranks: dict, frame: pd.DataFrame, cfg: dict) -> Non
         "```bash",
         "python scripts/measure_ceilings.py",
         "```",
+        "",
+        tracking.provenance_line(),
     ]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n")

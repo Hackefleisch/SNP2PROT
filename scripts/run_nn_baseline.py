@@ -31,7 +31,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from snp2prot import corpus, distances, experiment, splits, thresholds
+from snp2prot import corpus, distances, experiment, splits, thresholds, tracking
 from snp2prot.baselines import nn_lookup
 from snp2prot.config import PROCESSED_DIR, REPORTS_DIR
 from snp2prot.data.matrix import KmerMatrix
@@ -458,6 +458,8 @@ def write_report(
     for row in primary.itertuples():
         fold = by_label[f"{row.regime}/{row.fold}"]
         lines.append(f"| {row.regime} | `{row.fold}` | {fold.held_out} | `{row.digest}` |")
+
+    lines += ["", tracking.provenance_line()]
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n")

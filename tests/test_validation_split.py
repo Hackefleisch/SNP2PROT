@@ -112,11 +112,25 @@ def test_a_component_too_large_for_the_slice_is_skipped_not_taken(corpus_frame, 
     frame = corpus_frame.copy()
     # A tight block of 12 near-identical domains, far larger than a 15% slice of the corpus.
     block = [mutate(BASE, *range(60, 60 + i)) for i in range(12)]
-    frame = pd.concat(
-        [frame, pd.DataFrame({"dbd_seq": block, "dbd_family": "Homeodomain",
-                              "wt_id": "blk", "is_variant": False})],
-        ignore_index=True,
-    ).drop_duplicates("dbd_seq").sort_values("dbd_seq").reset_index(drop=True)
+    frame = (
+        pd.concat(
+            [
+                frame,
+                pd.DataFrame(
+                    {
+                        "dbd_seq": block,
+                        "dbd_family": "Homeodomain",
+                        "wt_id": "blk",
+                        "is_variant": False,
+                    }
+                ),
+            ],
+            ignore_index=True,
+        )
+        .drop_duplicates("dbd_seq")
+        .sort_values("dbd_seq")
+        .reset_index(drop=True)
+    )
     d = distances.build(frame.dbd_seq.to_numpy(), processes=1)
 
     fold = splits.s1_random(frame, n_folds=5, seed=1)[0]

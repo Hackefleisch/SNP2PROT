@@ -18,6 +18,14 @@ is meaningless without knowing exactly which domains were held out, and "regime 
 seed 20260819" does not pin that down once the corpus changes — so `start_run` requires the
 digests and refuses a run without them.
 
+**And the same rule applied to the code.** A digest pins the domains but not the procedure: on
+2026-08-25 the `OVERSHOOT` guard in `snp2prot.splits` landed in the same commit as
+`reports/training.md`, so one row of that table — `S2/fold-1`, which carved 38% of its pool to
+validation where every sibling carved 15% — was produced by a `validation_split` that no longer
+exists, and the only way to notice was to recompute the carve and compare row counts. `code_version`
+stamps the commit and whether the tree was dirty into every run and every report, so a stale number
+announces itself.
+
 Tracking is optional at the edges: if MLflow is not installed, or `enabled=False`, every call
 becomes a no-op and the run still produces its report and its artifacts. Nothing in the training
 path may depend on the tracker being there.
@@ -26,6 +34,7 @@ path may depend on the tracker being there.
 from __future__ import annotations
 
 import contextlib
+import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -36,6 +45,55 @@ from snp2prot.config import PROJECT_ROOT
 TRACKING_DIR = PROJECT_ROOT / "mlruns"
 DATABASE = TRACKING_DIR / "mlflow.db"
 ARTIFACT_DIR = TRACKING_DIR / "artifacts"
+
+
+#: What a `code_version()` field says when this is not a git checkout, or git is not installed.
+UNKNOWN = "unknown"
+
+
+def code_version() -> dict[str, str]:
+    """The commit this run was produced from, and whether the tree was modified.
+
+    `dirty` is the load-bearing half. A clean tree at a known commit reconstructs the run
+    exactly; a dirty one says only "something here was not committed", which is not a
+    reconstruction but is enough to stop a number being trusted as though it were one.
+    """
+
+    def git(*args: str) -> str | None:
+        try:
+            out = subprocess.run(
+                ["git", "-C", str(PROJECT_ROOT), *args],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return out.stdout.strip() if out.returncode == 0 else None
+
+    commit = git("rev-parse", "--short=7", "HEAD")
+    if commit is None:
+        return {"commit": UNKNOWN, "dirty": UNKNOWN}
+    status = git("status", "--porcelain")
+    dirty = UNKNOWN if status is None else str(bool(status.strip())).lower()
+    return {"commit": commit, "dirty": dirty}
+
+
+def stamp(commit: str, dirty: str) -> str:
+    """One code state, rendered for a report: ``\`9390e41\` (tree dirty)``."""
+    return f"`{commit}`" + (" (tree dirty)" if dirty == "true" else "")
+
+
+def provenance_line() -> str:
+    """The footer line every generated report carries, for the tree as it is now.
+
+    `scripts/run_grid.py` renders its own from the per-row stamps in the summary frame, because
+    a grid can be assembled from more than one state of the tree and that is the case worth
+    catching. A report written in a single pass cannot be, so it stamps itself.
+    """
+    version = code_version()
+    return f"Produced from {stamp(version['commit'], version['dirty'])}."
 
 
 def available() -> bool:

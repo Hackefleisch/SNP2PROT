@@ -32,7 +32,7 @@ import numpy as np
 import pandas as pd
 from train import add_common_arguments, apply_overrides, load_everything
 
-from snp2prot import experiment, splits, training
+from snp2prot import experiment, splits, tracking, training
 from snp2prot.config import PROCESSED_DIR, REPORTS_DIR
 
 DEFAULT_OUT = REPORTS_DIR / "training.md"
@@ -75,7 +75,7 @@ def main() -> None:
     summaries: list[dict] = []
     per_domain: list[pd.DataFrame] = []
     for arm in arms:
-        domains, matrix, vectors, dist, trainable, excluded = load_everything(arm)
+        domains, matrix, vectors, dist, trainable = load_everything(arm)
         folds = [f for f in splits.all_regimes(domains, dist)]
         if args.regime:
             folds = [f for f in folds if f.regime in set(args.regime)]
@@ -90,7 +90,6 @@ def main() -> None:
                 dist,
                 config,
                 trainable,
-                excluded,
                 device=device,
                 track=not args.no_track,
             )
@@ -116,6 +115,24 @@ def main() -> None:
 
 def _fmt(value: float, places: int = 4) -> str:
     return "n/a" if not np.isfinite(value) else f"{value:.{places}f}"
+
+
+def _provenance_line(frame: pd.DataFrame) -> str:
+    """Which commit produced these rows, and whether the tree was modified.
+
+    A digest pins the held-out domains but not the procedure: `OVERSHOOT` landed in the same
+    commit as the first version of this report, so one row of it came from a `validation_split`
+    that no longer existed (`snp2prot.tracking.code_version`). Every row carries its own stamp,
+    so a table assembled from more than one state of the tree says so rather than looking whole.
+    """
+    stamps = sorted({(r.code_commit, r.code_dirty) for r in frame.itertuples()})
+    rendered = ", ".join(tracking.stamp(c, d) for c, d in stamps)
+    if len(stamps) > 1:
+        return (
+            f"⚠️ **These rows were not all produced by the same code**: {rendered}. "
+            "Re-run the grid before reading the table as one experiment."
+        )
+    return f"Produced from {rendered}."
 
 
 def write_report(path: Path, frame: pd.DataFrame, per_domain: pd.DataFrame, config: dict) -> None:
@@ -199,6 +216,8 @@ def write_report(path: Path, frame: pd.DataFrame, per_domain: pd.DataFrame, conf
         "Fold membership is hashed rather than described, because a regime name and a seed do not",
         "pin down which domains were held out once the corpus changes (`ML_PLAN.md` §9.2). The",
         "digests are in `data/processed/training_folds.parquet` and in each MLflow run.",
+        "",
+        _provenance_line(frame),
         "",
         "```bash",
         "python scripts/run_grid.py          # about an hour for two arms",

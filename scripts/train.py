@@ -18,17 +18,17 @@ from __future__ import annotations
 
 import argparse
 
-import pandas as pd
-
 from snp2prot import corpus, distances, embeddings, experiment, splits, training
-from snp2prot.config import PROCESSED_DIR
 from snp2prot.data.matrix import KmerMatrix
-
-C1_SET = PROCESSED_DIR / "c1_variants.parquet"
 
 
 def load_everything(arm: str):
-    """The cached artifacts every run reads, and the two training-pool masks."""
+    """The cached artifacts every run reads, and the training-pool mask.
+
+    One mask, not two. The C1 set used to be masked out of training as well; it is not any more,
+    because the nearest-neighbour baseline never applied the same mask and the comparison against
+    it was therefore between two different training pools — see `snp2prot.training.run_fold`.
+    """
     domains = corpus.domains()
     matrix = KmerMatrix.load()
     vectors = embeddings.DomainEmbeddings.load(arm)
@@ -40,15 +40,7 @@ def load_everything(arm: str):
             raise SystemExit(f"the cached {name} was built for a different domain set — rebuild it")
 
     trainable = corpus.trainable(domains).to_numpy()
-    excluded = domains.dbd_seq.isin(_c1_domains()).to_numpy()
-    return domains, matrix, vectors, dist, trainable, excluded
-
-
-def _c1_domains() -> set[str]:
-    """The C1 evaluation set, which is never trained on (`D6`)."""
-    if not C1_SET.exists():
-        raise SystemExit(f"no C1 evaluation set at {C1_SET}\nrun scripts/run_nn_baseline.py first")
-    return set(pd.read_parquet(C1_SET).domain)
+    return domains, matrix, vectors, dist, trainable
 
 
 def add_common_arguments(ap: argparse.ArgumentParser) -> None:
@@ -73,7 +65,7 @@ def main() -> None:
     args = ap.parse_args()
 
     config = apply_overrides(experiment.load(), args)
-    domains, matrix, vectors, dist, trainable, excluded = load_everything(args.arm)
+    domains, matrix, vectors, dist, trainable = load_everything(args.arm)
 
     folds = {f.label: f for f in splits.all_regimes(domains, dist)}
     if args.fold not in folds:
@@ -90,7 +82,6 @@ def main() -> None:
         dist,
         config,
         trainable,
-        excluded,
         device=training.device_for(args.device),
         track=not args.no_track,
     )

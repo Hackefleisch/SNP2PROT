@@ -1,0 +1,77 @@
+"""A grid that keeps its numbers and throws its models away cannot be asked anything later."""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from snp2prot.config import checkpoint_file
+
+torch = pytest.importorskip("torch")
+
+from snp2prot import training  # noqa: E402
+from snp2prot.data.matrix import KmerMatrix  # noqa: E402
+from snp2prot.embeddings import DomainEmbeddings  # noqa: E402
+
+CONFIG = {
+    "model": {
+        "width": 8,
+        "dna": {"channels": 4, "layers": 1},
+        "protein": {"hidden": 0, "dropout": 0.0},
+        "temperature": 0.07,
+        "learn_temperature": True,
+        "max_logit_scale": 100.0,
+    },
+    "training": {
+        "steps": 3,
+        "batch_domains": 2,
+        "learning_rate": 1e-3,
+        "weight_decay": 0.01,
+        "warmup_steps": 1,
+        "eval_every": 3,
+        "patience": 0,
+    },
+}
+
+
+@pytest.fixture
+def trainer():
+    rng = np.random.default_rng(0)
+    kmers = np.array(["ACGTACGT", "TTTTAAAA", "GGGGCCCC", "ACACACAC"])
+    label = np.array([[1, 0, 0, -1], [0, 1, 0, 0], [1, 1, 0, -1], [0, 0, 0, 0]], dtype=np.int8)
+    matrix = KmerMatrix(
+        domains=np.array(["AAAA", "CCCC", "DDDD", "EEEE"]),
+        kmers=kmers,
+        escore=rng.random((4, 4)).astype(np.float32),
+        label=label,
+    )
+    vectors = DomainEmbeddings("A1", "test", matrix.domains, rng.random((4, 6)).astype(np.float32))
+    return training.Trainer(matrix, vectors, CONFIG, device=torch.device("cpu"), seed=0)
+
+
+def test_a_saved_checkpoint_reloads_into_a_model_that_scores_identically(trainer, tmp_path):
+    trainer.train(np.array([0, 1, 2]), np.array([3]), seed=0)
+    before = trainer.predict(np.array([0, 1, 2, 3]))
+
+    path = trainer.save(tmp_path / "fold.pt", {"arm": "A1", "fold": "all"})
+    model, meta = training.load_checkpoint(path)
+
+    table = model.dna_table(trainer.tokens.cpu())
+    after = model.score(trainer.proteins.cpu(), table)[:, :-1].detach().numpy()
+    np.testing.assert_allclose(before, after, rtol=1e-5, atol=1e-6)
+    assert meta["arm"] == "A1" and meta["fold"] == "all"
+    assert "state_dict" not in meta
+
+
+def test_the_checkpoint_carries_the_split_and_the_code_it_came_from(trainer, tmp_path):
+    """The same rule `tracking.start_run` enforces: weights alone cannot say what they never saw."""
+    meta = {"digests": {"test": "abc123"}, "code": {"commit": "9390e41", "dirty": "true"}}
+    _, read = training.load_checkpoint(trainer.save(tmp_path / "f.pt", meta))
+    assert read["digests"]["test"] == "abc123"
+    assert read["code"]["commit"] == "9390e41"
+    assert read["model_config"]["width"] == 8
+    assert read["parameter_counts"]["total"] > 0
+
+
+def test_a_fold_name_with_a_colon_becomes_a_usable_filename():
+    assert checkpoint_file("A1", "P3", "half:draw-0").name == "A1_P3_half-draw-0.pt"

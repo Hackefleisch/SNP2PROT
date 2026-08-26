@@ -40,3 +40,18 @@ def test_non_finite_metrics_are_dropped_rather_than_logged():
     assert not tracking._finite(float("nan"))
     assert not tracking._finite(float("inf"))
     assert tracking._finite(0.0)
+
+
+def test_code_version_reports_a_commit_and_whether_the_tree_was_modified():
+    """The stamp `OVERSHOOT` would have needed: a digest pins the domains, not the procedure."""
+    version = tracking.code_version()
+    assert set(version) == {"commit", "dirty"}
+    assert version["dirty"] in {"true", "false", tracking.UNKNOWN}
+    assert version["commit"] == tracking.UNKNOWN or version["commit"].isalnum()
+
+
+def test_code_version_never_raises_outside_a_checkout(tmp_path, monkeypatch):
+    """A run must not die because it was invoked from somewhere git cannot answer for."""
+    monkeypatch.setattr(tracking, "PROJECT_ROOT", tmp_path)
+    version = tracking.code_version()
+    assert set(version) == {"commit", "dirty"}

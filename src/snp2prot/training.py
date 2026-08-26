@@ -25,12 +25,14 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import torch
 
 from snp2prot import splits, tracking
+from snp2prot.config import PROJECT_ROOT, checkpoint_file
 from snp2prot.data.matrix import KmerMatrix
 from snp2prot.embeddings import DomainEmbeddings
 from snp2prot.evaluation import metrics
@@ -114,6 +116,29 @@ class Trainer:
             out[start : start + chunk] = logits.float().cpu().numpy()
         self.model.train()
         return out
+
+    def save(self, path: Path, meta: dict) -> Path:
+        """Write the trained weights and everything needed to rebuild the model around them.
+
+        The weights are the **early-stopping selection**, not the last step: `train` reloads
+        `best_state` before returning, so this is the model whose numbers are reported. Saved
+        on the CPU so a checkpoint from the GPU box loads anywhere.
+
+        `meta` carries the split digests and the code stamp, for the same reason the run record
+        does — a `state_dict` alone cannot say which domains it never saw.
+        """
+        path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(
+            {
+                "state_dict": {k: v.detach().cpu() for k, v in self.model.state_dict().items()},
+                "model_config": self.config["model"],
+                "protein_features": int(self.proteins.shape[1]),
+                "parameter_counts": self.model.parameter_counts(),
+                **meta,
+            },
+            path,
+        )
+        return path
 
     @torch.no_grad()
     def macro_aupr(self, rows: np.ndarray) -> float:
@@ -214,6 +239,32 @@ class Trainer:
         return result
 
 
+def load_checkpoint(path: str | Path, device: torch.device | None = None) -> tuple[TwoTower, dict]:
+    """Rebuild a saved model and return it beside its metadata.
+
+    A `state_dict` on its own is not a model — the widths, the tower depth and the temperature
+    ceiling all have to match — so `Trainer.save` stores the `model:` block that produced it and
+    this reads the model back out of that rather than out of whatever `experiment.yaml` says now.
+    In `eval` mode, because a loaded checkpoint is something to score with, not to resume.
+    """
+    checkpoint = torch.load(Path(path), map_location="cpu", weights_only=False)
+    cfg = checkpoint["model_config"]
+    model = TwoTower(
+        protein_features=int(checkpoint["protein_features"]),
+        width=int(cfg["width"]),
+        dna_channels=int(cfg["dna"]["channels"]),
+        dna_layers=int(cfg["dna"]["layers"]),
+        protein_hidden=int(cfg["protein"]["hidden"]),
+        protein_dropout=float(cfg["protein"]["dropout"]),
+        temperature=float(cfg["temperature"]),
+        learn_temperature=bool(cfg["learn_temperature"]),
+        max_logit_scale=float(cfg["max_logit_scale"]),
+    )
+    model.load_state_dict(checkpoint["state_dict"], strict=True)
+    model = model.to(device or torch.device("cpu")).eval()
+    return model, {k: v for k, v in checkpoint.items() if k != "state_dict"}
+
+
 def run_fold(
     fold,
     arm: str,
@@ -223,26 +274,39 @@ def run_fold(
     distances,
     config: dict,
     trainable: np.ndarray,
-    excluded: np.ndarray,
     device: torch.device | None = None,
     track: bool = True,
 ) -> tuple[dict, pd.DataFrame]:
     """Train and score one (arm, fold) pair, and return its summary and per-domain rows.
 
-    Two exclusions apply to the **training pool** and to nothing else:
+    **One** exclusion applies to the training pool and to nothing else: `trainable` drops the
+    `no_evidence` records, because a silent record with no control cannot be told from a failed
+    assay (`T21`). It is a mask over the corpus applied to the fold's training side only — a
+    fold's *test* set is whatever the regime says it is, and is not quietly narrowed here.
 
-    - `trainable` drops the `no_evidence` records, because a silent record with no control
-      cannot be told from a failed assay (`T21`);
-    - `excluded` drops the C1 evaluation set, which is never trained on by construction (`D6`).
+    **The C1 set is no longer masked out here, and that is a correction rather than a relaxation
+    of `D6`.** It used to be, and `scripts/run_nn_baseline.py` never did the same — so in 18 of 19
+    folds the baseline could copy from 10-29 domains the model had been denied, and `run_grid`'s
+    `delta` column subtracted two different experiments. The mask also bought nothing: C1 is scored
+    in exactly one place, `run_grid`'s P3/all section, and under `P3/all` every one of the 173
+    variants is held out by construction, so the set is clean without it. Removing it makes the two
+    pools identical and costs no cleanliness. **If a C1 number is ever wanted from another regime,
+    the mask has to come back** — that fold's model would have trained on part of the set.
 
-    Both are masks over the corpus, applied to the fold's training side only — a fold's *test*
-    set is whatever the regime says it is, and is not quietly narrowed here.
+    The summary carries `code_commit` / `code_dirty` beside the split digests, because a digest
+    pins the held-out domains and not the procedure that produced them — see
+    `snp2prot.tracking.code_version`.
+
+    **The trained weights are kept.** One file per (arm, fold) under `data/processed/checkpoints/`,
+    logged to MLflow as the run's artifact, holding the early-stopping selection together with its
+    digests and code stamp. Without it a grid is 38 numbers and no models: nothing can be probed,
+    re-scored on a new metric, or asked what it actually learned.
     """
     split_cfg = config["splits"]
     validation_cfg = split_cfg["validation"]
     seed = int(split_cfg["seed"])
 
-    pool = fold.train[trainable[fold.train] & ~excluded[fold.train]]
+    pool = fold.train[trainable[fold.train]]
     inner = splits.Fold(fold.regime, fold.name, fold.test, pool, fold.held_out)
     train_rows, validation_rows = splits.validation_split(
         inner,
@@ -260,8 +324,11 @@ def run_fold(
             splits.digest_of(domains, validation_rows) if len(validation_rows) else "none"
         ),
     }
+    code = tracking.code_version()
     params = {
         "arm": arm,
+        "code.commit": code["commit"],
+        "code.dirty": code["dirty"],
         "model_name": embeddings.model,
         "regime": fold.regime,
         "fold": fold.name,
@@ -306,6 +373,25 @@ def run_fold(
         run.log_metrics({f"test.{k}": v for k, v in summary.items()})
         run.log_metrics({f"params.{k}": v for k, v in result.parameter_counts.items()})
 
+        # Written before the run closes so the artifact lands with its own metrics rather than
+        # in whichever run happens to be open next.
+        checkpoint = trainer.save(
+            checkpoint_file(arm, fold.regime, fold.name),
+            {
+                "arm": arm,
+                "embedding_model": embeddings.model,
+                "regime": fold.regime,
+                "fold": fold.name,
+                "held_out": fold.held_out,
+                "digests": digests,
+                "code": code,
+                "best_step": result.best_step,
+                "best_validation": result.best_validation,
+                "temperature": result.temperature,
+            },
+        )
+        run.log_artifact(checkpoint)
+
     summary |= {
         "arm": arm,
         "regime": fold.regime,
@@ -319,6 +405,9 @@ def run_fold(
         "temperature_clamped": float(trainer.model.temperature_is_clamped),
         "seconds": result.seconds,
         "digest": digests["test"],
+        "code_commit": code["commit"],
+        "code_dirty": code["dirty"],
+        "checkpoint": str(checkpoint.relative_to(PROJECT_ROOT)),
         **{f"n_params_{k}": float(v) for k, v in result.parameter_counts.items()},
     }
 

@@ -132,11 +132,12 @@ def main() -> None:
     domains = corpus.domains()
     matrix = KmerMatrix.load()
     dist = distances.DomainDistances.load()
-    if list(matrix.domains) != list(domains.dbd_seq) or list(dist.domains) != list(domains.dbd_seq):
+    try:
+        corpus.require_aligned(domains.dbd_seq, matrix=matrix.domains, distances=dist.domains)
+    except ValueError as mismatch:
         raise SystemExit(
-            "the cached matrices were built for a different domain set\n"
-            "rerun scripts/build_matrix.py and scripts/build_distances.py"
-        )
+            f"{mismatch}\nrerun scripts/build_matrix.py and scripts/build_distances.py"
+        ) from mismatch
     trainable = corpus.trainable(domains).to_numpy()
     print(f"{len(domains)} domains, {trainable.sum()} of them trainable")
 

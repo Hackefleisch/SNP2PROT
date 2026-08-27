@@ -24,6 +24,8 @@ definition `docs/DECISIONS.md` `D3` settled when the reference became the medoid
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import pandas as pd
 
 from snp2prot import clusters, label_health, merge
@@ -82,3 +84,41 @@ def trainable(domain_table: pd.DataFrame, keep_dead: bool = True) -> pd.Series:
     if not keep_dead:
         drop.add(label_health.DEAD_VARIANT)
     return ~domain_table["verdict"].isin(drop)
+
+
+def require_aligned(reference: Sequence, reference_name: str = "the corpus", **tables) -> None:
+    """Raise unless every named table is in exactly the same domain order as `reference`.
+
+    **The row order is the only thing joining these artifacts.** `domains()` sorts by `dbd_seq`
+    and the 8-mer matrix, the distance matrix and each arm's embeddings are all built against
+    that order; nothing else links a row of one to a row of another. A rebuild that changes the
+    domain set — or merely its order — silently repairs into a table where every protein carries
+    another protein's measurements, and every downstream number is quietly wrong rather than
+    obviously broken.
+
+    **Order, not membership.** A length check and a set check both pass on a corpus that was
+    merely reordered, which is the realistic failure: the same domains, sorted after a rebuild
+    that added and removed a few. Only comparing the sequences catches it.
+
+    This lives here rather than in the loaders because a `KmerMatrix` cannot check itself against
+    the corpus without importing this module, and a data container should not depend on the
+    tables that describe it. So the check sits where two artifacts meet: `snp2prot.training`
+    before it indexes them together, and each script after it loads them.
+    """
+    expected = [str(s) for s in reference]
+    for name, table in tables.items():
+        found = [str(s) for s in table]
+        if found == expected:
+            continue
+        detail = f"{len(found)} domains against {len(expected)}"
+        for row, (a, b) in enumerate(zip(found, expected, strict=False)):
+            if a != b:
+                detail = (
+                    f"first difference at row {row}: "
+                    f"{a[:24]!r} where {reference_name} has {b[:24]!r}"
+                )
+                break
+        raise ValueError(
+            f"the {name} table is not aligned with {reference_name} — {detail}.\n"
+            "It was built for a different domain set; rebuild it before using these together."
+        )

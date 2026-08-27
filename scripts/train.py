@@ -34,10 +34,12 @@ def load_everything(arm: str):
     vectors = embeddings.DomainEmbeddings.load(arm)
     dist = distances.DomainDistances.load()
 
-    order = list(domains.dbd_seq)
-    for name, table in (("8-mer matrix", matrix), ("distances", dist), (arm, vectors)):
-        if list(table.domains) != order:
-            raise SystemExit(f"the cached {name} was built for a different domain set — rebuild it")
+    try:
+        corpus.require_aligned(
+            domains.dbd_seq, matrix=matrix.domains, distances=dist.domains, **{arm: vectors.domains}
+        )
+    except ValueError as mismatch:
+        raise SystemExit(str(mismatch)) from mismatch
 
     trainable = corpus.trainable(domains).to_numpy()
     return domains, matrix, vectors, dist, trainable

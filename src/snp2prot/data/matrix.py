@@ -25,9 +25,14 @@ carried in the matrix and excluded by a mask wherever a metric or a loss is comp
 (`ML_PLAN.md` §3.1: two masks, not filters).
 
 **Row order is `corpus.domains()` order and column order is the sorted 8-mer vocabulary.**
-Neither is stored anywhere else, so both are written into the artifact and checked on load —
-a matrix built before a rebuild that changed the domain set would otherwise be silently
-misaligned with a distance matrix built after it.
+Neither is stored anywhere else, so both are written into the artifact — a matrix built before
+a rebuild that changed the domain set would otherwise be silently misaligned with a distance
+matrix built after it.
+
+**The order is not checked here.** `load` cannot compare itself against the corpus without
+importing `snp2prot.corpus`, and a data container should not depend on the tables that describe
+it. The check is `corpus.require_aligned`, called wherever two of these artifacts are indexed
+together: `snp2prot.training.Trainer` and `run_fold`, and each script after it loads them.
 """
 
 from __future__ import annotations

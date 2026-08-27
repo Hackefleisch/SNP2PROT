@@ -87,11 +87,10 @@ def main() -> None:
 def measure(arm: str, domains: pd.DataFrame) -> dict:
     """Every quantity the report shows for one arm."""
     table = embeddings.DomainEmbeddings.load(arm)
-    if list(table.domains) != list(domains.dbd_seq):
-        raise SystemExit(
-            f"the {arm} embeddings were built for a different domain set\n"
-            f"rerun scripts/build_embeddings.py --arm {arm}"
-        )
+    try:
+        corpus.require_aligned(domains.dbd_seq, **{arm: table.domains})
+    except ValueError as mismatch:
+        raise SystemExit(f"{mismatch}\nrerun scripts/build_embeddings.py --arm {arm}") from mismatch
 
     distance = embeddings.pairwise_cosine_distance(table.vectors)
     np.fill_diagonal(distance, np.nan)

@@ -31,7 +31,7 @@ import numpy as np
 import pandas as pd
 import torch
 
-from snp2prot import splits, tracking
+from snp2prot import corpus, splits, tracking
 from snp2prot.config import PROJECT_ROOT, checkpoint_file
 from snp2prot.data.matrix import KmerMatrix
 from snp2prot.embeddings import DomainEmbeddings
@@ -88,10 +88,13 @@ class Trainer:
         self.device = device or device_for()
         torch.manual_seed(seed)
 
+        # These two are indexed by the same row positions for the whole run, so the assumption
+        # that they are in the same order is checked here rather than left to the entry point.
+        corpus.require_aligned(matrix.domains, "the 8-mer matrix", embeddings=embeddings.domains)
+
         self.labels = torch.from_numpy(matrix.label).to(self.device)
         self.proteins = torch.from_numpy(embeddings.vectors).to(self.device)
         self.tokens = torch.from_numpy(tokenise(matrix.kmers)).to(self.device)
-        self.escore = matrix.escore
 
         model_cfg = config["model"]
         self.model = TwoTower(
@@ -371,6 +374,12 @@ def run_fold(
     digests and code stamp. Without it a grid is 38 numbers and no models: nothing can be probed,
     re-scored on a new metric, or asked what it actually learned.
     """
+    corpus.require_aligned(
+        domains.dbd_seq,
+        matrix=matrix.domains,
+        distances=distances.domains,
+        embeddings=embeddings.domains,
+    )
     split_cfg = config["splits"]
     validation_cfg = split_cfg["validation"]
     seed = int(split_cfg["seed"])

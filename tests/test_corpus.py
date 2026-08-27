@@ -7,6 +7,7 @@ that `is_variant` means what the split regimes assume it means.
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -79,3 +80,37 @@ def test_the_filter_drops_no_evidence_and_keeps_dead_variants(records, inventory
     assert mask[got.dbd_seq == VARIANT].item()
     assert not mask[got.dbd_seq == OTHER].item()
     assert not corpus.trainable(got, keep_dead=False)[got.dbd_seq == VARIANT].item()
+
+
+# --- the row-order guarantee ------------------------------------------------------------
+
+
+def test_require_aligned_accepts_tables_in_the_same_order():
+    corpus.require_aligned(
+        ["A", "B", "C"], matrix=["A", "B", "C"], distances=np.array(["A", "B", "C"])
+    )
+
+
+def test_require_aligned_catches_a_reordering_that_a_set_check_would_miss():
+    """The realistic failure: same domains, different order after a rebuild. A length check and
+    a set check both pass; only comparing the sequences catches it."""
+    reference = ["A", "B", "C"]
+    reordered = ["C", "B", "A"]
+    assert len(reordered) == len(reference) and set(reordered) == set(reference)
+    with pytest.raises(ValueError, match="first difference at row 0"):
+        corpus.require_aligned(reference, matrix=reordered)
+
+
+def test_require_aligned_names_the_table_and_reports_the_lengths():
+    with pytest.raises(ValueError, match=r"embeddings table .* 2 domains against 3"):
+        corpus.require_aligned(["A", "B", "C"], embeddings=["A", "B"])
+
+
+def test_require_aligned_uses_the_reference_name_it_is_given():
+    with pytest.raises(ValueError, match="the 8-mer matrix has"):
+        corpus.require_aligned(["A", "B"], "the 8-mer matrix", embeddings=["A", "Z"])
+
+
+def test_require_aligned_checks_every_table_not_just_the_first():
+    with pytest.raises(ValueError, match="distances table"):
+        corpus.require_aligned(["A", "B"], matrix=["A", "B"], distances=["A", "Z"])

@@ -518,8 +518,28 @@ is worthless. Metrics must put the emphasis on the positives, at every point in 
 |---|---|---|
 | **primary** | **AUPR** / average precision | the standard answer at extreme imbalance; the baseline AUPR is the positive rate, so the number is honest about the prior |
 | secondary | **precision@k**, **recall at fixed precision** | reads directly as "of the k 8-mers we called, how many bind" — the question a biologist actually has |
-| secondary | **Spearman vs. the raw E-score** | uses the continuous score behind the label, so it does not throw away the gray band's information |
+| ~~secondary~~ | ~~**Spearman vs. the raw E-score**~~ | **withdrawn 2026-08-27 (`D8`)** — see below |
+| secondary | **`suppression`**, for the domains with no positive 8-mer | of the sites the wild type binds, the fraction ranked lower in the variant; the metric for the 20 `dead_variant` records where every ranking metric is undefined (`D9`) |
 | **never headline** | AUROC, accuracy | both are inflated to near-uninformative at 466:1; two models far apart in usefulness differ in the third decimal |
+
+**Spearman against the raw E-score is withdrawn.** A universal-PBM E-score is a rank-enrichment
+statistic against background, read by the field at a cutoff and stored here at 0.45 / 0.35 — it
+is a **specificity call, not a graded affinity**, which is why the dataset stores a binary label
+at all. Correlating a prediction with its ordering reads a precision into the assay that is not
+there. It was also the only metric using a continuous value anywhere in the evaluation path; the
+whole PBM corpus is binary, baseline included (`D7`).
+
+It was justified as the number to read for the domains with no positive 8-mer, where AUPR does
+not exist. `suppression` replaces it there, and does so without a continuous value: it compares a
+dead variant with its own wild type down the protein axis.
+
+**And every metric now carries the level it should be read against.** A per-protein AUPR is
+anchored to that protein's own positive rate, which ranges 0.0015–0.0034 across the folds, so a
+raw figure is not comparable between regimes: `metrics.chance_aupr` and `metrics.random_baseline`
+are reported with every fold, and a result at or below the 95th percentile of the sampled random
+ranking is flagged **at chance**. `macro_average` also reports `n_scored_<metric>` per metric —
+`recall_at_precision` was being averaged over a sixth of the domains and read as if over all
+(`§12.5`).
 
 AUROC may be *reported* alongside, since some readers expect it — but never as the number a claim
 rests on. Note that TransBind (§8.2) reports AUPR next to AUROC for exactly this reason, so the
@@ -682,6 +702,16 @@ uncharacterised TF by DBD sequence identity is how CIS-BP does inference, and We
 clear easily; it is the standard approach in the field, and it is the first question a
 biologist audience asks — *"isn't this just copying the most similar protein's motif?"*
 
+**One honest qualification, added 2026-08-27.** The *selection rule* is the incumbent method:
+nearest DBD by percent identity under the overlap guard, exactly as CIS-BP infers. What is
+*transferred* is deliberately not — the lookup copies the neighbour's binary calls rather than
+its full E-score profile, because the model trains on labels and copying the profile scores the
+baseline on information the model is never given (`D7`; it was worth 29-76% of the old figure).
+So this is the incumbent method restricted to the model's inputs, which is the comparison that
+answers *"has the model learned something a lookup has not"*. It does **not** answer *"is the
+model better than what a biologist can do today with the full measurement"* — that question is
+strictly harder, and nothing in this project currently measures it.
+
 **Selecting the neighbour.** Percent identity over the aligned domain, from
 `snp2prot.align.edit_profile`: `identity = 1 - n_edits / aligned_len`. The `overlap` guard is
 mandatory, not optional — free terminal gaps are precisely what let two unrelated domains look
@@ -691,9 +721,17 @@ This matters most under leave-one-family-out, where the nearest neighbour is cro
 construction and so is the degenerate case by construction.
 
 **What it predicts.** For a held-out domain `i`, take `j = argmin(D[i, train_idx])` and copy
-domain `j`'s **E-score** profile — not its binary labels. The E-scores give a ranking over all
-32,896 8-mers, which is the same output shape the contrastive model produces, so AUPR /
-precision@k / Spearman are directly comparable between the two without any special-casing.
+domain `j`'s **binary calls**.
+
+> **Revised 2026-08-27 (`D7`).** This said "copy the **E-score** profile — *not* its binary
+> labels", so that the ranking would be the same output shape the model produces. That made the
+> baseline and the model incomparable: the model trains on thresholded labels and never sees the
+> ordering the baseline was copying. Measured, same neighbour and same guard, the continuous form
+> scores 0.786 against 0.472 on `S1/fold-0` and 0.391 against 0.145 on `S2/fold-0` — **between
+> 29% and 76% of the old baseline was information the model is denied.** And the ordering is not
+> a quantity the assay reports; see §5.3 on why the E-score is a cutoff statistic. Copying the
+> calls gives a ranking with ties, which the metrics collapse correctly (`metrics._pr_curve`), so
+> the comparison is between methods rather than between inputs.
 
 Primary form is **k = 1**: the pure lookup table, and the thing to beat. A distance-weighted
 average over the top-k neighbours is one extra line and a slightly stronger bar; run it as a

@@ -74,18 +74,26 @@ re-read 2.2 GB of text.
 **The nearest-neighbour baseline is built and measured** ([`reports/nn_baseline.md`](reports/nn_baseline.md),
 2026-08-19) — step 0 of the modelling plan, and it did both jobs §8.1 gave it.
 
-**The bar**, mean per-protein AUPR, `k = 1`:
+> ⚠️ **The bar below is the OLD bar and has not been rerun** (`D7`, 2026-08-27). It copied the
+> neighbour's continuous E-score profile; it now copies the neighbour's **binary calls**, because
+> the model trains on labels and the continuous ordering was worth 29-76% of the score. The
+> matched figures on the folds spot-checked so far: `S1/fold-0` **0.472** (was 0.786),
+> `S2/fold-0` **0.145** (was 0.391), `P1` **0.006** (was 0.024), `P3/all` **0.660** (was 0.928).
+> `R@P0.5` in that report is separately inflated up to 17-fold (`§12.5`).
+
+**The bar as first measured**, mean per-protein AUPR, `k = 1`, continuous profile — superseded:
 
 | regime | AUPR | median NN identity |
 |---|---:|---:|
-| `S1` random domains | **0.769** | 0.742 |
-| `S2` components at >= 0.5 identity | **0.296** | 0.386 |
-| `P1` homeodomain holdout | **0.024** | 0.268 |
-| `P2` non-homeodomain variant clusters | **0.882** | 0.824 |
-| `P3/all` every variant, wild types kept | **0.928** | 0.986 |
+| `S1` random domains | ~~0.769~~ | 0.742 |
+| `S2` components at >= 0.5 identity | ~~0.296~~ | 0.386 |
+| `P1` homeodomain holdout | ~~0.024~~ | 0.268 |
+| `P2` non-homeodomain variant clusters | ~~0.882~~ | 0.824 |
+| `P3/all` every variant, wild types kept | ~~0.928~~ | 0.986 |
 
-The pure `k = 1` lookup beats the identity-weighted top-5 average almost everywhere, so the
-primary form stays the primary form.
+The identity column is unaffected — the neighbour chosen is the same; only what is copied from it
+changed. The pure `k = 1` lookup beats the identity-weighted top-5 average almost everywhere, so
+the primary form stays the primary form.
 
 **And it checked the splits, which is where it earned its place.** Both findings went to the
 owner and both are now settled (`docs/DECISIONS.md` §2): **`S2`'s edge threshold moved from 5
@@ -119,14 +127,22 @@ model is better on every column, and on the one that matters most for C1 — doe
 against A1's 1.3. Weak evidence at n = 28 vs 62, and a property of the embeddings rather than a
 result about binding, but it is the first evidence in the project bearing on §4.2's question.
 
-**The grid has run and the result is negative — read
-[`docs/ML_RESULTS.md`](docs/ML_RESULTS.md)** (2026-08-25). 38 runs; the two-tower model beats the
-nearest-neighbour baseline on **3 of them**, mean delta −0.044. Three diagnostics isolate why: the
-256-d shared space is not the constraint (an oracle rank-256 factorisation reaches 0.917), the
-tower is not too weak (it already matches an unconstrained ridge probe from ESM), and nonlinearity
-buys ~0.02 (oracle-tuned kernel ridge). **The bottleneck is the pooled protein representation.**
-Claim C1 is not supported: the model shows the shifted prior `D6` predicted, gaining +0.057 on the
-29 hard variants and losing −0.063 on the other 144.
+**The grid has run once and must run again.** A modelling audit on 2026-08-27
+([`docs/DECISIONS.md`](docs/DECISIONS.md) §12) found eighteen defects across the baseline, the
+metrics, the training budget, the protein tower and the evaluation set. **Nothing in
+[`docs/ML_RESULTS.md`](docs/ML_RESULTS.md) or the two reports survives it unchanged**, and that
+document now carries a superseded banner rather than a conclusion.
+
+What was claimed on 2026-08-25 and what became of it:
+
+| claim | status |
+|---|---|
+| beats the baseline on 3 of 38 runs, mean delta −0.044 | measured against the **continuous** baseline, which the model is not given (`D7`) — expect it to invert on most folds |
+| the 256-d shared space is not the constraint | **stands** — a rank-256 factorisation reaches 0.917 against 0.275 mean on `S2`, and a *high* lower bound does rule a component out |
+| the tower is not too weak — it matches an unconstrained ridge probe | **withdrawn** (`D10`) — the probe was violated on 5 of 8 rows and is a lower bound, so a low number concludes nothing. The same linear class fitted with the ranking loss scored 0.0588 on `P1` where the ridge scored 0.0286 |
+| non-linearity buys ~0.02 on `A4` | **stands in its own direction**, and is now `T36`'s ablation rather than a probe |
+| the bottleneck is the pooled protein representation | **not established** — it was the residue left after two withdrawn eliminations |
+| C1 is not supported; the model shows a shifted prior | **restated**, not refuted. The dead variants now have their own metric (`D9`): `A1` scores **0.4921** where chance is 0.5 and the baseline is exactly 0.0 |
 
 **The two-tower harness is built** (2026-08-20). [`docs/TRAINING.md`](docs/TRAINING.md) is the
 design document and now also records what the first runs measured: multi-positive InfoNCE over
@@ -213,11 +229,32 @@ Note `A1` shows almost no non-linear gain, and on `P1` non-linearity *hurts* bot
 is not "add capacity everywhere", it is specific to `A4` on the regimes with same-family
 training data.
 
-### ~~T35~~ — Script the three diagnostics behind `ML_RESULTS.md` §4 — **done 2026-08-25**
-`scripts/measure_ceilings.py` -> [`reports/representation_ceiling.md`](reports/representation_ceiling.md),
-about 4.5 minutes. It found the §4.3 error immediately by running the kernel probe on both arms
-where the interactive version had only run `A1`, which is the argument for scripting a
-measurement rather than keeping it in a shell.
+**The probe that raised this was deleted on 2026-08-27 (`D10`), and the task survives it.** The
+kernel probe was a *lower* bound on what a non-linear map of that embedding can reach, and here
+it came out **above** the two-tower on all three folds — which is the direction a lower bound
+does license: a solution that good exists and the model is not reaching it. The evidence is
+sound; what is gone is the ability to regenerate it, and that does not matter, because
+**the experiment this task proposes was always the real test.** Training a tower with
+`protein_hidden` set gives an achievable number on the same folds and the same metric, which is
+what a probe could never do.
+
+Two things to fold in when running it. The tower now begins with a `LayerNorm` (`D12`) that
+`A4` needed more than `A1` — the numbers above were measured without it, so the gap they show
+may be smaller than it was. And `dropout` means *hidden-unit* dropout once `hidden > 0`, where
+at `hidden = 0` it means input-feature dropout: the same knob, two regularisers, not a swept
+quantity across the two shapes.
+
+### ~~T35~~ — Script the three diagnostics behind `ML_RESULTS.md` §4 — **done 2026-08-25, reduced to one 2026-08-27**
+`scripts/measure_ceilings.py` -> [`reports/representation_ceiling.md`](reports/representation_ceiling.md).
+It found the §4.3 error immediately by running the kernel probe on both arms where the
+interactive version had only run `A1`, which is the argument for scripting a measurement rather
+than keeping it in a shell.
+
+**Two of the three were deleted on 2026-08-27** (`D10`): the ridge and RBF probes were read as
+upper bounds on the protein tower and are **lower** bounds, so they license a conclusion only
+when the number comes out high — and in §4's use it came out low. `rank_ceiling` survives on
+exactly that basis, because 0.9167 is high. The script is now 15 s rather than 4.5 minutes and
+needs neither arms nor folds, since the rank probe is corpus-wide.
 
 ### T35 (original description) — Script the three diagnostics behind `ML_RESULTS.md` §4
 The rank-D oracle ceiling, the ridge probe and the kernel-ridge comparison were computed

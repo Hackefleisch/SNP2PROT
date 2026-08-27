@@ -1329,3 +1329,188 @@ Four defects were found and fixed while doing this, each recorded because each w
 **Known gap:** the protein-side table covers 1,224 of 1,335 domains, because it locates a
 domain by substring within its construct and a reference-extended canonical sequence is no
 longer a substring of it. Tracked as `T18`.
+
+---
+
+## 12. The modelling audit — 2026-08-27
+
+A defect-hunting review of everything under `src/snp2prot/` that touches the model, the
+baseline or the metrics. Eighteen findings; all closed. **Every number in
+[`reports/training.md`](../reports/training.md),
+[`reports/nn_baseline.md`](../reports/nn_baseline.md) and
+[`docs/ML_RESULTS.md`](ML_RESULTS.md) is superseded by the changes below and none of them have
+been rerun yet.** Read those three against this section until they are.
+
+### 12.1 The comparison was not like for like
+
+**`D7` — the nearest-neighbour baseline now copies binary calls, not E-scores.** It copied the
+neighbour's continuous profile, and the model trains on thresholded labels, so the two were
+never compared on equal information. Measured, same neighbour and same overlap guard:
+
+| fold | E-score copy | binary copy | of the baseline's score |
+|---|---:|---:|---:|
+| `S1/fold-0` | 0.7863 | 0.4721 | 40% was the ordering |
+| `S2/fold-0` | 0.3912 | 0.1452 | 63% |
+| `P1/Homeodomain` | 0.0244 | 0.0057 | 76% |
+| `P3/all` | 0.9278 | 0.6603 | 29% |
+
+Between 29% and 76% of the old baseline came from the ordering *within* the copied profile —
+information the model is never given. **The owner's reading settled it**: a universal-PBM
+E-score is a rank-enrichment statistic against background, read by the field at a cutoff and
+stored here at 0.45 / 0.35, not a graded affinity. Its ordering is not a quantity the assay
+reports, which is why the dataset stores a binary label at all. The continuous form was
+therefore not a harder bar but a different question, and it is gone rather than kept as a
+second column. **The whole PBM corpus is binary: training, baseline and evaluation alike.**
+
+Consequence to expect on the rerun: the model lost to the baseline on 33 of 38 runs against the
+continuous form. Against the matched bar it should win on most. That is a fairer comparison,
+not a softer one.
+
+**`D8` — Spearman is deleted as a model metric**, for the same reason: it scored a prediction
+against the raw E-score ordering. `metrics.spearman` survives as a utility for
+`scripts/check_pooling.py`, which correlates embedding displacement against edit count.
+
+**The C1 training-pool exclusion is removed.** It was applied to the model and never to the
+baseline, so in 18 of 19 folds the baseline could copy from 10-29 domains the model had been
+denied — 358 domain-slots across the grid. It also bought nothing: C1 is scored in exactly one
+place, `run_grid`'s `P3/all` section, and under `P3/all` every variant is held out by
+construction. **If a C1 number is ever wanted from another regime the mask has to come back.**
+
+### 12.2 A metric for the domains AUPR cannot reach
+
+**`D9` — `metrics.suppression`, and the null anchor is not a threshold.** 20 held-out records
+have no positive 8-mer — every one a `dead_variant` — so AUPR, AUROC and R@P0.5 are undefined
+for them, and they are the sharpest evidence the corpus holds for **C1**.
+
+Counting "predicted positives" needs a decision threshold. The null anchor was designed as one
+and **does not work as one**: measured on a trained checkpoint it sits at −24.3 where the
+negatives' median is −26.4 and the positives' median is +9.6, with a median of **15,159 of
+32,460 8-mers scoring above it**. The reason is structural — for the ~1,318 domains that have
+positives it is one more negative being pushed down, and the only force raising it comes from
+the 20 that have none. It loses 1,318 to 20. Its first job is real and it stays for that: a
+domain with no positives gets a target, so it contributes a gradient instead of nothing.
+
+So the metric compares the variant with its own wild type down the **protein axis**, needing no
+threshold and no continuous value: *of the sites the wild type binds, the fraction the model
+ranks lower in the variant*. Ranks, not scores — comparing scores would hand 1.0 to a model
+that merely scores the variant lower everywhere. **1.0** it saw the mutation abolish binding ·
+**0.5** the sites moved at random · **0.0** it predicts the variant exactly like the wild type,
+which is what the lookup does by construction. Scored only where the wild type stayed in
+training, and never on `no_evidence` (`T21`).
+
+First measurement, `A1` on `P3/all`: **model 0.4921, baseline 0.0000, chance 0.5000.** The
+model is at chance on the C1 claim.
+
+### 12.3 The ceilings were not ceilings
+
+**`D10` — `ridge_probe` and `kernel_probe` deleted; `rank_ceiling` kept and reframed.** The
+ridge probe was documented as *"strictly upper-bounds any model whose protein side is a linear
+map"* and was **violated on 5 of the 8 rows of its own report, by up to 68%**. It minimises
+squared error on E-scores and is scored by AUPR, two objectives that demonstrably disagree — on
+`S2/fold-0` the MSE-optimal ridge scored 0.4324 where the AUPR-optimal one scored 0.4736.
+
+The general rule, which is what decided the section:
+
+> Every probe of this kind is a **lower** bound on its model class — one estimator's score, when
+> the class can always contain a better member. A lower bound licenses a conclusion only when
+> the number comes out **high**: it can rule a component *out* as the constraint, never *in*.
+
+`ridge_probe` and `kernel_probe` came out low in §4's use, so they licensed nothing.
+`rank_ceiling` comes out high (0.9167 at `D = 256` against 0.275 mean on `S2`), so "the shared
+space is not the binding constraint" holds. The conclusion the deleted probes were used for —
+*would a stronger or non-linear tower help* — is now answered by an ablation instead (`T36`).
+
+The two-tower model at `protein_hidden = 0` **is** a linear protein map fitted with a ranking
+loss, and on `P1` it scored 0.0588 where the ridge scored 0.0286. The objective was the lever,
+not the tower.
+
+### 12.4 Training
+
+**`D11` — the step budget is 15,000, not 6,000, and early stopping is off.** The old value
+rested on *"the training loss keeps falling to ~0.01, so everything past that is fitting the
+training proteins"*, which is exactly backwards. Measured to 15,000 steps with stopping
+disabled, comparing windows of three evaluations *within* a single run:
+
+| fold | mean test AUPR @5.5–6.5k | @13.5–15k | gain |
+|---|---:|---:|---:|
+| `P3/all` | 0.8563 | 0.8798 | +0.024 |
+| `S2/fold-3` | 0.2275 | 0.2457 | +0.018 |
+| `S1/fold-2` | 0.6584 | 0.6863 | +0.028 |
+
+All three still climbing at 15,000. The training loss does reach ~0.005 — the training proteins
+are memorised by about step 6,000 — but held-out AUPR keeps improving for another 9,000 steps.
+**Memorising the training set and generalising to unseen proteins are not coupled here.** Cosine
+LR decay was measured as the cheaper alternative and is slightly *worse* at equal budget (0.8438
+against 0.8458 on `P3/all`), so the budget is the lever, not the schedule.
+
+`patience: 8` fired on 5 of 38 runs and all five were `S2` — `A1 S2/fold-4` stopped at step
+2,750 with its best at 750, while `S2/fold-3` was still gaining at 12,000. It is now `0`.
+**Both models are kept per run** — the validation-selected checkpoint and the model at the
+budget — and scored side by side, so the selection loss is a reported number per fold rather
+than an assumption.
+
+**`D12` — the protein tower LayerNorms its input.** ESM-2's pooled vectors have norms 4.83–9.85
+and ESM-DBP's 0.76–1.24, so with a bias on the projection `‖b‖/‖Wx‖` was **0.13 for `A1` and
+1.16 for `A4`**: for one arm the bias was a correction, for the other it outweighed the signal
+and set the output direction. The cost was not a handicap but an erasure — `A4`'s embeddings are
+the better separated (mean pairwise cosine 0.752 against `A1`'s 0.874), yet the untrained tower
+emitted **0.8930 for both arms, identical to four decimals**. With the LayerNorm they come
+through at 0.891 and 0.759. L2-normalising the input instead is a trap: it sets `‖Wx‖ ≈ 0.26`
+beside `‖b‖ = 0.251` and reproduces the same collapse for *both* arms.
+
+This did not rescue `A4` on `P1`, which was the hypothesis: it moved 0.0035 → 0.0044 against a
+random-ranking 95th percentile of 0.0036, with AUROC 0.551 and no meaningful signal. `A4` is
+better at in-family discrimination and worse out of family, consistent with its embeddings being
+more family-clustered (within-Homeodomain cosine 0.963 against 0.731 across, versus `A1`'s 0.933
+and 0.874).
+
+**`D13` — the temperature clamp moved off the forward pass, and weight decay off the
+non-weights.** `logit_scale` and `null` were being decayed with the convolution weights; neither
+is a weight. And `score()` clamped in the forward pass, which makes the gradient exactly 0 above
+the ceiling: with decay the parameter oscillated across the boundary, without it froze at
+4.60882 to five decimals with no force acting on it at all. `clamp_temperature()` now pins the
+value after each step, CLIP's own arrangement, and the gradient stays live.
+
+**None of this changes a reported number, and that is the point.** `score` is `scale × cosine`
+and every metric ranks *within* one domain, so no positive scalar can reorder anything —
+verified to 8 decimals, and end to end 0.8558 clamped at 100 against 0.8554 running free to 148.
+What the temperature does set is *what the model learns from*: at the converged scale a median
+of **2 of 32,460 negatives carry half the negative-side gradient**, against ~1,500 at the
+initial temperature. That concentration is not evidence being discarded — a negative's gradient
+share is proportional to how wrongly close it still sits, so the rest are satisfied constraints
+— and the owner's decision is to keep the temperature low deliberately, for a space where
+non-binding is pushed far away.
+
+### 12.5 Things that were true and unrecorded
+
+* **`recall_at_precision` returned `nan` for a ranking that never reached the target**, and
+  `macro_average` dropped those domains. The published `P1` baseline recall was **0.130 over 24
+  of 412 positive-bearing domains**; over all of them it is **0.008**. A failure is not an
+  absence: at depth 1 the precision is 1.0 whenever the top 8-mer binds, so never reaching 0.5
+  means the top hit is wrong and nothing recovers. It now scores 0, and `macro_average` reports
+  `n_scored_<metric>` for every metric so no figure can again be a mean over an unstated subset.
+* **Nothing showed chance level.** A per-protein AUPR is anchored to the protein's own positive
+  rate, which ranges 0.0015–0.0034 across the folds. `metrics.chance_aupr` and
+  `metrics.random_baseline` (200 sampled draws, giving a 95th percentile) are now reported with
+  every fold, and a result at or below that percentile is flagged **at chance**. On the old grid
+  that caught exactly one row: `A4` on `P1`, at 0.0035 against a null of 0.0035.
+* **`nn_lookup` ties.** The documented rule — ties break to the lowest training row — was untrue
+  in **51% of the 358 tied cases** because `np.argpartition` promises no order among equal
+  values. Worth up to 0.008 AUPR and liable to change with the numpy version. Now a stable sort.
+* **`OVERSHOOT` landed in the same commit as the report it fixed.** `S2/fold-1` carved 38% of
+  its pool to validation where every sibling carved 15%; the guard fixed it and the grid was
+  never rerun, so two rows of `reports/training.md` came from a `validation_split` that no
+  longer exists. Runs now record `code.commit` and `code.dirty`, and the report says when its
+  rows were not all produced by the same tree.
+* **Trained weights were thrown away.** A grid was 38 numbers and no models. Both checkpoints
+  per run now go to `data/processed/checkpoints/` and to MLflow.
+* **`model.seed` split out of `splits.seed`.** Which domains are held out and how the towers are
+  initialised are unrelated choices; one number was doing both. `run_grid.py --seeds N` varies
+  only the second, default 1. Nothing has measured the spread yet — `T37`.
+* **The alignment guarantee was documented where it was not enforced.** `KmerMatrix`'s docstring
+  claimed the row order was "checked on load"; it was not, and `Trainer` indexed the matrix and
+  the embeddings together on the strength of a convention neither asserted.
+  `corpus.require_aligned` now enforces it in the library and in every script — comparing
+  sequences, since a reordered corpus passes both a length check and a set check.
+* **`snp2prot.training` had no tests.** It is the module that decides which domains a model
+  sees and which checkpoint is kept. It now has 15, and the suite went 262 → 320.

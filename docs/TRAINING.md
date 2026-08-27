@@ -153,18 +153,26 @@ P̃_p  =  P_p        if P_p is non-empty
 and §2.2 written over `P̃_p` covers both, with the negative pool being `N_p ∪ {ν} \ P̃_p`. One
 uniform loss, one code path, no branch on "does this domain have positives".
 
-### 3.3 Its second job, which is the one that matters on PBM
+### 3.3 Its second job — which was the plan, and which does not work
 
-Even for a domain with positives, `ν` sits in the denominator as one more competitor. So the model
-must rank a real positive **above the null**, and the null learns a position in the shared space
-that means *"good enough to call binding"*. That is a **learned decision threshold**, obtained for
-free and calibrated jointly with everything else — `s(p,k) > s(p,ν)` is a binding call without a
-separately fitted cutoff.
+The intention was this. Even for a domain with positives, `ν` sits in the denominator as one more
+competitor, so the model must rank a real positive **above the null**, and `ν` would settle at a
+position meaning *"good enough to call binding"* — a **learned decision threshold**, global rather
+than per protein, obtained for free and calibrated jointly with everything else.
 
-It is deliberately **global, not per protein**. A per-protein threshold would fit the sensitivity
-differences the corpus is known to have (`docs/METHODS.md` §5.1: two labs differ 1.6× in positive
-count on one protein), but it could not be estimated for a held-out protein, which is the only
-kind we score. A global anchor is the version that transfers.
+**Measured 2026-08-27 on a trained checkpoint, it does not happen** (`D9`). The anchor sits at
+−24.3 where the negatives' median is −26.4 and the positives' median is +9.6, and a median of
+**15,159 of 32,460 8-mers score above it**. It lands inside the negative cloud, roughly at its
+middle, not between the two classes.
+
+The reason is structural rather than a tuning failure. For the ~1,318 domains that *have*
+positives, `ν` is simply another negative being pushed down; the only force raising it comes from
+the domains that have none, where it is the target. §3.4 counts those: **at most two rows per
+fold.** The anchor loses 1,318 to 2, and settles where that arithmetic puts it.
+
+**Nothing may read `s(p,k) > s(p,ν)` as a binding call.** The metric for the domains that needed a
+threshold is `snp2prot.evaluation.metrics.suppression`, which compares a dead variant with its own
+wild type down the protein axis and needs no threshold at all.
 
 ### 3.4 The honest statement: on PBM today it is nearly inert
 
@@ -181,13 +189,14 @@ number of all-negative rows **remaining in training** is:
 | `P3`, per fold | 1,132 – 1,243 | 2 |
 
 **At most two rows.** The 34 `no_evidence` records are excluded because a silent record with no
-control cannot be told from a failed assay (`T21`), and the 18 dead variants that would otherwise
-qualify are the core of the C1 evaluation set (`D6`) and must never be trained on.
+control cannot be told from a failed assay (`T21`). The 18 dead variants are held out under
+`P3/all` by construction, which is where C1 is scored; the training-pool mask that used to remove
+them everywhere was dropped on 2026-08-27 because the baseline never applied it (`D7`).
 
 So: build the null anchor, but **do not expect it to move a PBM number**, and do not report it as
-if it had. It is worth building for three reasons that survive that fact — it removes a branch
-from the loss, it provides §3.3's threshold for all 1,338 rows, and it is the mechanism SELEX will
-need, where all-negative proteins are expected to be common (`ML_PLAN.md` §2.2). If `T30` is later
+if it had. Two of the three reasons for building it survive — it removes a branch from the loss,
+and it is the mechanism SELEX will need, where all-negative proteins are expected to be common
+(`ML_PLAN.md` §2.2). The third, §3.3's threshold, turned out not to exist. If `T30` is later
 decided in favour of training on the 34 `no_evidence` records, the mechanism is already there and
 that decision becomes a config flag.
 
@@ -280,6 +289,18 @@ Start without it. Reach for it if training is unstable or the DNA tower overfits
 The protein axis has **1,338 points**. The input to the protein tower is 1,280-dimensional. A
 single linear projection to `D = 256` is **327,680 parameters — 245 per training protein.**
 
+**The tower begins with a `LayerNorm` over that input, added 2026-08-27** (`D12`). It is not a
+capacity decision — it costs 2,560 parameters and changes no shape — but without it the arm
+comparison measured the wrong thing. ESM-2's pooled vectors have norms 4.83–9.85 and ESM-DBP's
+0.76–1.24, so on the projection's bias `‖b‖/‖Wx‖` was **0.13 for `A1` and 1.16 for `A4`**: for
+one arm the bias was a correction, for the other it outweighed the signal and set the output
+direction. `A4`'s embeddings are the better separated of the two (mean pairwise cosine 0.752
+against `A1`'s 0.874), yet the untrained tower emitted **0.8930 for both, identical to four
+decimals** — it had flattened away exactly the difference the `A1` → `A4` delta exists to
+measure. With the `LayerNorm` they arrive at 0.891 and 0.759, and the tower is invariant to a
+rescale of its input to ~1e-5. `ML_PLAN.md` §4.2's "equal terms" is now true rather than
+assumed.
+
 That asymmetry is the central engineering constraint and it points in one direction:
 
 - **the protein tower must be small.** A linear projection is the default. A one-hidden-layer MLP
@@ -327,8 +348,19 @@ a plain loop over configs.
 without knowing which domains were held out, and "regime `S2`, fold 3, seed 20260819" does not pin
 that down once the corpus changes. So every run logs:
 
-- the regime, the fold name, the seed, and **`Fold.digest` — the hash of the held-out domain
-  sequences**, which `snp2prot.splits` already computes and the baseline report already prints;
+- the regime, the fold name, **both seeds** — `splits.seed` decides which domains are held out,
+  `model.seed` the initialisation and the batch order, and they were one number until 2026-08-27
+  — and **`Fold.digest`, the hash of the held-out domain sequences**, which `snp2prot.splits`
+  already computes and the baseline report already prints;
+- **the commit it was produced from, and whether the tree was dirty** (`tracking.code_version`).
+  A digest pins the domains but not the procedure: the `OVERSHOOT` guard landed in the same
+  commit as the first version of `reports/training.md`, so one row of that table came from a
+  `validation_split` that no longer existed and the only way to notice was to recompute the
+  carve and compare row counts;
+- **the trained weights themselves** — both of them, the validation-selected checkpoint and the
+  model at the step budget, to `data/processed/checkpoints/` and as the run's MLflow artifact.
+  Without them a grid is 38 numbers and no models: nothing can be probed, re-scored on a new
+  metric, or asked what it actually learned;
 - the arm and the embedding file it read;
 - every hyperparameter, from `configs/experiment.yaml`;
 - both towers' trainable parameter counts (§5);
@@ -363,9 +395,19 @@ Two ways out:
    regime (whole components for `S2`, so the validation set is as separated from training as the
    test set is), seeded, and logged with its own digest.
 
-Recommendation: **(2)**, because a fixed budget tuned once on `S1` will be wrong for `P1`, whose
-training set is 870 domains and whose task is much harder. But it costs a real slice of an already
-small protein axis, so it is worth a decision rather than an assumption.
+**Settled 2026-08-27: both, and neither alone.** The slice is carved as in (2) and still selects
+a checkpoint, but it no longer *stops* the run — `patience: 0`, every fold trained to the fixed
+budget of (1). The reason is §8.2: stopping fired on 5 of 38 runs, all `S2`, cutting the regime
+the project hangs on off at step 2,750 with its best at 750. And because both the selected model
+and the model at the budget are now kept and scored, whether the slice is a *useful* selector is
+a reported number per fold instead of a premise — which matters most exactly where §7a said it
+would, on `P1` and `P3`, where no slice of the training pool can imitate the test task.
+
+**One measured cost of the slice** is recorded here rather than left to be rediscovered: on
+`S2/fold-3` validation selected step 14,500 (test 0.2473) over the true peak at 12,000 (test
+0.2633), a 0.016 selection loss. On `S1/fold-2` the best validation step *was* the best test
+step. The new "Does selecting on validation beat the model at the budget?" section of
+`reports/training.md` is where that is now read off rather than argued about.
 
 **(b) `T30`'s 34 `no_evidence` records.** Still open, and §3.4 above is the concrete reason it now
 matters less than it looked: with them excluded, the null anchor has almost nothing to do on PBM.
@@ -377,8 +419,10 @@ binds nothing. No action needed to start; the flag exists either way.
 ## 8. What the first runs measured
 
 Built and run 2026-08-20. The numbers below are from `A1` on `P3/all` — chosen first because
-its nearest-neighbour baseline is **0.928** with a median of 1.000, so a wrong implementation is
-obvious immediately rather than after the grid.
+its nearest-neighbour baseline was then **0.928** with a median of 1.000, so a wrong
+implementation is obvious immediately rather than after the grid. (That figure is the old
+continuous-profile baseline; the matched binary bar on the same fold is **0.660** — `D7`. The
+fold is still the right first check for the same reason.)
 
 ### 8.1 Cost, measured
 
@@ -387,11 +431,14 @@ obvious immediately rather than after the grid.
 | step, steady state | **26.7 ms** (batch 64, complete 8-mer axis, forward + backward) |
 | of which the DNA table forward | 7.3 ms — so the backward through it is the bulk |
 | validation pass, 160 domains | 0.36 s |
-| one fold at 6,000 steps | **~2.5 min** |
+| one fold at 15,000 steps | **~7.8 min** (was ~2.5 min at the old 6,000) |
 | peak GPU | **825 MiB** |
 
-So the 19-fold grid is about 50 minutes per arm, and 38 runs across `A1` and `A4` is under two
-hours. §4.3's prediction that activations rather than logits would dominate memory held: 825 MiB
+So the 19-fold grid is about 2.5 hours per arm, and 38 runs across `A1` and `A4` is about
+**5.1 hours** — 4.5 h of training plus 0.6 h of evaluation at `eval_every: 100`. 97% of that
+evaluation cost is the per-domain AUPR loop in numpy rather than the forward pass (388 ms of
+402 ms); batching the argsort across domains would cut it to roughly 0.1 h if it ever matters.
+§4.3's prediction that activations rather than logits would dominate memory held: 825 MiB
 against 8 MiB of logits.
 
 ### 8.2 The step budget, set from the curve rather than guessed
@@ -407,34 +454,81 @@ against 8 MiB of logits.
 | 10,000 | 0.06 | 0.640 | 0.872 | 0.010 |
 | 15,000 | 0.007 | 0.656 | 0.881 | 0.010 |
 
-**Validation is flat from about step 3,500 while the training loss keeps falling to 0.007.**
-Everything past that is fitting the training proteins — which is exactly what §5 predicted from
-1,338 points against a 1,280-d input. The default is therefore **6,000 steps**, comfortably past
-the plateau and short of the region where only the training loss moves.
+**This table was read wrongly, and the correction is `D11`.** The original reading was
+*"validation is flat from about step 3,500 while the training loss keeps falling to 0.007, so
+everything past that is fitting the training proteins"*, and the budget was set to 6,000. But the
+**test** column in the same table climbs from 0.854 at 3,500 to 0.881 at 15,000 — the conclusion
+was drawn from the validation column while the answer sat next to it.
+
+Re-measured 2026-08-26 on three folds with early stopping disabled, comparing windows of three
+evaluations *within* a single run so no cross-run variation enters:
+
+| fold | mean test AUPR @5.5–6.5k | @13.5–15k | gain |
+|---|---:|---:|---:|
+| `P3/all` | 0.8563 | 0.8798 | +0.024 |
+| `S2/fold-3` | 0.2275 | 0.2457 | +0.018 |
+| `S1/fold-2` | 0.6584 | 0.6863 | +0.028 |
+
+All three were **still climbing at 15,000**. The training loss does reach ~0.005, so the training
+proteins are memorised by about step 6,000 — but held-out AUPR improves for another 9,000 steps
+after that. **Memorising the training set and generalising to unseen proteins are not coupled
+here**, so "the loss is near zero" was never evidence for stopping. §5's capacity argument
+predicts overfitting and none is visible in the test column at any budget tried.
+
+Cosine LR decay was measured as the cheaper alternative — if the wobble at the end of training
+were the limit, decay would fix it without more compute. It is slightly *worse* at equal budget
+(0.8438 against 0.8458 on `P3/all`), so the budget is the lever and not the schedule.
+
+**The default is therefore 15,000 steps with `patience: 0`.** Early stopping fired on 5 of 38
+runs in the first grid and all five were `S2` — `A1 S2/fold-4` stopped at step 2,750 with its
+best at 750, while `S2/fold-3` was allowed to run and was still gaining at 12,000. Patience
+against a signal that swings 0.63→0.66 between adjacent evaluations was cutting runs off rather
+than protecting them. The validation slice still selects a checkpoint; it no longer ends the run,
+and **the model at the budget is kept and scored beside the selected one** so the selection is a
+reported number rather than an assumption.
 
 ### 8.3 The temperature reaches its ceiling and stays there
 
 τ falls from 0.07 to **0.0100 by about step 4,000 and pins**. That is the CLIP clamp at
-`1/τ ≤ 100` binding, not a coincidence — the model wants a sharper softmax than the clamp allows,
-which is what a separable training set looks like.
+`1/τ ≤ 100` binding — the model wants a sharper softmax than the clamp allows, which is what a
+separable training set looks like. Raised to 10,000 the scale never converges: it passes 100 at
+about step 4,000 and is still climbing at 148 by 15,000. The clamp is a real stopping device.
 
-The clamp is doing its job (a runaway scale saturates the softmax early and kills the gradient),
-so the default is unchanged. But it means **the temperature is a fixed hyperparameter from step
-4,000 onward, not a learned one**, and that should not be silent: `max_logit_scale` is now in
-`configs/experiment.yaml` and every run reports whether the clamp is binding. Raising it is a
-one-line experiment, and the expectation is that it increases overfitting rather than the score.
+**No reported number depends on it, and that was measured rather than assumed.** `score` is
+`scale × cosine` and every metric in `snp2prot.evaluation.metrics` ranks *within* one domain, so
+a positive scalar cannot reorder anything — verified to 8 decimals, and end to end the fold
+scores 0.8558 clamped at 100 against 0.8554 running free to 148.
+
+**What it does set is which negatives the model learns from** (`D13`). A negative's share of the
+gradient is its softmax weight in the shared denominator, so at the converged scale a median of
+**2 of 32,460 measured negatives carry half the negative-side gradient**; the top 100 carry
+99.7%. At the initial τ = 0.07 it is ~1,500. That is not evidence being discarded — a negative's
+share is proportional to how wrongly close it still sits, so the other 32,458 are satisfied
+constraints, and a low temperature is implicit hard-negative mining. It is kept low deliberately.
+
+Two mechanical corrections came with this. The clamp is applied to the **parameter after each
+optimiser step**, not inside `score`: clamping the forward pass makes the gradient exactly 0
+above the ceiling, so the parameter either oscillated across the boundary on weight decay alone
+or, with the decay removed, froze at 4.60882 to five decimals with no force acting on it. And
+`logit_scale` and `null` are excluded from weight decay — neither is a weight, and CLIP excludes
+the first for the same reason.
 
 ### 8.4 Where it stands against the bar
 
-At 15,000 steps `A1` reaches **0.881** on `P3/all` against the baseline's **0.928** — so on the
-fold where the baseline is strongest, the model does not yet beat copying the wild type. That is
-one fold, one arm, at a default configuration nothing has been tuned on, and it is the expected
-place to be hardest: `P3/all`'s baseline has a *median* of 1.000, meaning most single
-substitutions genuinely do not change what a domain binds. `D6` exists precisely because the
-claim does not live in that mean.
+**The comparison this section made is withdrawn** (`D7`, 2026-08-27). It set the model's 0.881 on
+`P3/all` against a baseline of 0.928 — but that baseline copied the neighbour's *continuous
+E-score profile*, and the model trains on thresholded labels. The two were never scored on equal
+information: between 29% and 76% of that baseline came from the ordering inside the copied
+profile. Against the matched binary bar, `P3/all` is **0.660** and `S2/fold-0` is **0.145**.
 
-**No conclusion should be drawn until the grid has run.** The fold that matters for the headline
-is `S2`, where the baseline is 0.296.
+A universal-PBM E-score is a rank-enrichment statistic read at a cutoff, not a graded affinity,
+so its ordering is not a quantity to predict — which is why the corpus stores a binary label and
+why the baseline now copies binary calls.
+
+**No conclusion should be drawn until the grid has rerun.** What can be said from the single-fold
+checks: `A1` reaches 0.8873 on `P3/all` at the 15,000-step budget, and on the C1 set — the 18
+dead variants, scored by `suppression` — it sits at **0.4921 against a chance level of 0.5 and a
+baseline of exactly 0.0**. On the claim the project exists to make, the model is at chance.
 
 ### 8.5 One deviation from the plan, for a reason outside it
 

@@ -62,14 +62,26 @@ concrete consequences that shape the code:
 1. **Never pool sources without checking `dna_len`.** PBM gives 8 bp, B1H 9 bp, SNP-SELEX
    19 bp, and each has a different positive rate, so length alone leaks assay identity and
    with it the label prior. Mitigated at *featurization* time, never in the stored table.
-2. **The nearest-neighbour baseline is the bar, and it is now measured.**
-   `snp2prot.baselines.nn_lookup` copies the E-score profile of the most similar training DBD.
-   [reports/nn_baseline.md](reports/nn_baseline.md), 2026-08-19: mean per-protein AUPR **0.769**
-   under the random split `S1`, **0.296** under `S2`, **0.024** under the `P1` homeodomain
-   holdout, **0.882** under `P2` and **0.928** under `P3/all` — where copying the wild type *is*
-   the hypothesis that a mutation does nothing. Those are the numbers a model has to be read
-   against, and the report bands them by nearest-neighbour identity, which is what actually
-   drives every one of them.
+2. **The nearest-neighbour baseline is the bar, and it copies the neighbour's BINARY calls.**
+   `snp2prot.baselines.nn_lookup` takes the most identical training DBD under the overlap guard
+   and copies what it *binds*, not its E-scores. That is the whole point: the model trains on
+   thresholded labels, so a baseline copying the continuous profile would be scored on
+   information the model never sees — measured, that was worth 29-76% of its AUPR (`D7`,
+   2026-08-27). A PBM E-score is a rank-enrichment statistic read at a cutoff, not a graded
+   affinity; **the whole PBM corpus is binary, baseline and evaluation included.**
+   Under `P3/all`, copying the wild type *is* the hypothesis that a mutation does nothing.
+   [reports/nn_baseline.md](reports/nn_baseline.md) bands the folds by nearest-neighbour
+   identity, which is what drives every one of them.
+
+   **The numbers in that report predate the audit and have not been rerun** — read them, and
+   everything in [docs/ML_RESULTS.md](docs/ML_RESULTS.md), against
+   [docs/DECISIONS.md](docs/DECISIONS.md) §12 until they have.
+
+3. **Read a per-protein AUPR against its chance level, never raw.** It is anchored to that
+   protein's own positive rate, which ranges 0.0015-0.0034 across the folds — so 0.05 on `P1` and
+   0.05 on `S2` are not the same statement. Every fold reports `chance_aupr` and a sampled
+   random-ranking 95th percentile, and a result at or below it is flagged **at chance**. One row
+   of the first grid was.
 
 ## Layout
 
@@ -118,7 +130,10 @@ src/snp2prot/
   reports.py      binarization summary, cluster inventory, overlap report
   splits.py       the five regimes: S1, S2 (components at >= 0.5 identity), P1, P2, P3
   baselines/      nn_lookup — the number a model must beat
-  evaluation/     metrics.py — per-protein AUPR / precision@k / Spearman, macro-averaged
+  evaluation/     metrics.py — per-protein AUPR / precision@k / R@P, macro-averaged, each with
+                  its chance level and a sampled random-ranking band; `suppression` for the dead
+                  variants, where every ranking metric is undefined
+                  ceilings.py — rank_ceiling only; the ridge and RBF probes were deleted (D10)
                   c1.py — the C1 evaluation set: variants the wild-type copy fails on (D6)
   data/matrix.py  the merged table as a dense domain x 8-mer array pair, for modelling
 
@@ -129,6 +144,8 @@ data/interim/clusters/   one row per cluster: size, family, variants  <- read vi
 data/interim/label_health/ one row per (domain, source): verdict, label counts, best E-score
 data/external/pfam/      Pfam HMMs for boundary annotation
 data/external/uniprot/   cached canonical sequences
+data/processed/checkpoints/ trained weights, one file per (arm, fold, seed), both the
+                         validation-selected model and the model at the step budget
 data/processed/          merged training table: 1,338 domains x 32,896 8-mers  (git-ignored)
                          plus the cached modelling artifacts: kmer_matrix.npz (the same
                          table as arrays), distances.npz (all-vs-all domain identity),
@@ -252,11 +269,12 @@ uv venv --python 3.11 .venv && uv pip install --python .venv -e ".[dev]"
 .venv/bin/python scripts/make_results.py                   # regenerate docs/RESULTS.md, ~5 s
 .venv/bin/python scripts/build_matrix.py                  # domain x 8-mer arrays for modelling, ~5 s
 .venv/bin/python scripts/build_distances.py               # all-vs-all domain identity, ~15 s
-.venv/bin/python scripts/run_nn_baseline.py [--top-k]     # the bar -> reports/nn_baseline.md, ~2.5 min
+.venv/bin/python scripts/run_nn_baseline.py [--top-k]     # the bar -> reports/nn_baseline.md, ~4 min
 .venv/bin/python scripts/build_embeddings.py --arm A1     # pooled ESM-2 vectors, ~20 s on the GPU
 .venv/bin/python scripts/check_pooling.py                 # the ML_PLAN 3.1 pre-flight, ~10 s
-.venv/bin/python scripts/train.py --arm A1 --fold P3/all  # one fold, ~2.5 min -- the fast check
-.venv/bin/python scripts/run_grid.py                      # 19 folds x 2 arms -> reports/training.md, ~2 h
+.venv/bin/python scripts/train.py --arm A1 --fold P3/all  # one fold, ~8 min -- the fast check
+.venv/bin/python scripts/run_grid.py [--seeds N]          # 19 folds x 2 arms -> reports/training.md, ~5 h
+.venv/bin/python scripts/measure_ceilings.py              # is the shared space wide enough, ~15 s
 .venv/bin/python -m ruff check . && .venv/bin/python -m ruff format .
 .venv/bin/python scripts/record_provenance.py data/raw/<source>/<file> --url ... --desc ...
 ```
@@ -276,7 +294,10 @@ Use `uv` (already installed at `~/.local/bin/uv`).
 | 5 | merge, overlap report, splits, NN baseline | **done 2026-08-19** — merge and overlap on 2026-08-18 (`data/processed/training.parquet`, `reports/merge.md`, `docs/RESULTS.md`); splits and the NN baseline on 2026-08-19 (`reports/nn_baseline.md`) |
 | — | **extend PBM coverage beyond UniPROBE** | **CLOSED 2026-08-18** — CIS-BP landed as `weirauch2014`; Kock 2024 screened and excluded (`reports/kock2024_excluded.md`). The corpus is UniPROBE + CIS-BP and grows no further |
 | 6 | ~~Tier 4 test sets, in `data/testsets/`~~ | **DROPPED 2026-08-17** — the owner no longer wants the bHLH dimer sets. `data/testsets/` stays as empty scaffolding for any future held-out set |
-| 7 | **modelling** — contrastive two-tower over Codebook SELEX + PBM | **the harness is built, 2026-08-20** — [docs/TRAINING.md](docs/TRAINING.md) is the design and records what the first runs measured; the remaining step is the owner running `scripts/run_grid.py` (~2 h). Steps 0 and the sequence arms done 2026-08-19 ([reports/nn_baseline.md](reports/nn_baseline.md), [reports/pooling_check.md](reports/pooling_check.md)). Plan: [docs/ML_PLAN.md](docs/ML_PLAN.md). Build order is PBM + sequence embeddings first (no collaborator dependency); SELEX and structure ensembles are blocked on others. `S2` holds out **connected components at >= 0.5 identity**, not clusters (`T27`, then `D5` on 2026-08-19 — `docs/DECISIONS.md` §2) |
+| 7 | **modelling** — contrastive two-tower over Codebook SELEX + PBM | **the harness is built, 2026-08-20** — [docs/TRAINING.md](docs/TRAINING.md) is the design and records what the first runs measured; the remaining step is the owner running `scripts/run_grid.py` (**~5 h** at the 15,000-step
+budget). **A modelling audit on 2026-08-27 (`docs/DECISIONS.md` §12) changed the baseline, the
+metrics, the budget, the tower and the evaluation set — every committed result predates it and
+must be rerun.** Steps 0 and the sequence arms done 2026-08-19 ([reports/nn_baseline.md](reports/nn_baseline.md), [reports/pooling_check.md](reports/pooling_check.md)). Plan: [docs/ML_PLAN.md](docs/ML_PLAN.md). Build order is PBM + sequence embeddings first (no collaborator dependency); SELEX and structure ensembles are blocked on others. `S2` holds out **connected components at >= 0.5 identity**, not clusters (`T27`, then `D5` on 2026-08-19 — `docs/DECISIONS.md` §2) |
 
 ## Deferred to the owner — flag, do not resolve
 

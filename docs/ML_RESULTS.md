@@ -9,11 +9,30 @@ Generated artifacts stay where they are — [`reports/nn_baseline.md`](../report
 *reading* of them, which none of them can: they are each written by one script that sees one
 experiment.
 
-**Status as of 2026-08-25: the two-tower model does not beat the nearest-neighbour baseline
-(3 wins in 38 runs), and the largest single reason found so far is that its protein tower is
-linear** — a kernel ridge on the same `A4` embedding beats both the model and the baseline on
-every `S2` fold measured. The pooled representation remains the deeper suspect but is no longer
-established as the binding constraint. Everything below is the evidence.
+> ## ⚠️ SUPERSEDED — do not quote a number from this document
+>
+> The modelling audit of **2026-08-27** ([`DECISIONS.md` §12](DECISIONS.md)) changed the
+> baseline, the metrics, the training budget, the protein tower and the evaluation set. **The
+> grid behind every table below has not been rerun.** Specifically:
+>
+> - **The bar in §1 is the wrong bar.** It copied the neighbour's continuous E-score profile,
+>   which the model never sees; against the matched binary bar it scores 0.472 rather than 0.786
+>   on `S1/fold-0` and 0.145 rather than 0.391 on `S2/fold-0` (`D7`). Every win/loss count in
+>   this document is computed against the old bar and will invert on most folds.
+> - **§4 rests on two probes that have been deleted** (`D10`). The ridge probe was documented as
+>   an upper bound and was violated on 5 of the 8 rows it was printed on. §4.2's conclusion —
+>   *the tower is already at the linear ceiling* — does not follow, and §4.3's kernel result is
+>   sound only in the direction it was **not** used in §4.4.
+> - **Every model number is from a 6,000-step budget** since raised to 15,000 for a measured
+>   +0.02–0.03 AUPR (`D11`), a tower without its input `LayerNorm` (`D12`), and a training pool
+>   that excluded the C1 set while the baseline's did not.
+> - **Spearman is gone** (`D8`), `recall_at_precision` was inflated up to 17-fold (`§12.5`), and
+>   nothing here shows chance level — `A4` on `P1` turns out to be indistinguishable from a
+>   random ranking.
+>
+> The **structure** of the argument survives and is worth reading: what the regimes test, why
+> the identity bands matter, why C1 needs its own set. The **numbers** do not. This document is
+> rewritten from `reports/training.md` and `reports/nn_baseline.md` after the rerun.
 
 ---
 
@@ -152,6 +171,17 @@ modality from pretraining corpus; on this evidence the answer is "the corpus bar
 with the `P1` blow-up as the one large exception.
 
 ## 4. What was ruled out, by measurement
+
+> **§4.2, §4.3 and §4.4 are withdrawn** (`D10`, 2026-08-27). They read the ridge and RBF probes
+> as upper bounds on the protein tower. They are **lower** bounds — one estimator's score, where
+> the class can always hold a better member — so they license a conclusion only when the number
+> comes out *high*: they can rule a component out as the constraint, never in. §4.2 and §4.4
+> argue from a *low* number, so they conclude nothing. §4.1 stands, because 0.9167 is high.
+>
+> §4.3's observation is sound in the direction it was made — a kernel ridge on `A4` beat both
+> the model and the baseline on three `S2` folds, and a lower bound above your model does say
+> there is reachable signal you are not getting. That is `T36`, and it is now settled by
+> training a tower with `model.protein.hidden` set rather than by a probe.
 
 Three candidate bottlenecks. The diagnostics discriminate between them.
 

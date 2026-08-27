@@ -22,6 +22,14 @@ exist, so it is `nan` here and the macro-average skips it and reports how many i
 Their Spearman against the raw E-score is perfectly well defined, and is the number to read
 for them.
 
+**But "undefined" and "failed" are different, and only the first may be skipped.** That
+distinction was lost once: `recall_at_precision` returned `nan` for a ranking that never reached
+the target precision, which is a failure and not an absence, and the macro-average dropped those
+domains — reporting the nearest-neighbour baseline's `P1` recall as 0.130 when over all
+positive-bearing domains it is 0.008. A failure now scores 0 and stays in the mean. Every skip
+this module still makes is counted per metric in `macro_average`, so a figure can never again be
+an average over an unstated subset.
+
 **The no-call band is excluded, not counted as negative.** `label == -1` is absent evidence:
 the 8-mer fell between the two cutoffs, or replicates disagreed. Ranking metrics see only
 `label in (0, 1)` cells; Spearman uses every cell, because it reads the continuous score
@@ -86,14 +94,27 @@ def precision_at_k(labels: np.ndarray, scores: np.ndarray, k: int) -> float:
 def recall_at_precision(labels: np.ndarray, scores: np.ndarray, target: float) -> float:
     """Recall at the deepest cut whose precision still reaches `target`.
 
-    `nan` when the ranking never reaches that precision at any depth — which is a different
-    statement from "recall 0" and is reported as such.
+    **A ranking that never reaches the target scores 0, not `nan`.** It used to return `nan`,
+    on the reading that "no operating point exists" is a different statement from "recall 0" —
+    and `macro_average` then dropped those domains from the mean, so the figure was an average
+    over whichever domains happened to succeed. Measured on the nearest-neighbour baseline
+    (2026-08-26), that inflated the published `P1` number from **0.008 to 0.130**, an average
+    over 24 of 412 positive-bearing domains; `S2/fold-4` went 0.172 to 0.623.
+
+    Zero is also the right value on its own terms. At depth 1 the precision is 1.0 whenever the
+    top-ranked 8-mer is a positive, so a ranking that never reaches 0.5 has put a negative first
+    *and* failed to recover at any depth. The recall attainable at precision >= target is then
+    exactly none — a failure with a value, not a quantity that does not exist.
+
+    `nan` remains for the one genuinely undefined case: a domain with no positive 8-mer, where
+    there is no recall to measure at any precision. `aupr` and `auroc` are `nan` for the same
+    kind of reason and keep that behaviour.
     """
     if labels.sum() == 0:
         return float("nan")
     precision, recall = _pr_curve(labels, scores)
     reached = np.flatnonzero(precision >= target)
-    return float(recall[reached[-1]]) if len(reached) else float("nan")
+    return float(recall[reached[-1]]) if len(reached) else 0.0
 
 
 def spearman(a: np.ndarray, b: np.ndarray) -> float:
@@ -242,18 +263,28 @@ def macro_average(scores: list[DomainScores]) -> dict[str, float]:
     if not scores:
         return {}
     aupr = np.array([s.aupr for s in scores])
+    columns: dict[str, list] = {
+        "aupr": list(aupr),
+        "auroc": [s.auroc for s in scores],
+        "spearman": [s.spearman for s in scores],
+        "recall_at_precision": [s.recall_at_precision for s in scores],
+        **{
+            f"precision_at_{k}": [s.precision_at[k] for s in scores] for k in scores[0].precision_at
+        },
+    }
     out: dict[str, float] = {
         "n_domains": float(len(scores)),
         "n_scored": float(np.isfinite(aupr).sum()),
         "n_undefined": float((~np.isfinite(aupr)).sum()),
-        "aupr": _nanmean(aupr),
         "aupr_median": float(np.nanmedian(aupr)) if np.isfinite(aupr).any() else float("nan"),
-        "auroc": _nanmean([s.auroc for s in scores]),
-        "spearman": _nanmean([s.spearman for s in scores]),
-        "recall_at_precision": _nanmean([s.recall_at_precision for s in scores]),
     }
-    for k in scores[0].precision_at:
-        out[f"precision_at_{k}"] = _nanmean([s.precision_at[k] for s in scores])
+    for name, values in columns.items():
+        array = np.asarray(values, dtype=np.float64)
+        out[name] = _nanmean(array)
+        # How many domains each mean is actually over. `n_scored` covers AUPR and used to be
+        # taken to cover everything, which is how a figure over a sixth of the domains was read
+        # as a figure over all of them.
+        out[f"n_scored_{name}"] = float(np.isfinite(array).sum())
     return out
 
 

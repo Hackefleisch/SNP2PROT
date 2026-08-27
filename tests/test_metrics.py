@@ -52,12 +52,59 @@ def test_a_domain_with_no_positives_has_no_aupr_rather_than_a_zero():
     assert math.isnan(metrics.recall_at_precision(labels, np.arange(100.0), 0.5))
 
 
-def test_recall_at_precision_is_nan_when_the_precision_is_never_reached():
-    """Different from recall 0, and reported differently."""
+def test_recall_at_precision_is_zero_when_the_precision_is_never_reached():
+    """A failure with a value, not an absence. Returning nan here and letting `macro_average`
+    drop it reported the NN baseline's `P1` recall as 0.130 over 24 of 412 domains, where over
+    all of them it is 0.008."""
     labels = np.zeros(1000, dtype=int)
-    labels[-1] = 1  # the single positive ranks last
+    labels[-1] = 1  # the single positive ranks last: no cut ever reaches precision 0.5
     scores = -np.arange(1000.0)
-    assert math.isnan(metrics.recall_at_precision(labels, scores, 0.5))
+    assert metrics.recall_at_precision(labels, scores, 0.5) == 0.0
+
+
+def test_recall_at_precision_is_nan_only_when_there_is_no_positive_to_recall():
+    labels = np.zeros(100, dtype=int)
+    assert math.isnan(
+        metrics.recall_at_precision(labels, np.random.default_rng(0).random(100), 0.5)
+    )
+
+
+def test_a_perfect_ranking_still_reaches_full_recall_at_the_target():
+    labels = np.zeros(100, dtype=int)
+    labels[:10] = 1
+    assert metrics.recall_at_precision(labels, -np.arange(100.0), 0.5) == pytest.approx(1.0)
+
+
+def test_failures_stay_in_the_macro_average_instead_of_vanishing_from_it():
+    """One domain reaches the target and one cannot. The mean must be over both."""
+    good = np.zeros(100, dtype=int)
+    good[:5] = 1
+    bad = np.zeros(100, dtype=int)
+    bad[-1] = 1
+    scores = -np.arange(100.0)
+    rows = [
+        metrics.score_domain(np.where(v == 1, 1, 0), scores, scores, precision_at=(10,))
+        for v in (good, bad)
+    ]
+    summary = metrics.macro_average(rows)
+    assert summary["n_scored_recall_at_precision"] == 2
+    assert summary["recall_at_precision"] == pytest.approx(0.5)  # (1.0 + 0.0) / 2
+
+
+def test_every_metric_reports_how_many_domains_its_mean_is_over():
+    """`n_scored` counts AUPR only, and was read as covering everything."""
+    labels = np.zeros(50, dtype=int)
+    labels[:4] = 1
+    scores = -np.arange(50.0)
+    rows = [
+        metrics.score_domain(labels, scores, scores, precision_at=(5,)),
+        metrics.score_domain(np.zeros(50, dtype=int), scores, scores, precision_at=(5,)),
+    ]
+    summary = metrics.macro_average(rows)
+    for name in ("aupr", "auroc", "spearman", "recall_at_precision", "precision_at_5"):
+        assert f"n_scored_{name}" in summary, name
+    assert summary["n_scored_aupr"] == 1  # the second domain has no positives
+    assert summary["n_scored_spearman"] == 2  # but its Spearman is perfectly well defined
 
 
 def test_the_no_call_band_is_excluded_from_the_ranking_metrics():

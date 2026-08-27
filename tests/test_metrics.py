@@ -101,10 +101,10 @@ def test_every_metric_reports_how_many_domains_its_mean_is_over():
         metrics.score_domain(np.zeros(50, dtype=int), scores, scores, precision_at=(5,)),
     ]
     summary = metrics.macro_average(rows)
-    for name in ("aupr", "auroc", "spearman", "recall_at_precision", "precision_at_5"):
+    for name in ("aupr", "auroc", "recall_at_precision", "precision_at_5"):
         assert f"n_scored_{name}" in summary, name
     assert summary["n_scored_aupr"] == 1  # the second domain has no positives
-    assert summary["n_scored_spearman"] == 2  # but its Spearman is perfectly well defined
+    assert summary["n_scored_precision_at_5"] == 2  # precision@k is defined for it regardless
 
 
 def test_the_no_call_band_is_excluded_from_the_ranking_metrics():
@@ -126,6 +126,12 @@ def test_ties_share_their_mean_rank():
         5.0,
         5.0,
     ]
+
+
+def test_spearman_survives_as_a_utility_but_is_no_longer_a_model_metric():
+    """`check_pooling.py` needs a rank correlation for embedding displacement vs edit count.
+    Nothing scores a prediction against the raw E-score any more."""
+    assert not hasattr(metrics.DomainScores("d", 0, 0.0, 0.0, 0.0), "spearman")
 
 
 def test_spearman_is_one_against_itself_and_minus_one_reversed():
@@ -178,26 +184,70 @@ def test_the_null_band_brackets_the_chance_level_and_a_random_ranking_falls_insi
     for i in range(6):
         labels[i, rng.choice(400, 8, replace=False)] = 1
 
-    band = metrics.null_aupr(labels, repeats=200, seed=1)
-    assert band["null_mean"] < band["null_p95"]
+    band = metrics.random_baseline(labels, repeats=200, seed=1)
+    assert band["random_mean"] < band["random_p95"]
 
     drawn = [
         np.mean([metrics.average_precision(labels[i], rng.random(400)) for i in range(6)])
         for _ in range(40)
     ]
     # A genuinely random ranking should clear the 95th percentile about 5% of the time.
-    assert np.mean(np.array(drawn) > band["null_p95"]) < 0.25
+    assert np.mean(np.array(drawn) > band["random_p95"]) < 0.25
 
 
 def test_a_perfect_ranking_sits_far_above_the_null_and_the_null_is_near_chance():
     labels = np.zeros((4, 500), dtype=np.int8)
     labels[:, :10] = 1
-    band = metrics.null_aupr(labels, repeats=100, seed=0)
-    assert band["null_p95"] < 0.15
+    band = metrics.random_baseline(labels, repeats=100, seed=0)
+    assert band["random_p95"] < 0.15
     assert metrics.chance_aupr(labels) == pytest.approx(0.02)
-    assert band["null_mean"] > metrics.chance_aupr(labels)  # AP is biased up at small n_pos
+    assert band["random_mean"] > metrics.chance_aupr(labels)  # AP is biased up at small n_pos
 
 
 def test_the_null_is_nan_rather_than_zero_when_there_is_nothing_to_rank():
-    band = metrics.null_aupr(np.array([[0, 0, -1]]), repeats=5)
-    assert np.isnan(band["null_mean"]) and np.isnan(band["null_p95"])
+    band = metrics.random_baseline(np.array([[0, 0, -1]]), repeats=5)
+    assert np.isnan(band["random_mean"]) and np.isnan(band["random_p95"])
+
+
+# --- suppression: the metric for the domains AUPR cannot reach --------------------------
+
+
+def _dead_case(n=200, n_pos=20):
+    labels = np.zeros(n, dtype=np.int64)
+    labels[:n_pos] = 1
+    wild_type = labels.astype(np.float64)  # the wild type's own calls
+    return labels, wild_type
+
+
+def test_copying_the_wild_type_scores_exactly_zero():
+    """What the nearest-neighbour baseline does, so it is C1's null hypothesis literally."""
+    labels, wild_type = _dead_case()
+    assert metrics.suppression(wild_type, wild_type, labels) == 0.0
+
+
+def test_ranking_every_wild_type_site_lower_scores_one():
+    labels, wild_type = _dead_case()
+    variant = -wild_type  # every site the wild type binds is now bottom-ranked
+    assert metrics.suppression(variant, wild_type, labels) == 1.0
+
+
+def test_a_global_downward_shift_is_not_mistaken_for_sensitivity():
+    """Comparing raw scores would hand 1.0 to a model that merely scores the variant lower
+    everywhere. Ranks are invariant to that, so it scores 0 — no site actually moved."""
+    labels, wild_type = _dead_case()
+    assert metrics.suppression(wild_type - 100.0, wild_type, labels) == 0.0
+    assert metrics.suppression(wild_type * 0.001, wild_type, labels) == 0.0
+
+
+def test_random_rearrangement_lands_near_a_half():
+    rng = np.random.default_rng(0)
+    labels, wild_type = _dead_case(n=2000, n_pos=200)
+    draws = [
+        metrics.suppression(rng.normal(size=2000), rng.normal(size=2000), labels) for _ in range(40)
+    ]
+    assert 0.4 < float(np.mean(draws)) < 0.6
+
+
+def test_suppression_is_undefined_when_the_reference_binds_nothing_either():
+    labels = np.zeros(50, dtype=np.int64)
+    assert np.isnan(metrics.suppression(np.zeros(50), np.zeros(50), labels))

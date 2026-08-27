@@ -31,7 +31,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from snp2prot import corpus, distances, experiment, splits, thresholds, tracking
+from snp2prot import (
+    corpus,
+    distances,
+    experiment,
+    label_health,
+    splits,
+    thresholds,
+    tracking,
+)
 from snp2prot.baselines import nn_lookup
 from snp2prot.config import PROCESSED_DIR, REPORTS_DIR
 from snp2prot.data.matrix import KmerMatrix
@@ -62,9 +70,31 @@ def score_fold(
     precision_at: tuple[int, ...],
     precision_target: float,
 ) -> tuple[dict, pd.DataFrame]:
-    """One fold: choose neighbours, copy profiles, score every held-out domain."""
+    """One fold: choose neighbours, copy their binary calls, score every held-out domain."""
     pool = fold.train[trainable[fold.train]]
     prediction = nn_lookup.fit_predict(matrix, dist, fold.test, pool, min_overlap, k)
+
+    # The baseline predicts a held-out variant by copying its wild type, so it suppresses none
+    # of the wild type's sites and scores exactly 0 — the literal null hypothesis for C1.
+    reference_of = corpus.reference_rows(domains)
+    dead = (domains.verdict.to_numpy() == label_health.DEAD_VARIANT) & (reference_of >= 0)
+    # …and only where the wild type stayed in training. Held out alongside its variant, the
+    # comparison is against a model that never saw either, and the baseline's exact 0 stops
+    # holding — it copies some other domain instead of the wild type.
+    dead &= ~np.isin(reference_of, fold.test)
+    suppressed = []
+    for i, row in enumerate(fold.test):
+        # `dead_variant` only, never `no_evidence`: a silent record with no control cannot be told
+        # from a failed assay, so its lack of positives is not evidence the model should be scored
+        # against (`T21`). And never a domain that binds — suppression is the metric for the ones
+        # AUPR cannot reach.
+        if not dead[row]:
+            suppressed.append(float("nan"))
+            continue
+        ref = reference_of[row]
+        wild_type = (matrix.label[ref] == 1).astype(np.float32)
+        suppressed.append(metrics.suppression(prediction.profile[i], wild_type, matrix.label[ref]))
+    suppressed = np.asarray(suppressed, dtype=np.float64)
 
     scores = [
         metrics.score_domain(
@@ -85,6 +115,10 @@ def score_fold(
         "n_train": float(len(pool)),
         "identity": float(prediction.neighbours.identity.median()),
         "n_without_neighbour": float(prediction.n_without_neighbour),
+        "suppression": (
+            float(np.nanmean(suppressed)) if np.isfinite(suppressed).any() else float("nan")
+        ),
+        "n_scored_suppression": float(np.isfinite(suppressed).sum()),
     }
 
     per_domain = pd.DataFrame(
@@ -99,7 +133,7 @@ def score_fold(
             "n_pos": [s.n_pos for s in scores],
             "aupr": [s.aupr for s in scores],
             "auroc": [s.auroc for s in scores],
-            "spearman": [s.spearman for s in scores],
+            "suppression": suppressed,
             "neighbour_identity": prediction.neighbours.identity.to_numpy(),
             "neighbour_edits": prediction.neighbours.n_edits.to_numpy(),
         }
@@ -203,23 +237,31 @@ def write_report(
         "degradation curve cannot be interpreted without it and because it is the cheapest",
         "available check that the split regimes hold out what they claim to.",
         "",
-        "For each held-out domain the baseline copies the **E-score profile of the most",
-        "identical training domain**, ranks all 32,896 8-mers by it, and is scored per protein",
-        "and macro-averaged. Identity is `1 - n_edits / n_aligned` over a BLOSUM62 alignment",
-        f"with free terminal gaps, and a candidate must align over at least {min_overlap:.0%} of",
-        "the shorter domain to be eligible.",
+        "For each held-out domain the baseline copies the profile of the **most identical",
+        "training domain**, ranks all 32,896 8-mers by it, and is scored per protein and",
+        "macro-averaged. Identity is `1 - n_edits / n_aligned` over a BLOSUM62 alignment with",
+        f"free terminal gaps, and a candidate must align over at least {min_overlap:.0%} of the",
+        "shorter domain to be eligible.",
+        "",
+        "**It copies the neighbour's binary calls**, which is exactly the information the model",
+        "is trained on, so the comparison is between methods rather than between inputs. Copying",
+        "the continuous E-score profile instead — what this did until 2026-08-26 — scored 0.786",
+        "against 0.472 on `S1/fold-0`, and that gap is not a property of the method. A PBM",
+        "E-score is a rank-enrichment statistic against background, read by the field at a",
+        "cutoff and stored here at 0.45 / 0.35; it is not a graded affinity, so its ordering is",
+        "not a quantity to predict. The whole corpus is binary, baseline included.",
         "",
         "## The regimes",
         "",
-        "| regime | fold | test | train | AUPR | median | AUROC | Spearman | P@10 | P@50 "
-        "| R@P0.5 | NN identity |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| regime | fold | test | train | AUPR | median | AUROC | P@10 | P@50 | R@P0.5 "
+        "| NN identity |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in primary.itertuples():
         lines.append(
             f"| {row.regime} | `{row.fold}` | {int(row.n_domains)} | {int(row.n_train)} | "
-            f"**{_fmt(row.aupr)}** | {_fmt(row.aupr_median)} | {_fmt(row.auroc, 3)} | "
-            f"{_fmt(row.spearman, 3)} | {_fmt(row.precision_at_10, 3)} | "
+            f"**{_fmt(row.aupr)}** | {_fmt(row.aupr_median)} | "
+            f"{_fmt(row.auroc, 3)} | {_fmt(row.precision_at_10, 3)} | "
             f"{_fmt(row.precision_at_50, 3)} | {_fmt(row.recall_at_precision, 3)} | "
             f"{_fmt(row.identity, 3)} |"
         )
@@ -462,6 +504,29 @@ def write_report(
     for row in primary.itertuples():
         fold = by_label[f"{row.regime}/{row.fold}"]
         lines.append(f"| {row.regime} | `{row.fold}` | {fold.held_out} | `{row.digest}` |")
+
+    dead_rows = primary[primary.n_scored_suppression > 0]
+    if len(dead_rows):
+        lines += [
+            "",
+            "## The dead variants",
+            "",
+            "Records with no positive 8-mer at all, where AUPR is undefined. Scored by",
+            "`suppression`: of the sites the wild type binds, the fraction ranked *lower* in the",
+            "variant. **The baseline scores 0 wherever the wild type is in its training pool**,",
+            "because it predicts the variant by copying it — which is exactly what makes it the",
+            "null hypothesis for claim `C1` rather than merely a comparison. Folds that hold the",
+            "wild type out alongside its variant are not scored: the number stops meaning",
+            "anything there, because the lookup copies some unrelated domain instead.",
+            "",
+            "| regime | fold | dead variants | suppression |",
+            "|---|---|---:|---:|",
+        ]
+        for row in dead_rows.itertuples():
+            lines.append(
+                f"| {row.regime} | `{row.fold}` | {int(row.n_scored_suppression)} | "
+                f"{_fmt(row.suppression)} |"
+            )
 
     lines += ["", tracking.provenance_line()]
 

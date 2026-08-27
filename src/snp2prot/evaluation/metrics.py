@@ -4,8 +4,14 @@
 466:1 negative to positive, so any metric that rewards correct negatives measures the class
 balance rather than the model: calling every pair non-binding scores 99.8% accuracy and is
 worthless. AUPR is the primary number, precision@k and recall-at-fixed-precision are the
-readable secondaries, Spearman against the raw E-score is the one that does not throw away
-the no-call band's information, and AUROC is reported only because some readers expect it.
+readable secondaries, and AUROC is reported only because some readers expect it.
+
+**Nothing here scores against the raw E-score.** A Spearman correlation against it was reported
+until 2026-08-26 and was removed: a universal-PBM E-score is a rank-enrichment statistic read by
+the field at a cutoff, not a graded affinity, so correlating with its ordering reads a precision
+into the assay that is not there. The label is the measurement. `spearman` survives in this
+module as a utility — `scripts/check_pooling.py` correlates embedding displacement against edit
+count with it — but it is not a model metric.
 
 **Per protein, then macro-averaged.** For each held-out domain, rank all 32,896 8-mers, score
 that ranking, and average across domains — every protein counts once whatever its positive
@@ -19,8 +25,6 @@ Two things this module refuses to paper over:
 **A domain with no positives has no AUPR.** 54 records have no positive 8-mer (`T21`), 20 of
 them variants that measurably lost binding. Their AUPR is not zero and not one — it does not
 exist, so it is `nan` here and the macro-average skips it and reports how many it skipped.
-Their Spearman against the raw E-score is perfectly well defined, and is the number to read
-for them.
 
 **But "undefined" and "failed" are different, and only the first may be skipped.** That
 distinction was lost once: `recall_at_precision` returned `nan` for a ranking that never reached
@@ -32,8 +36,7 @@ an average over an unstated subset.
 
 **The no-call band is excluded, not counted as negative.** `label == -1` is absent evidence:
 the 8-mer fell between the two cutoffs, or replicates disagreed. Ranking metrics see only
-`label in (0, 1)` cells; Spearman uses every cell, because it reads the continuous score
-underneath the label rather than the label.
+`label in (0, 1)` cells.
 
 **Ties are not broken, they are collapsed.** Sorting equal scores by array position and then
 scoring the result is how a metric silently rewards an ordering the model never expressed: a
@@ -118,7 +121,13 @@ def recall_at_precision(labels: np.ndarray, scores: np.ndarray, target: float) -
 
 
 def spearman(a: np.ndarray, b: np.ndarray) -> float:
-    """Spearman rank correlation, ties averaged."""
+    """Spearman rank correlation, ties averaged.
+
+    **Not a model metric.** Nothing in the evaluation path scores a prediction against the raw
+    E-score any more (see the module docstring). This stays because `scripts/check_pooling.py`
+    needs a rank correlation for a different question — how far a pooled embedding moves against
+    how many residues changed — and importing scipy for twelve lines is not worth it.
+    """
     ra, rb = _average_ranks(a), _average_ranks(b)
     ra = ra - ra.mean()
     rb = rb - rb.mean()
@@ -175,8 +184,12 @@ def chance_aupr(labels: np.ndarray) -> float:
     return float(np.mean(positive[keep] / n[keep])) if keep.any() else float("nan")
 
 
-def null_aupr(labels: np.ndarray, repeats: int = 200, seed: int = 0) -> dict[str, float]:
-    """The distribution of macro AUPR under a random ranking: `{null_mean, null_p95}`.
+def random_baseline(labels: np.ndarray, repeats: int = 200, seed: int = 0) -> dict[str, float]:
+    """The distribution of macro AUPR under a random ranking: `{random_mean, random_p95}`.
+
+    **Not to be confused with the model's null anchor** (`snp2prot.models.two_tower`), which is a
+    learned vector inside the shared space. This is a property of the held-out labels alone: what
+    a predictor with no information scores on them.
 
     `chance_aupr` gives the null's centre but not its width, and a ratio near 1 is an eyeball
     rather than a test. This samples the whole macro statistic so a result can be called
@@ -199,7 +212,7 @@ def null_aupr(labels: np.ndarray, repeats: int = 200, seed: int = 0) -> dict[str
     keep = (positive > 0) & (n > 0)
     n, positive = n[keep], positive[keep]
     if not len(n):
-        return {"null_mean": float("nan"), "null_p95": float("nan")}
+        return {"random_mean": float("nan"), "random_p95": float("nan")}
 
     samples = np.empty(repeats, dtype=np.float64)
     for r in range(repeats):
@@ -209,7 +222,51 @@ def null_aupr(labels: np.ndarray, repeats: int = 200, seed: int = 0) -> dict[str
                 for total, k in zip(n, positive, strict=True)
             ]
         )
-    return {"null_mean": float(samples.mean()), "null_p95": float(np.percentile(samples, 95))}
+    return {"random_mean": float(samples.mean()), "random_p95": float(np.percentile(samples, 95))}
+
+
+def suppression(
+    variant_scores: np.ndarray, reference_scores: np.ndarray, reference_labels: np.ndarray
+) -> float:
+    """Of the sites the wild type binds, the fraction the model scores *lower* for the variant.
+
+    **The metric for a domain that binds nothing.** 20 records in a test fold have no positive
+    8-mer — every one a `dead_variant`, a variant whose binding measurably vanished (`T21`) —
+    and AUPR, AUROC and recall-at-precision are all undefined for them. They are also the
+    sharpest evidence for claim C1, so leaving them unscored throws away the best case in the
+    corpus.
+
+    Counting "predicted positives" would need a decision threshold, and the model has none: the
+    null anchor was intended as one but sits inside the negative cloud, with a median of 15,159
+    of 32,460 8-mers scoring above it (measured 2026-08-26). So this compares the variant with
+    its own wild type down the **protein axis** instead, which needs no threshold and no
+    continuous assay value — only the model's two predictions against each other:
+
+    - **1.0** — every site the wild type binds falls in the variant: the model saw that the
+      mutation abolished binding.
+    - **0.5** — the sites moved at random.
+    - **0.0** — the variant is predicted exactly like its wild type.
+
+    **The comparison is between ranks, not scores.** Comparing raw scores would hand 1.0 to any
+    model that simply scores the variant lower everywhere, which is a global offset and not
+    sensitivity to a mutation. Within-profile rank is invariant to that, so an untargeted
+    downward shift scores 0.5 as it should.
+
+    The nearest-neighbour baseline scores **exactly 0** whenever the wild type is in its training
+    pool, because it then predicts the variant by copying that wild type — the null hypothesis
+    for C1 in the literal sense rather than by interpretation. Where the wild type is held out
+    too (`P1`, `S2`) the baseline copies something else and the number stops being interpretable,
+    which is why the callers only score a variant whose reference the model was allowed to see.
+
+    `nan` when the reference binds nothing either — the 2 of 20 dead records that are their own
+    cluster's reference and simply do not bind.
+    """
+    positives = reference_labels == 1
+    if not positives.any():
+        return float("nan")
+    variant_rank = _average_ranks(np.asarray(variant_scores, dtype=np.float64))
+    reference_rank = _average_ranks(np.asarray(reference_scores, dtype=np.float64))
+    return float((variant_rank[positives] < reference_rank[positives]).mean())
 
 
 @dataclass
@@ -220,7 +277,6 @@ class DomainScores:
     n_pos: int
     aupr: float
     auroc: float
-    spearman: float
     recall_at_precision: float
     precision_at: dict[int, float] = field(default_factory=dict)
 
@@ -236,7 +292,7 @@ def score_domain(
     """Score one predicted ranking over all 32,896 8-mers against one domain's measurements.
 
     `labels` carries the three-valued label, `truth_escore` the continuous score behind it.
-    Ranking metrics see only the cells outside the no-call band; Spearman sees all of them.
+    Ranking metrics see only the cells outside the no-call band.
     """
     scored = labels != -1
     binary = (labels[scored] == 1).astype(np.int64)
@@ -246,7 +302,6 @@ def score_domain(
         n_pos=int(binary.sum()),
         aupr=average_precision(binary, ranked),
         auroc=auroc(binary, ranked),
-        spearman=spearman(truth_escore, predicted),
         recall_at_precision=recall_at_precision(binary, ranked, precision_target),
         precision_at={k: precision_at_k(binary, ranked, k) for k in precision_at},
     )
@@ -266,7 +321,6 @@ def macro_average(scores: list[DomainScores]) -> dict[str, float]:
     columns: dict[str, list] = {
         "aupr": list(aupr),
         "auroc": [s.auroc for s in scores],
-        "spearman": [s.spearman for s in scores],
         "recall_at_precision": [s.recall_at_precision for s in scores],
         **{
             f"precision_at_{k}": [s.precision_at[k] for s in scores] for k in scores[0].precision_at

@@ -7,9 +7,21 @@ sources. It is the standard method in the field and the first question a biologi
 model here: *isn't this just copying the most similar protein's motif?* Any model that does not
 beat it under `S2` has learned nothing transferable (`CLAUDE.md`; `docs/ML_PLAN.md` §8.1).
 
-**It predicts an E-score profile, not labels.** The neighbour's E-scores rank all 32,896
-8-mers, which is the same output shape the contrastive model produces, so AUPR, precision@k
-and Spearman compare the two directly with no special-casing.
+**It copies the neighbour's binary calls, not its E-scores.** It used to copy the continuous
+profile, and that was wrong twice over.
+
+*It is not a like-for-like comparison.* Measured 2026-08-26, same neighbour and same overlap
+guard, the continuous form scored **0.786 against 0.472** on `S1/fold-0` and **0.391 against
+0.145** on `S2/fold-0`. Between 29% and 76% of the old baseline's AUPR came from the ordering
+*within* the copied profile — information the model is never given, since it trains on labels.
+Scoring a binary-trained model against a continuous-profile lookup compares inputs, not methods.
+
+*And the ordering is not a quantity the assay reports.* A universal-PBM E-score is a
+rank-enrichment statistic on a fixed [-0.5, 0.5] scale, read by the field at a cutoff and stored
+here at 0.45 / 0.35 (`configs/thresholds.yaml`). It measures statistical enrichment against
+background, **not graded affinity**, so ranking 8-mers by it reads a precision into the number
+that is not there. That is why the dataset stores a binary label, and why the whole PBM corpus —
+training, baseline and evaluation alike — is binary.
 
 **Selection is percent identity over the aligned domain, under the overlap guard.** Identity
 is `1 - n_edits / n_aligned` from `snp2prot.distances`, and a candidate is only eligible if the
@@ -42,6 +54,15 @@ from snp2prot.distances import DomainDistances
 #: neighbour to copy and says so; falling back to the best *unguarded* candidate instead would
 #: copy the profile of whichever unrelated domain the aligner mangled most favourably.
 MEAN_PROFILE = "mean"
+
+
+def _calls(matrix: KmerMatrix) -> np.ndarray:
+    """The neighbour's *positive calls* as 1.0 and everything else as 0.0.
+
+    Its own no-call band included: "not called a binder" is the prediction being transferred,
+    and the held-out domain's gray band is masked by the metric rather than by this.
+    """
+    return (matrix.label == 1).astype(np.float32)
 
 
 @dataclass(frozen=True)
@@ -103,6 +124,7 @@ def fit_predict(
     `k = 1` is the primary form — the pure lookup table, and the thing to beat. Above 1 the
     profile is the identity-weighted mean of the top `k` neighbours, which is a slightly
     stronger bar and one extra line (`docs/ML_PLAN.md` §8.1).
+
     """
     test_rows = np.asarray(test_rows, dtype=np.int64)
     train_rows = np.asarray(train_rows, dtype=np.int64)
@@ -110,7 +132,7 @@ def fit_predict(
         raise ValueError("empty training pool: there is nothing to copy from")
 
     picks, identities = choose(distances, test_rows, train_rows, min_overlap, k)
-    escore = matrix.escore
+    escore = _calls(matrix)
     fallback = escore[train_rows].mean(axis=0)
     overlap = distances.overlap()
 

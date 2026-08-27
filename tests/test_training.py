@@ -231,7 +231,7 @@ def test_run_fold_reports_both_models_and_a_disjoint_split(fold_inputs):
     )
     assert len(per_domain) == 3
     assert list(per_domain.domain) == list(frame.dbd_seq.to_numpy()[fold.test])
-    for key in ("aupr", "aupr_final", "selection_gain", "chance_aupr", "null_p95", "digest"):
+    for key in ("aupr", "aupr_final", "selection_gain", "chance_aupr", "random_p95", "digest"):
         assert key in summary, key
     assert summary["selection_gain"] == pytest.approx(summary["aupr"] - summary["aupr_final"])
     assert summary["n_train"] + summary["n_validation"] == len(fold.train)

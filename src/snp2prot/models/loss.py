@@ -33,9 +33,18 @@ The fix is to make `ν` the target when `P_p` is empty, which drives every real 
 relative to a learned reference point. Writing `P̃_p = P_p` if non-empty else `{ν}` covers both
 cases in one expression, so there is no branch on "does this domain have positives".
 
-For a domain that *does* have positives, `ν` is one more competitor in the denominator, and it
-learns a position meaning "good enough to call binding" — a global decision threshold, obtained
-for free (`docs/TRAINING.md` §3.3).
+For a domain that *does* have positives, `ν` is one more competitor in the denominator.
+
+**It was expected to settle into a decision threshold, and it does not.** Measured on a trained
+checkpoint (2026-08-26): the anchor sits at −24.3 where the negatives' median is −26.4 and the
+positives' median is +9.6, and a median of **15,159 of 32,460 8-mers score above it**. It lands
+inside the negative cloud, not between the two classes. The reason is structural — for the ~1,318
+domains that have positives it is simply another negative being pushed down, and the only force
+raising it comes from the 20 domains with none, where it is the target. Nothing downstream may
+treat it as an operating point; `snp2prot.evaluation.metrics.suppression` exists because of this.
+
+What `ν` does do is the paragraph above: it gives a domain with no positives a target, so such a
+row contributes a gradient instead of nothing at all. That job is real and is why it stays.
 
 ## Computed in O(K), not O(|P| · K)
 

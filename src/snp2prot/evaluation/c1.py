@@ -61,8 +61,8 @@ def select(
     """The C1 set, from `run_nn_baseline.py`'s per-domain frame.
 
     `per_domain` needs the `P3/all` rows at `k == 1`: one row per held-out variant with its
-    `aupr`, `verdict` and `spearman`. Returns those rows plus a `c1_reason` column, ordered
-    worst-predicted first.
+    `aupr` and `verdict`. Returns those rows plus a `c1_reason` column, ordered worst-predicted
+    first.
     """
     cfg = experiment.section("c1_set")
     if max_baseline_aupr is None:
@@ -79,7 +79,7 @@ def select(
     selected = rows[undefined | poor].copy()
     selected["c1_reason"] = np.where(~np.isfinite(selected.aupr), LOST_BINDING, POORLY_PREDICTED)
     # Worst first, and the ones with no AUPR at all before the ones that merely score low.
-    return selected.sort_values(["aupr", "spearman"], na_position="first").reset_index(drop=True)
+    return selected.sort_values("aupr", na_position="first").reset_index(drop=True)
 
 
 def summarise(selected: pd.DataFrame, all_variants: pd.DataFrame) -> pd.DataFrame:

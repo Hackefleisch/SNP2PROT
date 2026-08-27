@@ -31,7 +31,7 @@ import numpy as np
 import pandas as pd
 import torch
 
-from snp2prot import corpus, splits, tracking
+from snp2prot import corpus, label_health, splits, tracking
 from snp2prot.config import PROJECT_ROOT, checkpoint_file
 from snp2prot.data.matrix import KmerMatrix
 from snp2prot.embeddings import DomainEmbeddings
@@ -436,9 +436,21 @@ def run_fold(
         precision_at = tuple(int(k) for k in config["metrics"]["precision_at"])
         target = float(config["metrics"]["recall_at_precision"])
 
+        # Dead variants are scored against their own wild type, which usually sits in the
+        # TRAINING set — so the reference rows have to be predicted too, not just the test ones.
+        reference_of = corpus.reference_rows(domains)
+        dead = (domains.verdict.to_numpy() == label_health.DEAD_VARIANT) & (reference_of >= 0)
+        # …and only where the wild type stayed in training. Held out alongside its variant, the
+        # comparison is against a model that never saw either, and the baseline's exact 0 stops
+        # holding — it copies some other domain instead of the wild type.
+        dead &= ~np.isin(reference_of, fold.test)
+        needed = np.unique(reference_of[fold.test][dead[fold.test]])
+
         def score_with(state: dict) -> tuple[dict, list]:
             trainer.load_state(state)
             predicted = trainer.predict(fold.test)
+            reference_pred = trainer.predict(needed) if len(needed) else np.empty((0, 0))
+            at = {row: i for i, row in enumerate(needed)}
             rows = [
                 metrics.score_domain(
                     matrix.label[row],
@@ -450,13 +462,31 @@ def run_fold(
                 )
                 for i, row in enumerate(fold.test)
             ]
-            return metrics.macro_average(rows), rows
+            suppressed = []
+            for i, row in enumerate(fold.test):
+                # `dead` is `dead_variant` records whose wild type stayed in training; see
+                # above. `no_evidence` is excluded because a silent record with no control
+                # cannot be told from a failed assay (`T21`).
+                if not dead[row]:
+                    suppressed.append(float("nan"))
+                    continue
+                ref = reference_of[row]
+                suppressed.append(
+                    metrics.suppression(predicted[i], reference_pred[at[ref]], matrix.label[ref])
+                )
+            summary = metrics.macro_average(rows)
+            values = np.asarray(suppressed, dtype=np.float64)
+            summary["suppression"] = (
+                float(np.nanmean(values)) if np.isfinite(values).any() else float("nan")
+            )
+            summary["n_scored_suppression"] = float(np.isfinite(values).sum())
+            return summary, rows, values
 
         # Both models the run produced. The validation-selected one supplies the headline
         # numbers; the model at the step budget is scored beside it so the selection loss is
         # measured per fold rather than assumed — on `S2/fold-3` it was worth 0.016.
-        final_summary, _ = score_with(result.final_state)
-        summary, scored = score_with(result.best_state)
+        final_summary, _, _ = score_with(result.final_state)
+        summary, scored, suppressed = score_with(result.best_state)
         summary["aupr_final"] = final_summary["aupr"]
         summary["aupr_final_median"] = final_summary["aupr_median"]
         summary["selection_gain"] = summary["aupr"] - final_summary["aupr"]
@@ -465,7 +495,7 @@ def run_fold(
         # the number above is not readable — or comparable — without it.
         held_out_labels = matrix.label[fold.test]
         summary["chance_aupr"] = metrics.chance_aupr(held_out_labels)
-        summary |= metrics.null_aupr(
+        summary |= metrics.random_baseline(
             held_out_labels, repeats=int(config["metrics"]["null_repeats"]), seed=seed
         )
         run.log_metrics({f"test.{k}": v for k, v in summary.items()})
@@ -524,7 +554,7 @@ def run_fold(
             "n_pos": [s.n_pos for s in scored],
             "aupr": [s.aupr for s in scored],
             "auroc": [s.auroc for s in scored],
-            "spearman": [s.spearman for s in scored],
+            "suppression": suppressed,
         }
     )
     return summary, per_domain

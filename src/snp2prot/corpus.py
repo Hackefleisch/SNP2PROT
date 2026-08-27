@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+import numpy as np
 import pandas as pd
 
 from snp2prot import clusters, label_health, merge
@@ -84,6 +85,24 @@ def trainable(domain_table: pd.DataFrame, keep_dead: bool = True) -> pd.Series:
     if not keep_dead:
         drop.add(label_health.DEAD_VARIANT)
     return ~domain_table["verdict"].isin(drop)
+
+
+def reference_rows(domain_table: pd.DataFrame) -> np.ndarray:
+    """For each domain, the row of its cluster's reference — or `-1` if it is its own.
+
+    What `snp2prot.evaluation.metrics.suppression` needs: a dead variant is scored by comparing
+    it with the wild type it came from, which is a *row* of the same tables rather than anything
+    stored on the domain itself.
+    """
+    inventory = clusters.load()
+    reference = dict(zip(inventory.wt_id, inventory.reference, strict=True))
+    row_of = {seq: i for i, seq in enumerate(domain_table.dbd_seq)}
+    out = np.full(len(domain_table), -1, dtype=np.int64)
+    for i, (wt_id, seq) in enumerate(zip(domain_table.wt_id, domain_table.dbd_seq, strict=True)):
+        found = reference.get(wt_id)
+        if found is not None and found != seq:
+            out[i] = row_of.get(found, -1)
+    return out
 
 
 def require_aligned(reference: Sequence, reference_name: str = "the corpus", **tables) -> None:

@@ -93,7 +93,7 @@ def main() -> None:
         f"best at {int(summary['best_step'])}"
     )
     print(f"  validation AUPR {summary['validation_aupr']:.4f}")
-    chance, p95 = summary["chance_aupr"], summary["null_p95"]
+    chance, p95 = summary["chance_aupr"], summary["random_p95"]
     lift = summary["aupr"] / chance
     verdict = (
         "AT CHANCE"
@@ -104,10 +104,12 @@ def main() -> None:
     )
     print(f"  test AUPR       {summary['aupr']:.4f}  (median {summary['aupr_median']:.4f})")
     print(f"  chance {chance:.4f}, null 95th {p95:.4f}  ->  {verdict}")
-    print(
-        f"  test AUROC {summary['auroc']:.3f}  Spearman {summary['spearman']:.3f}  "
-        f"P@50 {summary['precision_at_50']:.3f}"
-    )
+    print(f"  test AUROC {summary['auroc']:.3f}  P@50 {summary['precision_at_50']:.3f}")
+    if summary["n_scored_suppression"]:
+        print(
+            f"  suppression {summary['suppression']:.4f} over "
+            f"{int(summary['n_scored_suppression'])} dead variants  (baseline 0.0000)"
+        )
     print(
         f"  parameters: protein {int(summary['n_params_protein_tower']):,}  "
         f"dna {int(summary['n_params_dna_tower']):,}"

@@ -52,10 +52,7 @@ def baseline_by_fold() -> pd.DataFrame:
     frame = frame[frame.k == 1]
     grouped = frame.groupby(["regime", "fold"], sort=False)
     return pd.DataFrame(
-        {
-            "baseline_aupr": grouped.aupr.mean(),
-            "baseline_median": grouped.aupr.median(),
-        }
+        {"baseline_aupr": grouped.aupr.mean(), "baseline_median": grouped.aupr.median()}
     ).reset_index()
 
 
@@ -130,6 +127,47 @@ def _lift(value: float, chance: float) -> str:
     return f"{lift:.0f}x" if lift >= 10 else f"{lift:.1f}x"
 
 
+def _suppression_section(frame: pd.DataFrame) -> list[str]:
+    """The dead variants — the domains AUPR cannot reach, and the sharpest C1 evidence.
+
+    Of the wild type's binding sites, the fraction the model ranks lower in the variant. The
+    nearest-neighbour baseline scores exactly 0 wherever the wild type is in its training pool,
+    because it predicts the variant by copying it — so this is C1's null hypothesis literally
+    rather than by interpretation, and 0.5 is what an untargeted downward shift scores.
+    """
+    scored = frame[frame.n_scored_suppression > 0]
+    lines = [
+        "",
+        "## Did it notice the mutation? — the dead variants",
+        "",
+        "20 held-out records have **no positive 8-mer at all**: variants whose binding measurably",
+        "vanished (`T21`). AUPR, AUROC and R@P0.5 are undefined for every one of them, and they",
+        "are the sharpest evidence the corpus holds for claim **C1**. They are scored instead by",
+        "`suppression` — of the sites the wild type binds, the fraction the model ranks *lower*",
+        "in the variant (`snp2prot.evaluation.metrics.suppression`).",
+        "",
+        "**1.0** the model saw the mutation abolish binding · **0.5** the sites moved at random ·",
+        "**0.0** the variant is predicted exactly like its wild type, which is what the",
+        "nearest-neighbour baseline does by construction.",
+        "",
+    ]
+    if not len(scored):
+        return lines + [
+            "No fold scored one: the wild type was held out alongside every variant.",
+            "",
+        ]
+    lines += [
+        "| arm | regime | fold | dead variants | suppression | baseline |",
+        "|---|---|---|---:|---:|---:|",
+    ]
+    for row in scored.itertuples():
+        lines.append(
+            f"| `{row.arm}` | {row.regime} | `{row.fold}` | {int(row.n_scored_suppression)} | "
+            f"**{_fmt(row.suppression)}** | 0.0000 |"
+        )
+    return lines + [""]
+
+
 def _selection_section(frame: pd.DataFrame) -> list[str]:
     """Did selecting on validation beat just taking the model at the step budget?
 
@@ -163,19 +201,19 @@ def _selection_section(frame: pd.DataFrame) -> list[str]:
 def _null_section(frame: pd.DataFrame, repeats: int) -> list[str]:
     """Which results are, and are not, distinguishable from a random ranking.
 
-    A multiple near 1 is an eyeball, not a test. `metrics.null_aupr` samples the macro statistic
-    under a random ranking of the same held-out labels, and a result at or below the 95th
-    percentile of that null is reported as **at chance** rather than as a small number.
+    A multiple near 1 is an eyeball, not a test. `metrics.random_baseline` samples the macro
+    statistic under a random ranking of the same held-out labels, and a result at or below the
+    95th percentile of it is reported as **at chance** rather than as a small number.
     """
-    at_chance = frame[frame.aupr <= frame.null_p95]
+    at_chance = frame[frame.aupr <= frame.random_p95]
     lines = [
         "",
         "## Is it better than random?",
         "",
-        "The null is the macro AUPR of a *random* ranking of the same held-out domains, sampled",
-        f"{repeats} times (`snp2prot.evaluation.metrics.null_aupr`). A result at or below the",
-        "95th percentile of that null is indistinguishable from guessing, whatever its delta",
-        "against the baseline looks like.",
+        "The reference is the macro AUPR of a *random* ranking of the same held-out domains,",
+        f"sampled {repeats} times (`metrics.random_baseline`). A result at or below the 95th",
+        "percentile of it is indistinguishable from guessing, whatever its delta against the",
+        "baseline looks like.",
         "",
     ]
     if not len(at_chance):
@@ -191,7 +229,7 @@ def _null_section(frame: pd.DataFrame, repeats: int) -> list[str]:
     for row in at_chance.itertuples():
         lines.append(
             f"| `{row.arm}` | {row.regime} | `{row.fold}` | {_fmt(row.aupr)} | "
-            f"{_fmt(row.null_mean)} | {_fmt(row.null_p95)} | **at chance** |"
+            f"{_fmt(row.random_mean)} | {_fmt(row.random_p95)} | **at chance** |"
         )
     return lines + [""]
 

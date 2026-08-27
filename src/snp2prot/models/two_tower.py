@@ -7,6 +7,11 @@ beyond the encoders:
 the DNA embedding table so that the table has `K + 1` rows. It is L2-normalised like every other
 point in the space, which keeps it plottable on §5.2's UMAP and keeps every score a cosine.
 
+Its job is to give a domain with **no positive 8-mer** something to be the target of, so that
+such a row produces a gradient rather than a vacuous average over an empty set
+(`snp2prot.models.loss`). It was also expected to become a decision threshold and **does not** —
+measured, a median of 15,159 of 32,460 8-mers outscore it. Do not read it as an operating point.
+
 **The temperature** — stored as `log(1/τ)` and clamped, the CLIP convention. Learned by default:
 it is one fewer thing to sweep across 19 folds × 4 arms, and the scale it has to find depends on
 `D`, which varies between experiments.

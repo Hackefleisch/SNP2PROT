@@ -41,7 +41,7 @@ def corpus():
 def test_it_copies_the_most_identical_training_domain(corpus):
     matrix, d = corpus
     got = nn_lookup.fit_predict(matrix, d, np.array([0]), np.array([1, 2, 3]), min_overlap=0.6)
-    assert list(got.profile[0]) == list(matrix.escore[1])
+    np.testing.assert_array_equal(got.profile[0], (matrix.label[1] == 1).astype(np.float32))
     assert got.neighbours.neighbour[0] == NEAR
     assert got.neighbours.n_edits[0] == 1
 
@@ -71,14 +71,16 @@ def test_a_query_with_no_eligible_neighbour_gets_the_mean_profile_and_is_counted
     matrix, d = corpus
     got = nn_lookup.fit_predict(matrix, d, np.array([3]), np.array([0, 1]), min_overlap=0.6)
     assert got.n_without_neighbour == 1
-    assert list(got.profile[0]) == list(matrix.escore[[0, 1]].mean(axis=0))
+    expected = (matrix.label[[0, 1]] == 1).astype(np.float32).mean(axis=0)
+    np.testing.assert_allclose(got.profile[0], expected)
 
 
 def test_top_k_averages_the_neighbours_but_still_reports_the_closest(corpus):
     matrix, d = corpus
     got = nn_lookup.fit_predict(matrix, d, np.array([0]), np.array([1, 2]), 0.6, k=2)
     assert got.neighbours.neighbour[0] == NEAR
-    between = (matrix.escore[1] + matrix.escore[2]) / 2
+    calls = (matrix.label[[1, 2]] == 1).astype(np.float32)
+    between = calls.mean(axis=0)
     assert got.profile[0] == pytest.approx(between, abs=0.01)  # identity-weighted, near equal
 
 
@@ -86,3 +88,31 @@ def test_an_empty_training_pool_is_an_error_rather_than_a_silent_mean(corpus):
     matrix, d = corpus
     with pytest.raises(ValueError, match="nothing to copy"):
         nn_lookup.fit_predict(matrix, d, np.array([0]), np.array([], dtype=int), 0.6)
+
+
+# --- the binary form: the bar that matches what the model is trained on -------------------
+
+
+def test_it_copies_the_neighbours_binary_calls(corpus):
+    """The matched bar: exactly the information the model trains on. The continuous profile
+    carries 29-76% more signal, so scoring a binary-trained model against it would compare
+    inputs rather than methods (see the module docstring)."""
+    matrix, d = corpus
+    got = nn_lookup.fit_predict(matrix, d, np.array([0]), np.array([1, 2, 3]), min_overlap=0.6)
+    assert set(np.unique(got.profile[0])) <= {0.0, 1.0}
+    np.testing.assert_array_equal(got.profile[0], (matrix.label[1] == 1).astype(np.float32))
+
+
+def test_a_neighbours_no_call_band_is_not_transferred_as_a_binding_call(corpus):
+    matrix, d = corpus
+    gray = matrix.label[1] == -1
+    got = nn_lookup.fit_predict(matrix, d, np.array([0]), np.array([1]), min_overlap=0.6)
+    assert not got.profile[0][gray].any(), "the neighbour's gray band must not predict binding"
+
+
+def test_the_continuous_profile_is_never_copied(corpus):
+    """A PBM E-score is a rank-enrichment statistic read at a cutoff, not a graded affinity, so
+    its ordering is not a quantity to transfer."""
+    matrix, d = corpus
+    got = nn_lookup.fit_predict(matrix, d, np.array([0]), np.array([1, 2, 3]), min_overlap=0.6)
+    assert not np.allclose(got.profile[0], matrix.escore[1])

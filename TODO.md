@@ -181,6 +181,23 @@ were already parsed and one fails condition 2 outright. See
 
 ## Open tasks
 
+### T37 — measure the across-seed variance, and decide what a seed should vary
+`model.seed` was split out of `splits.seed` on 2026-08-26: which domains are held out and how the
+towers are initialised are unrelated choices, and one number was doing both. `scripts/run_grid.py
+--seeds N` now runs each fold at `model.seed`, `model.seed + 1`, ... and the report prints the
+per-regime spread; the default is 1 seed, so the grid stays one run per (arm, fold).
+
+**Nothing has measured that spread yet, and several claims need it.** The `A1` -> `A4` deltas ran
+0.01-0.05 in the first grid, and a difference smaller than the run-to-run noise is not a result.
+Within-seed reproducibility is excellent — two identical runs agreed to 4e-6 — but that says
+nothing about a different initialisation.
+
+Start with `--seeds 3` on one arm restricted to a few folds (`--regime S2` is the one that
+matters), roughly 70 min at the 15,000-step budget, and read the spread off the new section. The
+open question underneath is *what* a seed should vary: initialisation and batch order only, as
+now, or also the validation carve — the latter is arguably the larger source of variance on `S2`,
+where a component-grouped 15% slice can differ a lot between draws.
+
 ### T36 — Tier 0: a non-linear protein tower, on `A4` first
 Raised by `T35`'s own output on 2026-08-25, which corrected `ML_RESULTS.md` §4.3. An RBF kernel
 ridge on the `A4` embedding scores **0.568 / 0.342 / 0.196** on `S2` folds 0/2/4 against the

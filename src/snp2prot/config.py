@@ -107,13 +107,15 @@ def embedding_table(arm: str) -> Path:
     return EMBEDDING_DIR / f"{arm}.npz"
 
 
-def checkpoint_file(arm: str, regime: str, fold: str) -> Path:
-    """Trained weights for one (arm, fold), e.g. `checkpoint_file("A1", "P3", "half:draw-0")`.
+def checkpoint_file(arm: str, regime: str, fold: str, seed: int) -> Path:
+    """Trained weights for one (arm, fold, seed), e.g. `("A1", "P3", "half:draw-0", 20260819)`.
 
-    `:` is legal in a fold name and awkward in a filename, so it becomes `-`; the fold's real
-    name is stored inside the checkpoint, which is what a reader should trust.
+    The seed is in the name because `run_grid.py --seeds N` trains the same fold more than once
+    and the files must not overwrite each other. `:` is legal in a fold name and awkward in a
+    filename, so it becomes `-`; the fold's real name is stored inside the checkpoint, which is
+    what a reader should trust.
     """
-    return CHECKPOINT_DIR / f"{arm}_{regime}_{fold.replace(':', '-')}.pt"
+    return CHECKPOINT_DIR / f"{arm}_{regime}_{fold.replace(':', '-')}_seed{seed}.pt"
 
 
 def raw_dir(source: str, create: bool = False) -> Path:

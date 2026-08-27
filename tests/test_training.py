@@ -69,6 +69,7 @@ def _config(steps: int = 20, **training_overrides):
             "temperature": 0.07,
             "learn_temperature": True,
             "max_logit_scale": 100.0,
+            "seed": 11,
         },
         "training": {
             "steps": steps,
@@ -209,7 +210,7 @@ def fold_inputs(tmp_path, monkeypatch):
     monkeypatch.setattr(
         training,
         "checkpoint_file",
-        lambda arm, regime, name: tmp_path / f"{arm}_{regime}_{name}.pt",
+        lambda arm, regime, name, seed: tmp_path / f"{arm}_{regime}_{name}_s{seed}.pt",
     )
     return _corpus()
 
@@ -302,3 +303,45 @@ def test_a_checkpoint_path_outside_the_repo_is_reported_absolute_not_crashed(tmp
     assert training._repo_relative(inside) == str(inside.relative_to(PROJECT_ROOT))
     outside = tmp_path / "A1_S1_fold-0.pt"
     assert training._repo_relative(outside) == str(outside)
+
+
+def test_the_model_seed_is_separate_from_the_split_seed(fold_inputs):
+    """They were one number. Which domains are held out and how the towers are initialised are
+    unrelated choices, and varying the first would silently have re-initialised the second."""
+    frame, matrix, vectors, dist = fold_inputs
+    fold = splits.Fold("S1", "fold-0", np.array([0, 1]), np.arange(2, N_DOMAINS), "")
+    common = dict(
+        domains=frame,
+        matrix=matrix,
+        embeddings=vectors,
+        distances=dist,
+        trainable=np.ones(N_DOMAINS, dtype=bool),
+        device=torch.device("cpu"),
+        track=False,
+    )
+    a, _ = training.run_fold(fold, "A1", config=_config(), model_seed=1, **common)
+    b, _ = training.run_fold(fold, "A1", config=_config(), model_seed=2, **common)
+
+    assert a["seed"] == b["seed"], "the split seed must not move with the model seed"
+    assert a["digest"] == b["digest"], "the held-out set must be identical"
+    assert a["model_seed"] == 1 and b["model_seed"] == 2
+    assert a["checkpoint"] != b["checkpoint"], "seeds must not overwrite each other's weights"
+
+
+def test_the_model_seed_defaults_to_the_configured_one(fold_inputs):
+    frame, matrix, vectors, dist = fold_inputs
+    fold = splits.Fold("S1", "fold-0", np.array([0, 1]), np.arange(2, N_DOMAINS), "")
+    cfg = _config()
+    summary, _ = training.run_fold(
+        fold,
+        "A1",
+        frame,
+        matrix,
+        vectors,
+        dist,
+        cfg,
+        trainable=np.ones(N_DOMAINS, dtype=bool),
+        device=torch.device("cpu"),
+        track=False,
+    )
+    assert summary["model_seed"] == cfg["model"]["seed"]

@@ -120,6 +120,14 @@ model:
     hidden: 0
     dropout: 0.0
 
+  # Weight initialisation and batch order. SEPARATE FROM splits.seed, which decides which
+  # domains are held out: those are unrelated choices with different blast radii, and sharing
+  # one number meant a different fold assignment would silently also re-initialise the towers.
+  # Split apart 2026-08-26. `scripts/run_grid.py --seeds N` runs each fold at this seed and the
+  # N-1 that follow it, which is how a variance estimate is obtained; the default of 1 seed
+  # keeps the grid at one run per (arm, fold).
+  seed: 20260819
+
   # CLIP convention: stored as log(1/temperature), clamped, and learned by default -- one
   # fewer thing to sweep across 19 folds x 4 arms, and the right scale depends on `width`.
   temperature: 0.07

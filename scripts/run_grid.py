@@ -61,12 +61,23 @@ def main() -> None:
     add_common_arguments(ap)
     ap.add_argument("--arm", action="append", dest="arms", help="repeatable; default A1 and A4")
     ap.add_argument("--regime", action="append", help="restrict to these regimes")
+    ap.add_argument(
+        "--seeds",
+        type=int,
+        default=1,
+        help="run each fold at this many model seeds, starting from model.seed (default 1). "
+        "The only way to get an error bar: with one seed a delta between arms cannot be "
+        "told from initialisation noise.",
+    )
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = ap.parse_args()
     arms = args.arms or ["A1", "A4"]
 
     config = apply_overrides(experiment.load(), args)
     device = training.device_for(args.device)
+    if args.seeds < 1:
+        raise SystemExit("--seeds must be at least 1")
+    seeds = [int(config["model"]["seed"]) + i for i in range(args.seeds)]
     started = time.time()
 
     summaries: list[dict] = []
@@ -76,28 +87,32 @@ def main() -> None:
         folds = [f for f in splits.all_regimes(domains, dist)]
         if args.regime:
             folds = [f for f in folds if f.regime in set(args.regime)]
-        print(f"{arm} ({vectors.model}): {len(folds)} folds")
+        seeded = f" x {len(seeds)} seeds" if len(seeds) > 1 else ""
+        print(f"{arm} ({vectors.model}): {len(folds)} folds{seeded}")
         for fold in folds:
-            summary, rows = training.run_fold(
-                fold,
-                arm,
-                domains,
-                matrix,
-                vectors,
-                dist,
-                config,
-                trainable,
-                device=device,
-                track=not args.no_track,
-            )
-            summaries.append(summary)
-            per_domain.append(rows)
-            print(
-                f"  {fold.label:<20} AUPR {summary['aupr']:.4f}  "
-                f"val {summary['validation_aupr']:.4f}  "
-                f"{int(summary['steps_run'])} steps  ({time.time() - started:.0f}s)",
-                flush=True,
-            )
+            for model_seed in seeds:
+                summary, rows = training.run_fold(
+                    fold,
+                    arm,
+                    domains,
+                    matrix,
+                    vectors,
+                    dist,
+                    config,
+                    trainable,
+                    device=device,
+                    track=not args.no_track,
+                    model_seed=model_seed,
+                )
+                summaries.append(summary)
+                per_domain.append(rows)
+                tag = f"  seed {model_seed}" if len(seeds) > 1 else ""
+                print(
+                    f"  {fold.label:<20} AUPR {summary['aupr']:.4f}  "
+                    f"val {summary['validation_aupr']:.4f}  "
+                    f"{int(summary['steps_run'])} steps{tag}  ({time.time() - started:.0f}s)",
+                    flush=True,
+                )
 
     frame = pd.DataFrame(summaries).merge(baseline_by_fold(), on=["regime", "fold"], how="left")
     frame["delta"] = frame.aupr - frame.baseline_aupr
@@ -125,6 +140,42 @@ def _lift(value: float, chance: float) -> str:
         return "n/a"
     lift = value / chance
     return f"{lift:.0f}x" if lift >= 10 else f"{lift:.1f}x"
+
+
+def _seed_section(frame: pd.DataFrame) -> list[str]:
+    """How much of a fold's number is the initialisation rather than the data.
+
+    With one seed there is no error bar and a delta between arms cannot be told from noise, so
+    the report says so rather than letting the reader assume otherwise.
+    """
+    per_fold = frame.groupby(["arm", "regime", "fold"], sort=False).aupr
+    n = int(per_fold.count().max())
+    if n < 2:
+        return [
+            "",
+            "**One seed per fold.** `model.seed` fixes the initialisation and the batch order, so",
+            "every number here is a single draw and none of them carry an error bar. A difference",
+            "between arms or between folds smaller than the run-to-run spread cannot be told from",
+            "initialisation noise, and that spread is unmeasured. `run_grid.py --seeds 3` measures",
+            "it (`TODO.md` `T37`).",
+            "",
+        ]
+    spread = per_fold.std(ddof=1)
+    return [
+        "",
+        f"## Across seeds ({n} per fold)",
+        "",
+        "`model.seed` varies the initialisation and the batch order; the split is identical, so",
+        "this isolates run-to-run noise. A delta smaller than the spread below is not a result.",
+        "",
+        "| regime | folds | mean spread (sd) | worst fold |",
+        "|---|---:|---:|---:|",
+        *[
+            f"| {regime} | {len(g)} | {g.mean():.4f} | {g.max():.4f} |"
+            for regime, g in spread.groupby(level="regime", sort=False)
+        ],
+        "",
+    ]
 
 
 def _suppression_section(frame: pd.DataFrame) -> list[str]:

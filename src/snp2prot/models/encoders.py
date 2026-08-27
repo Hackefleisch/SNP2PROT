@@ -111,6 +111,13 @@ class ProteinTower(nn.Module):
     """
 
     def __init__(self, in_features: int, width: int, hidden: int = 0, dropout: float = 0.0):
+        """**`dropout` means two different things, depending on `hidden`.** With a hidden layer it
+        drops hidden units, the usual sense. Without one there is no hidden layer to drop, so it
+        drops *input features* — a different regulariser (it augments the frozen embedding rather
+        than thinning a representation the model built). Both are defensible and both default to
+        0.0; what is not defensible is reading a swept `dropout` across the two shapes as one
+        quantity.
+        """
         super().__init__()
         # LayerNorm first: dropping features and then renormalising would rescale whatever
         # survived, which is not what the dropout is for.

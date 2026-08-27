@@ -92,3 +92,15 @@ def test_charging_terminal_gaps_reveals_the_edits_that_were_skipped():
     a = "WWWWWWWWWW" + "KKKKK"
     b = "KKKKK" + "YYYYYYYYYY"
     assert edit_profile(a, b, free_end_gaps=False).n_edits > 10
+
+
+def test_the_aligned_count_is_carried_as_an_integer_not_recovered_from_the_ratio():
+    """`snp2prot.distances` used to multiply `overlap` back out by the shorter length and round.
+    The value it wanted was an integer all along."""
+    profile = edit_profile("ACDEFGHIKL", "ACDEFGHIKL")
+    assert profile.n_aligned == 10
+    assert profile.overlap == 1.0
+
+    partial = edit_profile("ACDEFGHIKLMNPQ", "FGHIKLMNPQRSTV")
+    assert partial.n_aligned == round(partial.overlap * 14)
+    assert isinstance(partial.n_aligned, int)

@@ -15,8 +15,8 @@ cached rather than recomputed per experiment.
 
 ## What is stored, and why not just identity
 
-`n_edits` and `n_aligned`, both integers, from `snp2prot.align.edit_profile` — the same
-alignment the clustering uses: BLOSUM62, affine gaps, **free terminal gaps**. Identity is
+`n_edits` and `n_aligned`, both integers, taken straight off `snp2prot.align.edit_profile` —
+the same alignment the clustering uses: BLOSUM62, affine gaps, **free terminal gaps**. Identity is
 `1 - n_edits / n_aligned` and overlap is `n_aligned / min(len_i, len_j)`, both derived on
 demand. Storing the two counts rather than the two ratios keeps the artifact exact and lets a
 caller change its mind about the guard without a rebuild.
@@ -112,7 +112,7 @@ def _row(i: int) -> tuple[int, np.ndarray, np.ndarray]:
     for k, other in enumerate(rest):
         profile = align.edit_profile(reference, other)
         edits[k] = profile.n_edits
-        aligned[k] = round(profile.overlap * min(len(reference), len(other)))
+        aligned[k] = profile.n_aligned
     return i, edits, aligned
 
 

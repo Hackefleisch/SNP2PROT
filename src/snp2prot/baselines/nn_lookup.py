@@ -94,17 +94,21 @@ def choose(
 
     Ties in identity break towards the lower training row, which is the alphabetically earlier
     `dbd_seq` — arbitrary, but fixed, so a rerun reproduces the same neighbour.
+
+    **A stable sort, not `argpartition`.** `argpartition` is faster and does not promise an order
+    among equal values, so the rule above was simply untrue: measured across the 19 folds, 9.4%
+    of held-out domains have a tied best identity and in **51% of those the pick was not the
+    lowest training row**. It moved the baseline by up to 0.008 AUPR and would move again on a
+    different numpy version or a reordered training pool. A stable sort over a 1,338-wide row
+    costs microseconds, which is not a price worth paying an unstated rule for.
     """
     block = distances.identity()[np.ix_(test_rows, train_rows)]
     guarded = distances.comparable(min_overlap)[np.ix_(test_rows, train_rows)]
     eligible = np.where(guarded & np.isfinite(block), block, -np.inf)
 
     k = min(k, eligible.shape[1])
-    top = np.argpartition(-eligible, k - 1, axis=1)[:, :k]
+    top = np.argsort(-eligible, axis=1, kind="stable")[:, :k]
     values = np.take_along_axis(eligible, top, axis=1)
-    order = np.argsort(-values, axis=1, kind="stable")
-    top = np.take_along_axis(top, order, axis=1)
-    values = np.take_along_axis(values, order, axis=1)
 
     empty = ~np.isfinite(values)
     top = np.where(empty, -1, top)

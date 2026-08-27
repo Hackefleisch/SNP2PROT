@@ -348,6 +348,7 @@ def run_fold(
     trainable: np.ndarray,
     device: torch.device | None = None,
     track: bool = True,
+    model_seed: int | None = None,
 ) -> tuple[dict, pd.DataFrame]:
     """Train and score one (arm, fold) pair, and return its summary and per-domain rows.
 
@@ -382,7 +383,11 @@ def run_fold(
     )
     split_cfg = config["splits"]
     validation_cfg = split_cfg["validation"]
+    # Two seeds, deliberately. `seed` decides which domains are held out and is a property of
+    # the experiment; `model_seed` decides the initialisation and the batch order and is a
+    # property of one run of it. `--seeds N` varies only the second.
     seed = int(split_cfg["seed"])
+    model_seed = int(config["model"]["seed"]) if model_seed is None else int(model_seed)
 
     pool = fold.train[trainable[fold.train]]
     inner = splits.Fold(fold.regime, fold.name, fold.test, pool, fold.held_out)
@@ -411,6 +416,7 @@ def run_fold(
         "regime": fold.regime,
         "fold": fold.name,
         "seed": seed,
+        "model_seed": model_seed,
         "n_train": len(train_rows),
         "n_validation": len(validation_rows),
         "n_test": len(fold.test),
@@ -420,14 +426,14 @@ def run_fold(
         "splits.validation": validation_cfg,
     }
 
-    trainer = Trainer(matrix, embeddings, config, device=device, seed=seed)
+    trainer = Trainer(matrix, embeddings, config, device=device, seed=model_seed)
     with tracking.start_run(
-        f"{arm}/{fold.label}", params=params, digests=digests, enabled=track
+        f"{arm}/{fold.label}/seed{model_seed}", params=params, digests=digests, enabled=track
     ) as run:
         result = trainer.train(
             train_rows,
             validation_rows,
-            seed=seed,
+            seed=model_seed,
             on_eval=lambda entry: run.log_metrics(
                 {k: v for k, v in entry.items() if k != "step"}, step=entry["step"]
             ),
@@ -504,7 +510,7 @@ def run_fold(
         # Written before the run closes so the artifact lands with its own metrics rather than
         # in whichever run happens to be open next.
         checkpoint = trainer.save(
-            checkpoint_file(arm, fold.regime, fold.name),
+            checkpoint_file(arm, fold.regime, fold.name, model_seed),
             result,
             {
                 "arm": arm,
@@ -514,6 +520,7 @@ def run_fold(
                 "held_out": fold.held_out,
                 "digests": digests,
                 "code": code,
+                "model_seed": model_seed,
                 "best_step": result.best_step,
                 "best_validation": result.best_validation,
                 "temperature": result.temperature,
@@ -525,6 +532,9 @@ def run_fold(
         "arm": arm,
         "regime": fold.regime,
         "fold": fold.name,
+        # Both, so a row says which domains were held out AND which run of that split it was.
+        "seed": seed,
+        "model_seed": model_seed,
         "n_train": float(len(train_rows)),
         "n_validation": float(len(validation_rows)),
         "steps_run": float(result.steps_run),
@@ -546,6 +556,7 @@ def run_fold(
             "arm": arm,
             "regime": fold.regime,
             "fold": fold.name,
+            "model_seed": model_seed,
             "domain": [s.domain for s in scored],
             "family": domains.dbd_family.to_numpy()[fold.test],
             "gene": domains.gene.to_numpy()[fold.test],

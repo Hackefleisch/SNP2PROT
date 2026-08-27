@@ -21,6 +21,7 @@ CONFIG = {
         "temperature": 0.07,
         "learn_temperature": True,
         "max_logit_scale": 100.0,
+        "seed": 11,
     },
     "training": {
         "steps": 6,
@@ -107,4 +108,12 @@ def test_the_checkpoint_carries_the_split_and_the_code_it_came_from(trainer, tmp
 
 
 def test_a_fold_name_with_a_colon_becomes_a_usable_filename():
-    assert checkpoint_file("A1", "P3", "half:draw-0").name == "A1_P3_half-draw-0.pt"
+    name = checkpoint_file("A1", "P3", "half:draw-0", 20260819).name
+    assert name == "A1_P3_half-draw-0_seed20260819.pt"
+
+
+def test_two_seeds_of_one_fold_do_not_overwrite_each_other():
+    """`run_grid.py --seeds N` trains the same fold more than once."""
+    a = checkpoint_file("A1", "S2", "fold-1", 20260819)
+    b = checkpoint_file("A1", "S2", "fold-1", 20260820)
+    assert a != b

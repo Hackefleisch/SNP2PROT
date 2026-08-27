@@ -58,6 +58,10 @@ class EditProfile:
     #: looks like. A low value means the aligner discarded most of both sequences into free
     #: terminal gaps, and `n_edits` then describes a window rather than the domains.
     overlap: float = 1.0
+    #: The same quantity before it was divided: residues aligned to a residue. `snp2prot.distances`
+    #: stores this rather than the ratio, so a caller can change its mind about the guard without
+    #: a rebuild — and so it does not have to multiply `overlap` back out and round.
+    n_aligned: int = 0
 
     @property
     def positions_str(self) -> str:
@@ -81,7 +85,7 @@ def _aligner(free_end_gaps: bool = True) -> Align.PairwiseAligner:
 def edit_profile(reference: str, variant: str, free_end_gaps: bool = True) -> EditProfile:
     """Align `variant` to `reference` and describe every edit in reference coordinates."""
     if reference == variant:
-        return EditProfile(0, ())
+        return EditProfile(0, (), n_aligned=len(reference))
 
     alignment = _aligner(free_end_gaps).align(reference, variant)[0]
     ref_row, var_row = str(alignment[0]), str(alignment[1])
@@ -127,4 +131,5 @@ def edit_profile(reference: str, variant: str, free_end_gaps: bool = True) -> Ed
         n_insertions=n_ins,
         n_deletions=n_del,
         overlap=aligned / min(len(reference), len(variant)),
+        n_aligned=aligned,
     )

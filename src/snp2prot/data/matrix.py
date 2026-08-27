@@ -107,6 +107,12 @@ def build(domains: np.ndarray, table: str | Path | None = None) -> KmerMatrix:
     generated, because which of a reverse-complement pair represents it is a fact about how
     the arrays were designed and not one to re-derive here.
 
+    **The vocabulary comes from row group 0 alone**, which holds about a million rows against a
+    32,896-wide vocabulary, so it covers it many times over. It is safe rather than lucky: an
+    8-mer outside the derived vocabulary makes `_codes` raise, and a vocabulary that came out
+    short leaves cells unwritten, which the `-2` sweep below catches. Both failures are loud, so
+    this does not pay for a second pass over 44 million rows to be sure.
+
     Streaming by row group keeps peak memory at one group (about 1 million rows) rather than
     the 44 million the file holds, and the scatter is done through each group's own
     dictionary — 32 domains and 32,896 8-mers hashed per group instead of 2 million strings.

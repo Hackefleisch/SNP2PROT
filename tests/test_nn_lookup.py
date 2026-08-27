@@ -116,3 +116,29 @@ def test_the_continuous_profile_is_never_copied(corpus):
     matrix, d = corpus
     got = nn_lookup.fit_predict(matrix, d, np.array([0]), np.array([1, 2, 3]), min_overlap=0.6)
     assert not np.allclose(got.profile[0], matrix.escore[1])
+
+
+def test_ties_break_towards_the_lowest_training_row():
+    """`argpartition` promises no order among equal values, so this rule was documented but not
+    true: 9.4% of held-out domains have a tied best identity and half were picking someone else,
+    worth up to 0.008 AUPR and liable to change with the numpy version."""
+
+    class Tied:
+        domains = np.array(["q", "a", "b", "c"])
+
+        def identity(self):
+            return np.array([[0.0, 0.9, 0.9, 0.9]])
+
+        def comparable(self, _):
+            return np.ones((1, 4), dtype=bool)
+
+    for pool in ([1, 2, 3], [3, 2, 1], [2, 3, 1]):
+        top, _ = nn_lookup.choose(Tied(), np.array([0]), np.array(pool), 0.6, 1)
+        assert top[0, 0] == 0, "the first eligible candidate must win every time"
+
+
+def test_top_k_still_comes_back_best_first(corpus):
+    matrix, d = corpus
+    top, values = nn_lookup.choose(d, np.array([0]), np.array([1, 2, 3]), 0.0, 3)
+    finite = values[0][np.isfinite(values[0])]
+    assert (np.diff(finite) <= 1e-9).all()

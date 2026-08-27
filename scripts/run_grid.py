@@ -130,6 +130,36 @@ def _lift(value: float, chance: float) -> str:
     return f"{lift:.0f}x" if lift >= 10 else f"{lift:.1f}x"
 
 
+def _selection_section(frame: pd.DataFrame) -> list[str]:
+    """Did selecting on validation beat just taking the model at the step budget?
+
+    Every run stores both models, so this is measured per fold rather than assumed. It is the
+    only readout of whether the validation slice is a useful selector — on `S2` it may not be,
+    since a slice carved from the training pool cannot imitate an unseen-component test task.
+    """
+    gain = frame.selection_gain
+    lines = [
+        "",
+        "## Does selecting on validation beat the model at the budget?",
+        "",
+        "`model AUPR` is the validation-selected checkpoint and `at budget` the model at step",
+        "`training.steps`. Both are stored with every run, so the question is measured rather",
+        "than assumed. A negative mean would say the validation slice is selecting worse than",
+        "not selecting at all.",
+        "",
+        "| regime | folds | selected | at budget | mean gain | folds where selection lost |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+    for regime, group in frame.groupby("regime", sort=False):
+        lines.append(
+            f"| {regime} | {len(group)} | {_fmt(group.aupr.mean())} | "
+            f"{_fmt(group.aupr_final.mean())} | {group.selection_gain.mean():+.4f} | "
+            f"{int((group.selection_gain < 0).sum())} |"
+        )
+    lines += ["", f"Overall mean gain from selecting: **{gain.mean():+.4f}**.", ""]
+    return lines
+
+
 def _null_section(frame: pd.DataFrame, repeats: int) -> list[str]:
     """Which results are, and are not, distinguishable from a random ranking.
 

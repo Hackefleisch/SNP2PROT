@@ -41,7 +41,15 @@ from snp2prot.models import TwoTower, multi_positive_infonce, tokenise
 
 @dataclass
 class TrainingResult:
-    """What one fold's run produced."""
+    """What one fold's run produced.
+
+    **Two models, not one.** `best_state` is the validation-selected checkpoint and `final_state`
+    is the model at the step budget. Both are kept because on this data they are not the same
+    model and the difference is worth measuring rather than assuming: on `S2/fold-3` validation
+    selected step 14,500 (test 0.2473) over the true peak at 12,000 (test 0.2633), while on
+    `S1/fold-2` the best validation step *was* the best test step. Scoring both makes the
+    selection loss a reported number per fold instead of a guess.
+    """
 
     steps_run: int
     best_step: int
@@ -50,6 +58,9 @@ class TrainingResult:
     parameter_counts: dict[str, int] = field(default_factory=dict)
     temperature: float = float("nan")
     seconds: float = 0.0
+    #: State dicts, on the CPU. `best` by validation AUPR; `final` at the step budget.
+    best_state: dict = field(default_factory=dict)
+    final_state: dict = field(default_factory=dict)
 
 
 def device_for(requested: str | None = None) -> torch.device:
@@ -133,12 +144,13 @@ class Trainer:
         self.model.train()
         return out
 
-    def save(self, path: Path, meta: dict) -> Path:
-        """Write the trained weights and everything needed to rebuild the model around them.
+    def save(self, path: Path, result: TrainingResult, meta: dict) -> Path:
+        """Write **both** trained models and everything needed to rebuild either around them.
 
-        The weights are the **early-stopping selection**, not the last step: `train` reloads
-        `best_state` before returning, so this is the model whose numbers are reported. Saved
-        on the CPU so a checkpoint from the GPU box loads anywhere.
+        `state_dict` is the validation-selected checkpoint and `final_state_dict` the model at
+        the step budget. Both, because they are different models and which one is better is a
+        per-fold empirical question rather than something to assume — see `TrainingResult`.
+        Weights are on the CPU so a checkpoint from the GPU box loads anywhere.
 
         `meta` carries the split digests and the code stamp, for the same reason the run record
         does — a `state_dict` alone cannot say which domains it never saw.
@@ -146,7 +158,10 @@ class Trainer:
         path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(
             {
-                "state_dict": {k: v.detach().cpu() for k, v in self.model.state_dict().items()},
+                "state_dict": result.best_state or self._cpu_state(),
+                "final_state_dict": result.final_state or self._cpu_state(),
+                "best_step": result.best_step,
+                "final_step": result.steps_run,
                 "model_config": self.config["model"],
                 "protein_features": int(self.proteins.shape[1]),
                 "parameter_counts": self.model.parameter_counts(),
@@ -199,7 +214,7 @@ class Trainer:
 
         result = TrainingResult(0, 0, -float("inf"))
         result.parameter_counts = self.model.parameter_counts()
-        best_state = None
+        best_state: dict | None = None
         since_best = 0
         started = time.time()
 
@@ -249,15 +264,37 @@ class Trainer:
                     if patience and since_best >= patience:
                         break
 
+        # Captured before the best checkpoint is reloaded, so the two are genuinely different
+        # models rather than the same one twice.
+        result.final_state = self._cpu_state()
         if best_state is not None:
             self.model.load_state_dict(best_state)
+        else:
+            # No evaluation ever improved — every validation domain lacked a positive 8-mer, so
+            # `macro_aupr` returned nan throughout. The model at the budget IS the selection;
+            # say so, rather than reporting `best_step = 0` for a model trained `steps` steps.
+            result.best_step = result.steps_run
+        result.best_state = self._cpu_state()
         result.temperature = self.model.temperature
         result.seconds = time.time() - started
         return result
 
+    def _cpu_state(self) -> dict:
+        """The model's weights, detached on the CPU, so a checkpoint loads anywhere."""
+        return {k: v.detach().cpu().clone() for k, v in self.model.state_dict().items()}
 
-def load_checkpoint(path: str | Path, device: torch.device | None = None) -> tuple[TwoTower, dict]:
+    def load_state(self, state: dict) -> None:
+        """Put one of `TrainingResult`'s two state dicts back into the model, for scoring."""
+        self.model.load_state_dict({k: v.to(self.device) for k, v in state.items()})
+
+
+def load_checkpoint(
+    path: str | Path, device: torch.device | None = None, which: str = "best"
+) -> tuple[TwoTower, dict]:
     """Rebuild a saved model and return it beside its metadata.
+
+    `which` picks between the two models every run stores: `"best"` is the validation-selected
+    checkpoint, `"final"` the model at the step budget.
 
     A `state_dict` on its own is not a model — the widths, the tower depth and the temperature
     ceiling all have to match — so `Trainer.save` stores the `model:` block that produced it and
@@ -277,9 +314,12 @@ def load_checkpoint(path: str | Path, device: torch.device | None = None) -> tup
         learn_temperature=bool(cfg["learn_temperature"]),
         max_logit_scale=float(cfg["max_logit_scale"]),
     )
-    model.load_state_dict(checkpoint["state_dict"], strict=True)
+    keys = {"best": "state_dict", "final": "final_state_dict"}
+    if which not in keys:
+        raise ValueError(f"which must be one of {sorted(keys)}, not {which!r}")
+    model.load_state_dict(checkpoint[keys[which]], strict=True)
     model = model.to(device or torch.device("cpu")).eval()
-    return model, {k: v for k, v in checkpoint.items() if k != "state_dict"}
+    return model, {k: v for k, v in checkpoint.items() if k not in keys.values()}
 
 
 def run_fold(
@@ -372,21 +412,33 @@ def run_fold(
             ),
         )
 
-        predicted = trainer.predict(fold.test)
         precision_at = tuple(int(k) for k in config["metrics"]["precision_at"])
         target = float(config["metrics"]["recall_at_precision"])
-        scored = [
-            metrics.score_domain(
-                matrix.label[row],
-                matrix.escore[row],
-                predicted[i],
-                domain=str(matrix.domains[row]),
-                precision_at=precision_at,
-                precision_target=target,
-            )
-            for i, row in enumerate(fold.test)
-        ]
-        summary = metrics.macro_average(scored)
+
+        def score_with(state: dict) -> tuple[dict, list]:
+            trainer.load_state(state)
+            predicted = trainer.predict(fold.test)
+            rows = [
+                metrics.score_domain(
+                    matrix.label[row],
+                    matrix.escore[row],
+                    predicted[i],
+                    domain=str(matrix.domains[row]),
+                    precision_at=precision_at,
+                    precision_target=target,
+                )
+                for i, row in enumerate(fold.test)
+            ]
+            return metrics.macro_average(rows), rows
+
+        # Both models the run produced. The validation-selected one supplies the headline
+        # numbers; the model at the step budget is scored beside it so the selection loss is
+        # measured per fold rather than assumed — on `S2/fold-3` it was worth 0.016.
+        final_summary, _ = score_with(result.final_state)
+        summary, scored = score_with(result.best_state)
+        summary["aupr_final"] = final_summary["aupr"]
+        summary["aupr_final_median"] = final_summary["aupr_median"]
+        summary["selection_gain"] = summary["aupr"] - final_summary["aupr"]
         # What a random ranking would score on exactly these domains. A per-protein AUPR is
         # anchored to the protein's own positive rate, which varies 2.3-fold between folds, so
         # the number above is not readable — or comparable — without it.
@@ -402,6 +454,7 @@ def run_fold(
         # in whichever run happens to be open next.
         checkpoint = trainer.save(
             checkpoint_file(arm, fold.regime, fold.name),
+            result,
             {
                 "arm": arm,
                 "embedding_model": embeddings.model,
@@ -425,6 +478,7 @@ def run_fold(
         "n_validation": float(len(validation_rows)),
         "steps_run": float(result.steps_run),
         "best_step": float(result.best_step),
+        "final_step": float(result.steps_run),
         "validation_aupr": result.best_validation,
         "temperature": result.temperature,
         "temperature_clamped": float(trainer.model.temperature_is_clamped),

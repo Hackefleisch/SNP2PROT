@@ -133,20 +133,44 @@ model:
 
 training:
   # An "epoch" is 21 steps at this batch size (1,338 domains / 64), so runs are specified in
-  # steps. What limits them is overfitting, not compute: a step is well under a GFLOP.
-  # 6,000, set from the measured curve rather than guessed: on P3/all the validation AUPR is
-  # flat from about step 3,500 while the training loss keeps falling to ~0.01, so everything
-  # past that is fitting the training proteins (docs/TRAINING.md section 9).
-  steps: 6000
+  # steps. A step is well under a GFLOP; what limits the budget is wall-clock, not overfitting.
+  #
+  # 15,000, raised from 6,000 on 2026-08-26 after measuring the curve to 15,000 steps with early
+  # stopping off. The old value rested on "the training loss keeps falling to ~0.01, so
+  # everything past that is fitting the training proteins" -- and that turned out to be exactly
+  # backwards. The loss does reach ~0.005, so the training proteins are memorised by about step
+  # 6,000, but HELD-OUT test AUPR keeps improving for another 9,000 steps:
+  #
+  #   fold        mean test AUPR @5.5-6.5k   @13.5-15k    gain
+  #   P3/all                        0.8563      0.8798   +0.024
+  #   S2/fold-3                     0.2275      0.2457   +0.018
+  #   S1/fold-2                     0.6584      0.6863   +0.028
+  #
+  # (Windows of three evals, compared within a single run, so no cross-run variation enters;
+  # two identical runs agree to 4e-6.) Memorising the training set and generalising to unseen
+  # proteins are simply not coupled here. Cosine LR decay was measured as an alternative and is
+  # slightly WORSE at equal budget -- 0.8438 against 0.8458 on P3/all -- so the budget is the
+  # lever, not the schedule. All three folds were still climbing at 15,000.
+  steps: 15000
   # Shuffling is on the PROTEIN axis; the 8-mer axis stays complete, so the InfoNCE
   # denominator is exact rather than sampled (docs/TRAINING.md section 4).
   batch_domains: 64
   learning_rate: 0.001
   weight_decay: 0.01
   warmup_steps: 100
-  eval_every: 250
-  # Evaluations without improvement before stopping. 0 disables early stopping.
-  patience: 8
+  # 100, so the validation curve is sampled finely enough to select a good checkpoint from a
+  # noisy signal. 150 evaluations per run at 0.40 s each adds about 0.6 h across the 38-run
+  # grid; 97% of that is the per-domain AUPR loop in numpy, not the forward pass (388 ms of
+  # 402 ms), so it is the metric that costs, not the model.
+  eval_every: 100
+  # 0 -- every fold trains to the full budget. Early stopping fired on only 5 of 38 runs and all
+  # five were S2, the regime the project hangs on: `A1 S2/fold-4` stopped at step 2,750 with its
+  # best at 750, while `S2/fold-3` -- same regime, allowed to run -- was still gaining at 12,000.
+  # Patience against a signal that swings 0.63->0.66 between adjacent evaluations was cutting
+  # runs off rather than protecting them. The validation slice still selects a checkpoint; it no
+  # longer terminates the run, and the model at the budget is scored beside the selected one so
+  # the selection is measured (snp2prot.training.TrainingResult).
+  patience: 0
 
 metrics:
   # Secondary metrics, read as "of the k 8-mers we called, how many bind". Positives per

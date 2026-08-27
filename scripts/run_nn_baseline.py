@@ -402,10 +402,18 @@ def write_report(
             "every average above. They are the sharpest C1 evidence in the corpus: the baseline",
             "copies their wild type, which is maximally wrong for them, and a model that does",
             "the same has failed in precisely the way this project exists to detect (`T30`).",
-            "Spearman against their own E-scores is the number that is defined for them.",
             "",
-            "- median Spearman of the copied wild-type profile: "
-            f"**{_fmt(dead.spearman.median(), 3)}**",
+            "`suppression` is the metric that *is* defined for them: of the sites the wild type",
+            "binds, the fraction ranked **lower** in the variant. **1.0** the mutation was seen",
+            "to abolish binding · **0.5** the sites moved at random · **0.0** the variant is",
+            "predicted exactly like its wild type. The baseline scores 0 wherever the wild type",
+            "stayed in its training pool, because that is precisely what it copies — which makes",
+            "it the null hypothesis for `C1` literally rather than by interpretation. Folds that",
+            "hold the wild type out alongside its variant are not scored at all: the lookup",
+            "copies some unrelated domain there and the number stops meaning anything.",
+            "",
+            f"- suppression, this fold: **{_fmt(np.nanmean(dead.suppression), 3)}** over "
+            f"{int(np.isfinite(dead.suppression).sum())} of {len(dead)} dead variants",
             "- median identity to the copied neighbour: "
             f"{_fmt(dead.neighbour_identity.median(), 3)}",
             f"- families: {', '.join(sorted(dead.family.unique()))}",
@@ -418,11 +426,10 @@ def write_report(
         "",
         "## The C1 evaluation set",
         "",
-        "**The number above that C1 has to be read against is `P3/all`, and it is close to",
-        "saturated**: mean AUPR "
+        "**The number C1 has to be read against is `P3/all`**: mean AUPR "
         f"{_fmt(float(primary[primary.fold == 'all'].aupr.iloc[0]))}, median "
         f"{_fmt(float(primary[primary.fold == 'all'].aupr_median.iloc[0]), 3)}. For most of the",
-        "173 variants the wild-type profile simply is the right",
+        "173 variants the wild type is simply the right",
         "answer, because most single substitutions do not measurably change which 8-mers a",
         "domain binds. So claim C1 does not live in that mean — it lives in the variants where",
         "the wild type is wrong, and pooled with the rest they are invisible (`D6`, decided",
@@ -509,15 +516,7 @@ def write_report(
     if len(dead_rows):
         lines += [
             "",
-            "## The dead variants",
-            "",
-            "Records with no positive 8-mer at all, where AUPR is undefined. Scored by",
-            "`suppression`: of the sites the wild type binds, the fraction ranked *lower* in the",
-            "variant. **The baseline scores 0 wherever the wild type is in its training pool**,",
-            "because it predicts the variant by copying it — which is exactly what makes it the",
-            "null hypothesis for claim `C1` rather than merely a comparison. Folds that hold the",
-            "wild type out alongside its variant are not scored: the number stops meaning",
-            "anything there, because the lookup copies some unrelated domain instead.",
+            "### suppression, every fold that scores it",
             "",
             "| regime | fold | dead variants | suppression |",
             "|---|---|---:|---:|",

@@ -91,9 +91,28 @@ baseline:
 c1_set:
   # A variant enters the set when the wild-type copy scores below this, or when it scores
   # nothing at all because the variant lost binding entirely (a `dead_variant`, whose AUPR is
-  # undefined rather than zero). 0.7 sits in the sparse part of the distribution: 8 variants
-  # fall below 0.6 and 14 below 0.8, so the cut is not perched on a cliff.
-  max_baseline_aupr: 0.7
+  # undefined rather than zero).
+  #
+  # 0.25, recalibrated 2026-08-27 from 0.7. The criterion is unchanged -- put the cut where the
+  # distribution is sparse, so it isolates a tail instead of slicing through a dense region --
+  # but the scale it applies to moved when the baseline stopped copying E-scores (D7). The
+  # PREDICTION is identical either way: under P3/all the lookup says "this variant binds what
+  # its wild type binds". Copying the continuous profile earned extra credit for ORDERING the
+  # wild type's sites, which the binary copy does not, so the same prediction now scores
+  # median 0.776 where it scored 1.000. At 0.7 the cut had drifted onto the median and was
+  # selecting 83 of 173 variants -- half the set, which is not a tail.
+  #
+  # The lower distribution has a clear trough: 3 variants in 0.15-0.20, ONE in 0.20-0.25, then
+  # 7 in 0.25-0.30. That single-variant bin is the cliff-free point 0.7 used to be.
+  #
+  #   below 0.25:  23 poorly_predicted + 18 dead = 41 of 173 (24%)
+  #
+  # Nothing became easier or harder: the 11 variants the old cut selected now score 0.000-0.330,
+  # every one still in the tail, and the two orderings agree at rank correlation 0.614. The set
+  # is larger than the old 29 because binary scoring reveals variants whose positive SET differs
+  # from the wild type's, which the ordering credit used to partly rescue -- and those are
+  # exactly the variants C1 is about.
+  max_baseline_aupr: 0.25
   # `no_evidence` records are excluded here as everywhere: with no control there is no way to
   # tell a true non-binder from a failed assay, so their silence is not evidence of anything.
   keep_no_evidence: false

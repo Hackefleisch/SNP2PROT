@@ -269,7 +269,7 @@ uv venv --python 3.11 .venv && uv pip install --python .venv -e ".[dev]"
 .venv/bin/python scripts/make_results.py                   # regenerate docs/RESULTS.md, ~5 s
 .venv/bin/python scripts/build_matrix.py                  # domain x 8-mer arrays for modelling, ~5 s
 .venv/bin/python scripts/build_distances.py               # all-vs-all domain identity, ~15 s
-.venv/bin/python scripts/run_nn_baseline.py [--top-k]     # the bar -> reports/nn_baseline.md, ~4 min
+.venv/bin/python scripts/run_nn_baseline.py [--top-k]     # the bar -> reports/nn_baseline.md, ~10 s
 .venv/bin/python scripts/build_embeddings.py --arm A1     # pooled ESM-2 vectors, ~20 s on the GPU
 .venv/bin/python scripts/check_pooling.py                 # the ML_PLAN 3.1 pre-flight, ~10 s
 .venv/bin/python scripts/train.py --arm A1 --fold P3/all  # one fold, ~8 min -- the fast check

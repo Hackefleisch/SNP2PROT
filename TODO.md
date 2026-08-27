@@ -98,7 +98,9 @@ the primary form stays the primary form.
 **And it checked the splits, which is where it earned its place.** Both findings went to the
 owner and both are now settled (`docs/DECISIONS.md` §2): **`S2`'s edge threshold moved from 5
 edits to 0.5 identity** (`D5`), which took it from 0.751 — barely below `S1` — to 0.296; and
-**C1 is evaluated on the 29 variants where the wild-type copy fails** (`D6`), because `P3/all`'s
+**C1 is evaluated on the variants where the wild-type copy fails** (`D6`) — 29 as first drawn,
+**41** after the cut was recalibrated on 2026-08-27 (`D7`; the criterion is unchanged, the scale
+it applies to moved) — because `P3/all`'s
 median is 1.000 and the claim is invisible in the mean.
 
 The whole lookup curve is one variable, which is the most useful thing the report says: AUPR by

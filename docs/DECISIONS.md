@@ -1376,6 +1376,18 @@ denied — 358 domain-slots across the grid. It also bought nothing: C1 is score
 place, `run_grid`'s `P3/all` section, and under `P3/all` every variant is held out by
 construction. **If a C1 number is ever wanted from another regime the mask has to come back.**
 
+**The C1 cut moved 0.7 → 0.25, and the set 29 → 41 variants.** Not because any variant became
+harder: under `P3/all` the lookup makes the *same* prediction either way — "this variant binds
+what its wild type binds" — and copying the continuous profile simply earned extra credit for
+*ordering* the wild type's sites, which the binary copy does not. The same prediction now scores
+median 0.776 where it scored 1.000, so a cut of 0.7 had drifted onto the median and was selecting
+83 of 173 variants. The criterion that chose 0.7 is unchanged — put the cut where the
+distribution is sparse — and on the new scale that is 0.25, the single-variant bin between
+0.20 and 0.25. The 11 variants the old cut selected now score 0.000–0.330, every one still in the
+tail; the two orderings agree at rank correlation 0.614. The set is larger than 29 because binary
+scoring exposes variants whose positive *set* differs from the wild type's, which the ordering
+credit used to partly rescue — and those are exactly the variants C1 is about.
+
 ### 12.2 A metric for the domains AUPR cannot reach
 
 **`D9` — `metrics.suppression`, and the null anchor is not a threshold.** 20 held-out records

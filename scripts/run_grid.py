@@ -317,18 +317,39 @@ def write_report(path: Path, frame: pd.DataFrame, per_domain: pd.DataFrame, conf
         "curve is not diagnostic on its own, because every imperfectly-generalising model has one.",
         "What separates a model that learned biophysics from a lookup table is the *level*.",
         "",
+        "`baseline` copies the neighbour's **binary calls** — the same information the model is",
+        "trained on — so `delta` compares methods rather than inputs",
+        "(`snp2prot.baselines.nn_lookup`). `chance` is what a random ranking scores on that",
+        "fold's held-out domains, and the `x` columns are each AUPR as a multiple of it: it",
+        "ranges 0.0015-0.0034 across the regimes, so two folds reporting the same AUPR are not",
+        "reporting the same thing. `at budget` is the model at `training.steps` rather than the",
+        "checkpoint the validation slice selected.",
+        "",
         "## Per fold",
         "",
-        "| arm | regime | fold | model AUPR | baseline | delta | median | AUROC "
-        "| Spearman | steps |",
-        "|---|---|---|---:|---:|---:|---:|---:|---:|---:|",
+        "| arm | regime | fold | chance | model AUPR | x | baseline | x | delta "
+        "| at budget | best step | median | AUROC |",
+        "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
-    for row in frame.itertuples():
+    for keys, group in frame.groupby(["arm", "regime", "fold"], sort=False):
+        arm, regime, fold = keys
+        row = group.iloc[0]
+        aupr = f"**{_fmt(group.aupr.mean())}**"
+        if len(group) > 1:
+            aupr += f" ±{group.aupr.std(ddof=1):.4f}"
         lines.append(
-            f"| `{row.arm}` | {row.regime} | `{row.fold}` | **{_fmt(row.aupr)}** | "
-            f"{_fmt(row.baseline_aupr)} | {row.delta:+.4f} | {_fmt(row.aupr_median)} | "
-            f"{_fmt(row.auroc, 3)} | {_fmt(row.spearman, 3)} | {int(row.steps_run)} |"
+            f"| `{arm}` | {regime} | `{fold}` | {_fmt(row.chance_aupr)} | "
+            f"{aupr} | {_lift(group.aupr.mean(), row.chance_aupr)} | "
+            f"{_fmt(row.baseline_aupr)} | {_lift(row.baseline_aupr, row.chance_aupr)} | "
+            f"{group.delta.mean():+.4f} | {_fmt(group.aupr_final.mean())} | "
+            f"{int(group.best_step.mean())} | {_fmt(group.aupr_median.mean())} | "
+            f"{_fmt(group.auroc.mean(), 3)} |"
         )
+
+    lines += _seed_section(frame)
+    lines += _null_section(frame, int(config["metrics"]["null_repeats"]))
+    lines += _suppression_section(frame)
+    lines += _selection_section(frame)
 
     lines += [
         "",
@@ -347,7 +368,7 @@ def write_report(path: Path, frame: pd.DataFrame, per_domain: pd.DataFrame, conf
         "",
         "## The C1 evaluation set",
         "",
-        "The 29 variants whose binding measurably changed, so that their own wild type does not",
+        "The variants whose binding measurably changed, so that their own wild type does not",
         "predict them (`D6`). They are never trained on. **The baseline scores badly on them by",
         'construction — the set is defined that way — so "the model beats the baseline here" is',
         "vacuous.** What is readable is the model's absolute number, and its number on the",
@@ -388,7 +409,7 @@ def write_report(path: Path, frame: pd.DataFrame, per_domain: pd.DataFrame, conf
         _provenance_line(frame),
         "",
         "```bash",
-        "python scripts/run_grid.py          # about an hour for two arms",
+        "python scripts/run_grid.py          # about 5 h for two arms at 15,000 steps",
         "```",
     ]
     path.parent.mkdir(parents=True, exist_ok=True)

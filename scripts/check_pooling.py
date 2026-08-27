@@ -27,7 +27,7 @@ must be closer to its own reference than to other domains of its family (otherwi
 embedding cannot even identify which wild type it belongs to), while still being **separated
 from zero** relative to the precision of the space.
 
-**And the check is pointed at the 29 variants that carry claim C1** (`D6`,
+**And the check is pointed at the variants that carry claim C1** (`D6`,
 `data/processed/c1_variants.parquet`) as well as at all 173. Those are the variants whose
 binding measurably changed, so they are the ones a C1 claim will rest on: if the pooled
 embedding cannot separate *them* from their wild types, the fallback is attention pooling

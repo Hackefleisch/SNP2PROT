@@ -288,6 +288,18 @@ class Trainer:
         self.model.load_state_dict({k: v.to(self.device) for k, v in state.items()})
 
 
+def _repo_relative(path: Path) -> str:
+    """A checkpoint path relative to the repo when it is inside it, absolute when it is not.
+
+    `Path.relative_to` raises rather than falling back, which made `run_fold` unusable with a
+    checkpoint directory anywhere else — a test's `tmp_path`, or a scratch disk.
+    """
+    try:
+        return str(path.relative_to(PROJECT_ROOT))
+    except ValueError:
+        return str(path)
+
+
 def load_checkpoint(
     path: str | Path, device: torch.device | None = None, which: str = "best"
 ) -> tuple[TwoTower, dict]:
@@ -486,7 +498,7 @@ def run_fold(
         "digest": digests["test"],
         "code_commit": code["commit"],
         "code_dirty": code["dirty"],
-        "checkpoint": str(checkpoint.relative_to(PROJECT_ROOT)),
+        "checkpoint": _repo_relative(checkpoint),
         **{f"n_params_{k}": float(v) for k, v in result.parameter_counts.items()},
     }
 

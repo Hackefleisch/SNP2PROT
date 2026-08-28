@@ -14,12 +14,15 @@ from snp2prot.evaluation import ceilings
 
 
 def _matrix(n_domains: int = 12, n_kmers: int = 60, rank: int = 3, seed: int = 0) -> KmerMatrix:
-    """An E-score matrix that is genuinely low rank, plus labels thresholded from it."""
+    """A LABEL matrix that is genuinely low rank. `rank_ceiling` factorises the calls, not the
+    E-scores, so the low-rank structure has to live in the labels for the probe to find it."""
     rng = np.random.default_rng(seed)
     escore = (rng.normal(size=(n_domains, rank)) @ rng.normal(size=(rank, n_kmers))).astype(
         np.float32
     )
-    label = np.where(escore > np.quantile(escore, 0.9), 1, 0).astype(np.int8)
+    # Rank-`rank` labels: threshold a rank-`rank` score matrix per domain, so each row's call
+    # pattern is a function of the same few factors.
+    label = (escore > np.quantile(escore, 0.9, axis=1, keepdims=True)).astype(np.int8)
     return KmerMatrix(
         domains=np.array([f"D{i}" for i in range(n_domains)]),
         kmers=np.array([f"K{j}" for j in range(n_kmers)]),
@@ -34,11 +37,14 @@ def test_more_rank_never_scores_worse():
     assert values == sorted(values)
 
 
-def test_a_rank_r_matrix_is_recovered_at_rank_r():
-    """The floor has to be tight where the data really is low rank, or its height means nothing."""
-    scores = ceilings.rank_ceiling(_matrix(rank=3), ranks=(3, 8))
-    assert scores[3] > 0.99  # rank 3 data, reconstructed at rank 3
-    assert scores[8] >= scores[3]
+def test_low_rank_label_structure_is_recovered_at_full_rank():
+    """The floor has to be tight where the data really is low rank, or its height means nothing.
+    A binary matrix is not itself low rank even when the scores behind it are, so the tight case
+    is full rank rather than the rank of the generating factors."""
+    matrix = _matrix(rank=3)
+    scores = ceilings.rank_ceiling(matrix, ranks=(3, len(matrix.domains)))
+    assert scores[len(matrix.domains)] > 0.99
+    assert scores[len(matrix.domains)] >= scores[3]
 
 
 def test_the_reported_number_is_an_in_sample_oracle():

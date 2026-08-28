@@ -14,8 +14,20 @@ does two jobs at once:
    its `S1` ceiling under `S2`, the split groups leak — which is exactly what `T27` was about,
    and this is the cheapest possible check that connected-component grouping fixed it.
 
+**Two forms, and both are reported.** `k = 1` copies the single most identical training domain's
+binary calls. `k = 5` averages the five most identical, weighted by percent identity, so each
+8-mer gets *the fraction of a domain's five nearest relatives that bind it* — a graded score built
+from **binary labels only**.
+
+`k = 5` is the comparison that means something, and it is on by default from 2026-08-28. A `k = 1`
+prediction is ~50 tied 1s above ~32,000 tied 0s, so AUPR on it can only measure set overlap, while
+a model that emits 32,896 distinct scores is being scored on a ranking. The gap between them is
+partly knowledge and partly output format. `k = 5` gives the lookup a ranking from the same
+labels, and on the 2026-08-28 grid it accounted for roughly four fifths of the model's apparent
+margin: the model beats `k = 1` by +0.16 to +0.25 and `k = 5` by **+0.005 to +0.052**.
+
 Reads three cached artifacts and nothing else: the 8-mer matrix, the distance matrix and the
-cluster inventory. About 4 minutes, almost all of it in the per-domain metrics.
+cluster inventory. About 15 seconds.
 
 The training pool excludes the `no_evidence` records in every regime, matching what a model
 would be trained on (`label_health.usable`, `T21`): the baseline must not be allowed to copy a
@@ -151,9 +163,9 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument(
-        "--top-k",
+        "--k1-only",
         action="store_true",
-        help="also run the identity-weighted top-k form, the secondary bar (ML_PLAN 8.1)",
+        help="skip the top-k form (it is on by default; see the module docstring)",
     )
     args = ap.parse_args()
 
@@ -175,7 +187,7 @@ def main() -> None:
     trainable = corpus.trainable(domains).to_numpy()
     print(f"{len(domains)} domains, {trainable.sum()} of them trainable")
 
-    ks = [1, top_k] if args.top_k else [1]
+    ks = [1] if args.k1_only else [1, top_k]
     started = time.time()
     summaries: list[dict] = []
     per_domain: list[pd.DataFrame] = []
@@ -229,6 +241,7 @@ def write_report(
 ) -> None:
     """The phase-boundary deliverable: one table per regime plus the diagnostics."""
     primary = frame[frame.k == 1]
+    ranked = frame[frame.k != 1].set_index(["regime", "fold"])
     lines = [
         "# Nearest-neighbour lookup — the baseline every later number is read against",
         "",
@@ -243,6 +256,14 @@ def write_report(
         f"free terminal gaps, and a candidate must align over at least {min_overlap:.0%} of the",
         "shorter domain to be eligible.",
         "",
+        "**Both columns copy binary calls, never E-scores.** `k = 1` takes the single most",
+        "identical training domain; `k = 5` averages the five most identical weighted by percent",
+        "identity, so each 8-mer scores as *the fraction of a domain's five nearest relatives that",
+        "bind it*. **`k = 5` is the column to compare a model against.** `k = 1` emits ~50 tied 1s",
+        "above ~32,000 tied 0s, so its AUPR can only measure set overlap, while a model emitting",
+        "32,896 distinct scores is judged on a ranking — the gap between them is partly knowledge",
+        "and partly output format. `k = 5` gives the lookup a ranking from the same labels.",
+        "",
         "**It copies the neighbour's binary calls**, which is exactly the information the model",
         "is trained on, so the comparison is between methods rather than between inputs. Copying",
         "the continuous E-score profile instead — what this did until 2026-08-26 — scored 0.786",
@@ -253,14 +274,15 @@ def write_report(
         "",
         "## The regimes",
         "",
-        "| regime | fold | test | train | AUPR | median | AUROC | P@10 | P@50 | R@P0.5 "
-        "| NN identity |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| regime | fold | test | train | `k = 1` | **`k = 5`** | median | AUROC | P@10 "
+        "| P@50 | R@P0.5 | NN identity |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in primary.itertuples():
+        k5 = ranked.aupr.get((row.regime, row.fold), float("nan")) if len(ranked) else float("nan")
         lines.append(
             f"| {row.regime} | `{row.fold}` | {int(row.n_domains)} | {int(row.n_train)} | "
-            f"**{_fmt(row.aupr)}** | {_fmt(row.aupr_median)} | "
+            f"{_fmt(row.aupr)} | **{_fmt(k5)}** | {_fmt(row.aupr_median)} | "
             f"{_fmt(row.auroc, 3)} | {_fmt(row.precision_at_10, 3)} | "
             f"{_fmt(row.precision_at_50, 3)} | {_fmt(row.recall_at_precision, 3)} | "
             f"{_fmt(row.identity, 3)} |"

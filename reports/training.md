@@ -10,67 +10,150 @@ drawn on the protein axis with every domain scored against all 32,896 8-mers.
 curve is not diagnostic on its own, because every imperfectly-generalising model has one.
 What separates a model that learned biophysics from a lookup table is the *level*.
 
+`baseline` copies the neighbour's **binary calls** — the same information the model is
+trained on — so `delta` compares methods rather than inputs
+(`snp2prot.baselines.nn_lookup`). `chance` is what a random ranking scores on that
+fold's held-out domains, and the `x` columns are each AUPR as a multiple of it: it
+ranges 0.0015-0.0034 across the regimes, so two folds reporting the same AUPR are not
+reporting the same thing. `at budget` is the model at `training.steps` rather than the
+checkpoint the validation slice selected.
+
 ## Per fold
 
-| arm | regime | fold | model AUPR | baseline | delta | median | AUROC | Spearman | steps |
-|---|---|---|---:|---:|---:|---:|---:|---:|---:|
-| `A1` | S1 | `fold-0` | **0.7217** | 0.7863 | -0.0646 | 0.8958 | 0.969 | 0.286 | 6000 |
-| `A1` | S1 | `fold-1` | **0.6946** | 0.7689 | -0.0743 | 0.8926 | 0.968 | 0.244 | 6000 |
-| `A1` | S1 | `fold-2` | **0.6779** | 0.7515 | -0.0736 | 0.8927 | 0.963 | 0.264 | 6000 |
-| `A1` | S1 | `fold-3` | **0.7001** | 0.7909 | -0.0908 | 0.8901 | 0.971 | 0.264 | 6000 |
-| `A1` | S1 | `fold-4` | **0.6829** | 0.7473 | -0.0644 | 0.8596 | 0.960 | 0.249 | 6000 |
-| `A1` | S2 | `fold-0` | **0.5888** | 0.3912 | +0.1976 | 0.7375 | 0.953 | 0.366 | 6000 |
-| `A1` | S2 | `fold-1` | **0.1442** | 0.2558 | -0.1116 | 0.0143 | 0.805 | 0.159 | 3750 |
-| `A1` | S2 | `fold-2` | **0.2606** | 0.2936 | -0.0330 | 0.0344 | 0.848 | 0.215 | 5750 |
-| `A1` | S2 | `fold-3` | **0.2441** | 0.3514 | -0.1073 | 0.0324 | 0.819 | 0.132 | 6000 |
-| `A1` | S2 | `fold-4` | **0.1156** | 0.1815 | -0.0659 | 0.0086 | 0.826 | 0.149 | 2750 |
-| `A1` | P1 | `Homeodomain` | **0.0477** | 0.0244 | +0.0233 | 0.0199 | 0.803 | 0.112 | 6000 |
-| `A1` | P2 | `non-Homeodomain` | **0.7211** | 0.8822 | -0.1612 | 0.8657 | 0.986 | 0.248 | 6000 |
-| `A1` | P3 | `all` | **0.8738** | 0.9278 | -0.0541 | 0.9773 | 0.994 | 0.319 | 6000 |
-| `A1` | P3 | `half:draw-0` | **0.8560** | 0.9188 | -0.0628 | 0.9805 | 0.995 | 0.324 | 6000 |
-| `A1` | P3 | `half:draw-1` | **0.8893** | 0.9119 | -0.0226 | 0.9794 | 0.994 | 0.319 | 6000 |
-| `A1` | P3 | `half:draw-2` | **0.8645** | 0.8989 | -0.0344 | 0.9833 | 0.990 | 0.312 | 6000 |
-| `A1` | P3 | `quarter:draw-0` | **0.8097** | 0.8388 | -0.0291 | 0.9854 | 0.986 | 0.338 | 6000 |
-| `A1` | P3 | `quarter:draw-1` | **0.9032** | 0.9472 | -0.0440 | 0.9858 | 0.999 | 0.303 | 6000 |
-| `A1` | P3 | `quarter:draw-2` | **0.8407** | 0.8619 | -0.0212 | 0.9814 | 0.984 | 0.347 | 6000 |
-| `A4` | S1 | `fold-0` | **0.7288** | 0.7863 | -0.0575 | 0.9053 | 0.971 | 0.294 | 6000 |
-| `A4` | S1 | `fold-1` | **0.7192** | 0.7689 | -0.0497 | 0.9158 | 0.965 | 0.264 | 6000 |
-| `A4` | S1 | `fold-2` | **0.6950** | 0.7515 | -0.0565 | 0.9071 | 0.961 | 0.295 | 6000 |
-| `A4` | S1 | `fold-3` | **0.7118** | 0.7909 | -0.0791 | 0.9190 | 0.972 | 0.262 | 6000 |
-| `A4` | S1 | `fold-4` | **0.6779** | 0.7473 | -0.0693 | 0.8810 | 0.960 | 0.269 | 6000 |
-| `A4` | S2 | `fold-0` | **0.5369** | 0.3912 | +0.1457 | 0.6221 | 0.940 | 0.373 | 6000 |
-| `A4` | S2 | `fold-1` | **0.1748** | 0.2558 | -0.0810 | 0.0088 | 0.795 | 0.069 | 4500 |
-| `A4` | S2 | `fold-2` | **0.2782** | 0.2936 | -0.0154 | 0.0647 | 0.862 | 0.207 | 5500 |
-| `A4` | S2 | `fold-3` | **0.2566** | 0.3514 | -0.0947 | 0.0207 | 0.859 | 0.096 | 6000 |
-| `A4` | S2 | `fold-4` | **0.1528** | 0.1815 | -0.0287 | 0.0077 | 0.781 | 0.125 | 6000 |
-| `A4` | P1 | `Homeodomain` | **0.0035** | 0.0244 | -0.0209 | 0.0029 | 0.452 | -0.116 | 6000 |
-| `A4` | P2 | `non-Homeodomain` | **0.7499** | 0.8822 | -0.1324 | 0.9001 | 0.985 | 0.246 | 6000 |
-| `A4` | P3 | `all` | **0.8754** | 0.9278 | -0.0525 | 0.9756 | 0.993 | 0.333 | 6000 |
-| `A4` | P3 | `half:draw-0` | **0.8674** | 0.9188 | -0.0514 | 0.9830 | 0.996 | 0.345 | 6000 |
-| `A4` | P3 | `half:draw-1` | **0.8898** | 0.9119 | -0.0221 | 0.9743 | 0.994 | 0.318 | 6000 |
-| `A4` | P3 | `half:draw-2` | **0.8699** | 0.8989 | -0.0290 | 0.9882 | 0.992 | 0.339 | 6000 |
-| `A4` | P3 | `quarter:draw-0` | **0.8143** | 0.8388 | -0.0245 | 0.9791 | 0.987 | 0.334 | 6000 |
-| `A4` | P3 | `quarter:draw-1` | **0.9108** | 0.9472 | -0.0363 | 0.9846 | 0.999 | 0.303 | 6000 |
-| `A4` | P3 | `quarter:draw-2` | **0.8285** | 0.8619 | -0.0334 | 0.9816 | 0.985 | 0.325 | 6000 |
+| arm | regime | fold | chance | model AUPR | x | `k=1` | delta | **`k=5`** | **delta k=5** | at budget | best step | AUROC |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `A1` | S1 | `fold-0` | 0.0023 | **0.7298** | 315x | 0.4637 | +0.2661 | **0.6987** | **+0.0311** | 0.7299 | 14600 | 0.970 |
+| `A1` | S1 | `fold-1` | 0.0022 | **0.7080** | 318x | 0.5005 | +0.2075 | **0.6830** | **+0.0250** | 0.7080 | 15000 | 0.958 |
+| `A1` | S1 | `fold-2` | 0.0022 | **0.6816** | 314x | 0.4758 | +0.2058 | **0.6726** | **+0.0090** | 0.6832 | 14400 | 0.965 |
+| `A1` | S1 | `fold-3` | 0.0022 | **0.7090** | 320x | 0.5045 | +0.2045 | **0.7088** | **+0.0003** | 0.7144 | 10100 | 0.973 |
+| `A1` | S1 | `fold-4` | 0.0023 | **0.6802** | 299x | 0.4320 | +0.2482 | **0.6357** | **+0.0445** | 0.6778 | 14700 | 0.963 |
+| `A1` | S2 | `fold-0` | 0.0035 | **0.5953** | 168x | 0.1480 | +0.4473 | **0.3801** | **+0.2152** | 0.5817 | 10700 | 0.958 |
+| `A1` | S2 | `fold-1` | 0.0020 | **0.1913** | 98x | 0.1272 | +0.0642 | **0.1941** | **-0.0027** | 0.1702 | 12800 | 0.790 |
+| `A1` | S2 | `fold-2` | 0.0022 | **0.2799** | 126x | 0.1477 | +0.1322 | **0.2751** | **+0.0048** | 0.2712 | 14900 | 0.839 |
+| `A1` | S2 | `fold-3` | 0.0018 | **0.2470** | 135x | 0.1579 | +0.0891 | **0.2905** | **-0.0435** | 0.2534 | 13900 | 0.818 |
+| `A1` | S2 | `fold-4` | 0.0016 | **0.1556** | 96x | 0.0919 | +0.0638 | **0.1404** | **+0.0152** | 0.1460 | 14100 | 0.787 |
+| `A1` | P1 | `Homeodomain` | 0.0031 | **0.0125** | 4.0x | 0.0058 | +0.0067 | **0.0071** | **+0.0054** | 0.0115 | 14800 | 0.743 |
+| `A1` | P2 | `non-Homeodomain` | 0.0018 | **0.7649** | 431x | 0.5741 | +0.1908 | **0.7521** | **+0.0128** | 0.7769 | 13400 | 0.989 |
+| `A1` | P3 | `all` | 0.0026 | **0.8768** | 333x | 0.6603 | +0.2166 | **0.8398** | **+0.0370** | 0.8805 | 12600 | 0.993 |
+| `A1` | P3 | `half:draw-0` | 0.0026 | **0.8836** | 337x | 0.6586 | +0.2250 | **0.8492** | **+0.0344** | 0.8866 | 13500 | 0.999 |
+| `A1` | P3 | `half:draw-1` | 0.0026 | **0.9102** | 356x | 0.6059 | +0.3043 | **0.8180** | **+0.0921** | 0.9101 | 13400 | 0.993 |
+| `A1` | P3 | `half:draw-2` | 0.0027 | **0.8746** | 329x | 0.6554 | +0.2192 | **0.8319** | **+0.0427** | 0.8837 | 14800 | 0.996 |
+| `A1` | P3 | `quarter:draw-0` | 0.0024 | **0.8352** | 344x | 0.5940 | +0.2412 | **0.7733** | **+0.0619** | 0.8026 | 14200 | 0.980 |
+| `A1` | P3 | `quarter:draw-1` | 0.0028 | **0.9565** | 346x | 0.6291 | +0.3273 | **0.8893** | **+0.0672** | 0.9567 | 13900 | 0.999 |
+| `A1` | P3 | `quarter:draw-2` | 0.0025 | **0.8598** | 342x | 0.6674 | +0.1924 | **0.8309** | **+0.0289** | 0.8594 | 11700 | 0.986 |
+| `A4` | S1 | `fold-0` | 0.0023 | **0.7376** | 318x | 0.4637 | +0.2740 | **0.6987** | **+0.0389** | 0.7312 | 11700 | 0.974 |
+| `A4` | S1 | `fold-1` | 0.0022 | **0.7175** | 322x | 0.5005 | +0.2170 | **0.6830** | **+0.0346** | 0.7174 | 11000 | 0.951 |
+| `A4` | S1 | `fold-2` | 0.0022 | **0.7055** | 325x | 0.4758 | +0.2297 | **0.6726** | **+0.0329** | 0.6957 | 14400 | 0.965 |
+| `A4` | S1 | `fold-3` | 0.0022 | **0.7270** | 329x | 0.5045 | +0.2225 | **0.7088** | **+0.0182** | 0.7301 | 14900 | 0.970 |
+| `A4` | S1 | `fold-4` | 0.0023 | **0.6773** | 298x | 0.4320 | +0.2454 | **0.6357** | **+0.0417** | 0.6764 | 12300 | 0.965 |
+| `A4` | S2 | `fold-0` | 0.0035 | **0.5546** | 157x | 0.1480 | +0.4066 | **0.3801** | **+0.1745** | 0.5332 | 6900 | 0.944 |
+| `A4` | S2 | `fold-1` | 0.0020 | **0.2027** | 103x | 0.1272 | +0.0755 | **0.1941** | **+0.0086** | 0.2051 | 14400 | 0.800 |
+| `A4` | S2 | `fold-2` | 0.0022 | **0.2728** | 122x | 0.1477 | +0.1251 | **0.2751** | **-0.0023** | 0.2828 | 12500 | 0.852 |
+| `A4` | S2 | `fold-3` | 0.0018 | **0.2530** | 138x | 0.1579 | +0.0951 | **0.2905** | **-0.0375** | 0.2632 | 11400 | 0.808 |
+| `A4` | S2 | `fold-4` | 0.0016 | **0.1496** | 93x | 0.0919 | +0.0578 | **0.1404** | **+0.0092** | 0.1525 | 14900 | 0.764 |
+| `A4` | P1 | `Homeodomain` | 0.0031 | **0.0047** | 1.5x | 0.0058 | -0.0010 | **0.0071** | **-0.0023** | 0.0046 | 14600 | 0.559 |
+| `A4` | P2 | `non-Homeodomain` | 0.0018 | **0.7946** | 447x | 0.5741 | +0.2204 | **0.7521** | **+0.0424** | 0.7466 | 14200 | 0.988 |
+| `A4` | P3 | `all` | 0.0026 | **0.8886** | 338x | 0.6603 | +0.2283 | **0.8398** | **+0.0488** | 0.8880 | 14700 | 0.995 |
+| `A4` | P3 | `half:draw-0` | 0.0026 | **0.8834** | 337x | 0.6586 | +0.2248 | **0.8492** | **+0.0342** | 0.8397 | 12400 | 0.999 |
+| `A4` | P3 | `half:draw-1` | 0.0026 | **0.8992** | 352x | 0.6059 | +0.2933 | **0.8180** | **+0.0812** | 0.8965 | 13000 | 0.993 |
+| `A4` | P3 | `half:draw-2` | 0.0027 | **0.8846** | 333x | 0.6554 | +0.2292 | **0.8319** | **+0.0526** | 0.8735 | 13900 | 0.996 |
+| `A4` | P3 | `quarter:draw-0` | 0.0024 | **0.8391** | 345x | 0.5940 | +0.2451 | **0.7733** | **+0.0658** | 0.8302 | 14200 | 0.983 |
+| `A4` | P3 | `quarter:draw-1` | 0.0028 | **0.9490** | 343x | 0.6291 | +0.3199 | **0.8893** | **+0.0598** | 0.9354 | 14100 | 0.999 |
+| `A4` | P3 | `quarter:draw-2` | 0.0025 | **0.8572** | 341x | 0.6674 | +0.1898 | **0.8309** | **+0.0263** | 0.8698 | 13800 | 0.985 |
+
+**One seed per fold.** `model.seed` fixes the initialisation and the batch order, so
+every number here is a single draw and none of them carry an error bar. A difference
+between arms or between folds smaller than the run-to-run spread cannot be told from
+initialisation noise, and that spread is unmeasured. `run_grid.py --seeds 3` measures
+it (`TODO.md` `T37`).
+
+
+## Is it better than random?
+
+The reference is the macro AUPR of a *random* ranking of the same held-out domains,
+sampled 200 times (`metrics.random_baseline`). A result at or below the 95th
+percentile of it is indistinguishable from guessing, whatever its delta against the
+baseline looks like.
+
+Every fold scored above its null. ✅
+
+
+## Did it notice the mutation? — the dead variants
+
+20 held-out records have **no positive 8-mer at all**: variants whose binding measurably
+vanished (`T21`). AUPR, AUROC and R@P0.5 are undefined for every one of them, and they
+are the sharpest evidence the corpus holds for claim **C1**. They are scored instead by
+`suppression` — of the sites the wild type binds, the fraction the model ranks *lower*
+in the variant (`snp2prot.evaluation.metrics.suppression`).
+
+**1.0** the model saw the mutation abolish binding · **0.5** the sites moved at random ·
+**0.0** the variant is predicted exactly like its wild type, which is what the
+nearest-neighbour baseline does by construction.
+
+| arm | regime | fold | dead variants | suppression | baseline |
+|---|---|---|---:|---:|---:|
+| `A1` | S1 | `fold-0` | 1 | **0.2000** | 0.0000 |
+| `A1` | S1 | `fold-1` | 1 | **0.5455** | 0.0000 |
+| `A1` | S1 | `fold-2` | 4 | **0.5446** | 0.0000 |
+| `A1` | S1 | `fold-3` | 5 | **0.5307** | 0.0000 |
+| `A1` | S1 | `fold-4` | 3 | **0.5163** | 0.0000 |
+| `A1` | P3 | `all` | 18 | **0.4785** | 0.0000 |
+| `A1` | P3 | `half:draw-0` | 10 | **0.4952** | 0.0000 |
+| `A1` | P3 | `half:draw-1` | 10 | **0.5077** | 0.0000 |
+| `A1` | P3 | `half:draw-2` | 12 | **0.4876** | 0.0000 |
+| `A1` | P3 | `quarter:draw-0` | 5 | **0.5454** | 0.0000 |
+| `A1` | P3 | `quarter:draw-1` | 7 | **0.5419** | 0.0000 |
+| `A1` | P3 | `quarter:draw-2` | 2 | **0.5684** | 0.0000 |
+| `A4` | S1 | `fold-0` | 1 | **0.2000** | 0.0000 |
+| `A4` | S1 | `fold-1` | 1 | **0.5455** | 0.0000 |
+| `A4` | S1 | `fold-2` | 4 | **0.5403** | 0.0000 |
+| `A4` | S1 | `fold-3` | 5 | **0.5372** | 0.0000 |
+| `A4` | S1 | `fold-4` | 3 | **0.4132** | 0.0000 |
+| `A4` | P3 | `all` | 18 | **0.4567** | 0.0000 |
+| `A4` | P3 | `half:draw-0` | 10 | **0.5189** | 0.0000 |
+| `A4` | P3 | `half:draw-1` | 10 | **0.5032** | 0.0000 |
+| `A4` | P3 | `half:draw-2` | 12 | **0.4752** | 0.0000 |
+| `A4` | P3 | `quarter:draw-0` | 5 | **0.5442** | 0.0000 |
+| `A4` | P3 | `quarter:draw-1` | 7 | **0.5868** | 0.0000 |
+| `A4` | P3 | `quarter:draw-2` | 2 | **0.5090** | 0.0000 |
+
+
+## Does selecting on validation beat the model at the budget?
+
+`model AUPR` is the validation-selected checkpoint and `at budget` the model at step
+`training.steps`. Both are stored with every run, so the question is measured rather
+than assumed. A negative mean would say the validation slice is selecting worse than
+not selecting at all.
+
+| regime | folds | selected | at budget | mean gain | folds where selection lost |
+|---|---:|---:|---:|---:|---:|
+| S1 | 10 | 0.7074 | 0.7064 | +0.0010 | 4 |
+| S2 | 10 | 0.2902 | 0.2859 | +0.0043 | 5 |
+| P1 | 2 | 0.0086 | 0.0080 | +0.0006 | 0 |
+| P2 | 2 | 0.7797 | 0.7617 | +0.0180 | 1 |
+| P3 | 14 | 0.8856 | 0.8795 | +0.0061 | 5 |
+
+Overall mean gain from selecting: **+0.0046**.
+
 
 ## Per regime, averaged over folds
 
-| arm | regime | folds | model AUPR | baseline | delta |
-|---|---|---:|---:|---:|---:|
-| `A1` | S1 | 5 | **0.6954** | 0.7690 | -0.0735 |
-| `A1` | S2 | 5 | **0.2707** | 0.2947 | -0.0240 |
-| `A1` | P1 | 1 | **0.0477** | 0.0244 | +0.0233 |
-| `A1` | P2 | 1 | **0.7211** | 0.8822 | -0.1612 |
-| `A1` | P3 | 7 | **0.8625** | 0.9008 | -0.0383 |
-| `A4` | S1 | 5 | **0.7066** | 0.7690 | -0.0624 |
-| `A4` | S2 | 5 | **0.2799** | 0.2947 | -0.0148 |
-| `A4` | P1 | 1 | **0.0035** | 0.0244 | -0.0209 |
-| `A4` | P2 | 1 | **0.7499** | 0.8822 | -0.1324 |
-| `A4` | P3 | 7 | **0.8652** | 0.9008 | -0.0356 |
+| arm | regime | folds | model AUPR | `k=1` | delta | **`k=5`** | **delta k=5** |
+|---|---|---:|---:|---:|---:|---:|---:|
+| `A1` | S1 | 5 | **0.7017** | 0.4753 | +0.2264 | **0.6797** | **+0.0220** |
+| `A1` | S2 | 5 | **0.2938** | 0.1345 | +0.1593 | **0.2560** | **+0.0378** |
+| `A1` | P1 | 1 | **0.0125** | 0.0058 | +0.0067 | **0.0071** | **+0.0054** |
+| `A1` | P2 | 1 | **0.7649** | 0.5741 | +0.1908 | **0.7521** | **+0.0128** |
+| `A1` | P3 | 7 | **0.8852** | 0.6387 | +0.2466 | **0.8332** | **+0.0520** |
+| `A4` | S1 | 5 | **0.7130** | 0.4753 | +0.2377 | **0.6797** | **+0.0333** |
+| `A4` | S2 | 5 | **0.2865** | 0.1345 | +0.1520 | **0.2560** | **+0.0305** |
+| `A4` | P1 | 1 | **0.0047** | 0.0058 | -0.0010 | **0.0071** | **-0.0023** |
+| `A4` | P2 | 1 | **0.7946** | 0.5741 | +0.2204 | **0.7521** | **+0.0424** |
+| `A4` | P3 | 7 | **0.8859** | 0.6387 | +0.2472 | **0.8332** | **+0.0527** |
 
 ## The C1 evaluation set
 
-The 29 variants whose binding measurably changed, so that their own wild type does not
+The variants whose binding measurably changed, so that their own wild type does not
 predict them (`D6`). They are never trained on. **The baseline scores badly on them by
 construction — the set is defined that way — so "the model beats the baseline here" is
 vacuous.** What is readable is the model's absolute number, and its number on the
@@ -79,10 +162,10 @@ here and lose there, which is a shifted prior and not C1.
 
 | arm | set | n | AUPR | median |
 |---|---|---:|---:|---:|
-| `A1` | C1 set | 29 | 0.3009 | 0.2520 |
-| `A1` | the other variants | 144 | 0.9178 | 0.9827 |
-| `A4` | C1 set | 29 | 0.2765 | 0.1650 |
-| `A4` | the other variants | 144 | 0.9215 | 0.9796 |
+| `A1` | C1 set | 41 | 0.5934 | 0.6667 |
+| `A1` | the other variants | 132 | 0.9266 | 0.9903 |
+| `A4` | C1 set | 41 | 0.6090 | 0.7072 |
+| `A4` | the other variants | 132 | 0.9377 | 0.9887 |
 
 ## Configuration
 
@@ -90,7 +173,7 @@ here and lose there, which is a shifted prior and not C1.
 width: 256
 dna: {'channels': 64, 'layers': 2}
 protein: {'hidden': 0, 'dropout': 0.0}
-training: {'steps': 6000, 'batch_domains': 64, 'learning_rate': 0.001, 'weight_decay': 0.01, 'warmup_steps': 100, 'eval_every': 250, 'patience': 8}
+training: {'steps': 15000, 'batch_domains': 64, 'learning_rate': 0.001, 'weight_decay': 0.01, 'warmup_steps': 100, 'eval_every': 100, 'patience': 0}
 validation: {'fraction': 0.15, 'grouping': 'regime'}
 ```
 
@@ -98,6 +181,8 @@ Fold membership is hashed rather than described, because a regime name and a see
 pin down which domains were held out once the corpus changes (`ML_PLAN.md` §9.2). The
 digests are in `data/processed/training_folds.parquet` and in each MLflow run.
 
+Produced from `38b7aa1`.
+
 ```bash
-python scripts/run_grid.py          # about an hour for two arms
+python scripts/run_grid.py          # about 5 h for two arms at 15,000 steps
 ```

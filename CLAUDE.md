@@ -73,9 +73,17 @@ concrete consequences that shape the code:
    [reports/nn_baseline.md](reports/nn_baseline.md) bands the folds by nearest-neighbour
    identity, which is what drives every one of them.
 
-   **The numbers in that report predate the audit and have not been rerun** — read them, and
-   everything in [docs/ML_RESULTS.md](docs/ML_RESULTS.md), against
-   [docs/DECISIONS.md](docs/DECISIONS.md) §12 until they have.
+   **Compare a model against `k = 5`, not `k = 1`.** `k = 1` copies one neighbour's calls — ~50
+   tied 1s over ~32,000 tied 0s — so its AUPR measures set overlap, while a model emitting 32,896
+   distinct scores is judged on a ranking; the gap is partly output format. `k = 5` averages five
+   neighbours weighted by identity, giving a ranking from the same binary labels. Measured
+   2026-08-28, `k=1` / `k=5`: `S1` 0.475 / 0.680, `S2` 0.134 / 0.256, `P1` 0.006 / 0.007,
+   `P2` 0.574 / 0.752, `P3/all` 0.660 / 0.840. The model beats `k=1` by +0.16 to +0.25 and `k=5`
+   by **+0.005 to +0.052** — the second is the real margin. **Claim C1 is directionally
+   supported but an order of magnitude short**, and **`TODO.md` `T38` questions whether the
+   approach is usable at all**: the model emits a ranking, the task needs a call, and no
+   defensible threshold exists.
+   [docs/ML_RESULTS.md](docs/ML_RESULTS.md) is the reading of all of it.
 
 3. **Read a per-protein AUPR against its chance level, never raw.** It is anchored to that
    protein's own positive rate, which ranges 0.0015-0.0034 across the folds — so 0.05 on `P1` and

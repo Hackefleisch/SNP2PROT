@@ -129,7 +129,16 @@ model is better on every column, and on the one that matters most for C1 — doe
 against A1's 1.3. Weak evidence at n = 28 vs 62, and a property of the embeddings rather than a
 result about binding, but it is the first evidence in the project bearing on §4.2's question.
 
-**The grid has run once and must run again.** A modelling audit on 2026-08-27
+**The grid has rerun — 2026-08-28, commit `38b7aa1`, 38 runs, 4.9 h — and
+[`docs/ML_RESULTS.md`](docs/ML_RESULTS.md) is the reading of it.** In short: the model beats the
+matched nearest-neighbour bar on **19 of 19 folds** (+0.16 to +0.25 mean AUPR); it does not match
+the same lookup given the full continuous measurement except under `S2`, where the two draw level
+at 0.294 vs 0.295 and the model wins `fold-0` outright by +0.206; **claim C1 is negative**, with
+`suppression` at 0.479 against a chance level of 0.5 on the 18 variants that lost binding; `P1`
+family transfer fails on both arms; and the `A1`/`A4` difference is smaller than the unmeasured
+seed noise, so `C2` is unsupported either way (`T37`).
+
+**The grid that preceded it was invalidated in full.** A modelling audit on 2026-08-27
 ([`docs/DECISIONS.md`](docs/DECISIONS.md) §12) found eighteen defects across the baseline, the
 metrics, the training budget, the protein tower and the evaluation set. **Nothing in
 [`docs/ML_RESULTS.md`](docs/ML_RESULTS.md) or the two reports survives it unchanged**, and that
@@ -198,6 +207,48 @@ were already parsed and one fails condition 2 outright. See
 ---
 
 ## Open tasks
+
+### T38 — the model has no decision rule, and it is not clear this approach can have one
+**Raised by the owner on 2026-08-28. This is a conceptual problem about the whole approach, not a
+task with a known fix, and it should be resolved before the method is presented as usable.**
+
+The dataset's ground truth is binary: an 8-mer is bound or it is not, and the field reads a PBM
+E-score at a cutoff to decide which. **The model does not produce that.** It produces a continuous
+score per (protein, 8-mer), and every metric in this project — AUPR, AUROC, precision@k, R@P — is
+rank-based, so none of them ever require it to commit to a call. The evaluation and the deliverable
+have been measuring different things.
+
+**Handing this to a biologist requires a threshold, and there is no defensible one.**
+
+* *The null anchor was designed to be it and is not.* `snp2prot.models.loss` intended `ν` to settle
+  at "good enough to call binding". Measured on the validation domains of `A1`/`P3/all`, it calls a
+  median of **15,396 of 32,896** 8-mers positive, where the true median is **44**. It sits inside
+  the negative cloud, and structurally it must: for the ~1,318 domains with positives it is one
+  more negative being pushed down, against at most two rows per fold pushing it up.
+* *A globally calibrated cut is not stable.* Choosing one on the validation slice at precision
+  ≥ 0.5 gives a sane average — ~65 calls per domain against a true median of 44 — but applied
+  per domain it calls between **56 and 408** 8-mers positive, an order of magnitude of spread,
+  for proteins whose true active counts run 10 to 206. On the 18 variants that bind *nothing* it
+  calls 56–408.
+* *And the imbalance makes this the whole problem.* At 466:1 the useful capability is
+  discriminating true non-binders. A model that ranks well but cannot say where the line falls
+  does not deliver that, so a good AUPR may substantially overstate usability.
+
+**What this calls into question.** A high per-protein AUPR says the model orders a protein's own
+8-mers well *relative to each other*. It does not say the model's scores mean the same thing across
+proteins, and the measurements above suggest they do not. Every number in
+[`docs/ML_RESULTS.md`](docs/ML_RESULTS.md) should be read with that limit attached.
+
+**Deliberately not attempted here.** A `1 - calls/wild-type-actives` score for the dead variants
+was specified and then set aside by the owner, on the grounds that it inherits the same
+threshold problem it was meant to measure around. `metrics.suppression` remains in the tree and is
+rank-based, so it does not need a threshold — but it does not answer the question this task is
+about either.
+
+Directions worth considering, none chosen: calibrate per protein rather than globally; train with
+a loss that has a decision boundary in it rather than a pure ranking objective; or accept that the
+output is a ranking and define the deliverable as top-`k` retrieval, which is honest but is a
+narrower claim than the project has been making.
 
 ### T37 — measure the across-seed variance, and decide what a seed should vary
 `model.seed` was split out of `splits.seed` on 2026-08-26: which domains are held out and how the

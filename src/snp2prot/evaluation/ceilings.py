@@ -29,8 +29,8 @@ The asymmetry decides what survives:
 ## What `rank_ceiling` measures, and why its height is the point
 
 The two-tower's score matrix is `(B x D) @ (D x K)`, so it is rank `D` at most, whatever the
-towers do. `rank_ceiling` truncates the SVD of the E-score matrix itself and asks whether a rank
-`D` matrix can order these 8-mers at all.
+towers do. `rank_ceiling` truncates the SVD of the binary label matrix itself and asks whether a
+rank `D` matrix can order these 8-mers at all.
 
 It is **not** the AUPR-optimal rank-`D` matrix — the truncated SVD is optimal in Frobenius norm,
 which is again not the metric — so it understates what rank `D` can do. That is the safe
@@ -68,7 +68,7 @@ def macro_aupr(matrix: KmerMatrix, rows: np.ndarray, predicted: np.ndarray) -> f
 
 
 def rank_ceiling(matrix: KmerMatrix, ranks=(16, 64, 256, 512)) -> dict[int, float]:
-    """Macro AUPR of a rank-`r` approximation of the E-score matrix.
+    """Macro AUPR of a rank-`r` approximation of the **binary label** matrix.
 
     An **oracle and a lower bound at once**: the factors are fitted to the very matrix being
     scored, so it says nothing about generalisation; and it is the Frobenius-optimal rank-`r`
@@ -76,10 +76,25 @@ def rank_ceiling(matrix: KmerMatrix, ranks=(16, 64, 256, 512)) -> dict[int, floa
     still. Both work in the same direction — the number is a floor on what rank `r` can express,
     and it is the *height* of that floor that licenses the reading (see the module docstring).
 
+    **The label matrix, not the E-score matrix** (changed 2026-08-28). Factorising the E-scores
+    asked whether a rank-`r` matrix can reproduce a *continuous* quantity the project does not
+    otherwise use and does not predict — a PBM E-score is a rank-enrichment statistic the field
+    reads at a cutoff, so its ordering is not a target (`D7`). Factorising the calls asks the
+    question that matches the task. It also raises the answer, from 0.9167 to **0.9379** at
+    `r = 256`, so the reading below is unchanged and slightly stronger.
+
+    The no-call band is filled with each 8-mer's mean call rather than treated as a negative,
+    which is the same "mask, do not filter" rule the metrics follow.
+
     Computed through the domain-side Gram matrix, which is 1,338 x 1,338 rather than the full
     SVD of a 1,338 x 32,896.
     """
-    scores = matrix.escore.astype(np.float64)
+    calls = (matrix.label == 1).astype(np.float64)
+    gray = matrix.label == -1
+    if gray.any():
+        column_mean = np.where(gray, np.nan, calls)
+        calls = np.where(gray, np.nanmean(column_mean, axis=0, keepdims=True), calls)
+    scores = calls
     mean = scores.mean(axis=0, keepdims=True)
     centred = scores - mean
     eigenvalues, vectors = np.linalg.eigh(centred @ centred.T)

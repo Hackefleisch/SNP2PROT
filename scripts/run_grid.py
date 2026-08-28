@@ -49,11 +49,15 @@ def baseline_by_fold() -> pd.DataFrame:
             "this report is read against it (ML_PLAN.md §8.1)"
         )
     frame = pd.read_parquet(BASELINE)
-    frame = frame[frame.k == 1]
-    grouped = frame.groupby(["regime", "fold"], sort=False)
-    return pd.DataFrame(
-        {"baseline_aupr": grouped.aupr.mean(), "baseline_median": grouped.aupr.median()}
-    ).reset_index()
+    out = {}
+    for k, prefix in ((1, "baseline"), (5, "baseline_k5")):
+        sub = frame[frame.k == k]
+        if not len(sub):
+            continue
+        grouped = sub.groupby(["regime", "fold"], sort=False)
+        out[f"{prefix}_aupr"] = grouped.aupr.mean()
+        out[f"{prefix}_median"] = grouped.aupr.median()
+    return pd.DataFrame(out).reset_index()
 
 
 def main() -> None:
@@ -116,6 +120,8 @@ def main() -> None:
 
     frame = pd.DataFrame(summaries).merge(baseline_by_fold(), on=["regime", "fold"], how="left")
     frame["delta"] = frame.aupr - frame.baseline_aupr
+    if "baseline_k5_aupr" in frame:
+        frame["delta_k5"] = frame.aupr - frame.baseline_k5_aupr
     domains_frame = pd.concat(per_domain, ignore_index=True)
 
     SUMMARY_OUT.parent.mkdir(parents=True, exist_ok=True)
@@ -327,8 +333,8 @@ def write_report(path: Path, frame: pd.DataFrame, per_domain: pd.DataFrame, conf
         "",
         "## Per fold",
         "",
-        "| arm | regime | fold | chance | model AUPR | x | baseline | x | delta "
-        "| at budget | best step | median | AUROC |",
+        "| arm | regime | fold | chance | model AUPR | x | `k=1` | delta | **`k=5`** "
+        "| **delta k=5** | at budget | best step | AUROC |",
         "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for keys, group in frame.groupby(["arm", "regime", "fold"], sort=False):
@@ -340,10 +346,10 @@ def write_report(path: Path, frame: pd.DataFrame, per_domain: pd.DataFrame, conf
         lines.append(
             f"| `{arm}` | {regime} | `{fold}` | {_fmt(row.chance_aupr)} | "
             f"{aupr} | {_lift(group.aupr.mean(), row.chance_aupr)} | "
-            f"{_fmt(row.baseline_aupr)} | {_lift(row.baseline_aupr, row.chance_aupr)} | "
-            f"{group.delta.mean():+.4f} | {_fmt(group.aupr_final.mean())} | "
-            f"{int(group.best_step.mean())} | {_fmt(group.aupr_median.mean())} | "
-            f"{_fmt(group.auroc.mean(), 3)} |"
+            f"{_fmt(row.baseline_aupr)} | {group.delta.mean():+.4f} | "
+            f"**{_fmt(getattr(row, 'baseline_k5_aupr', float('nan')))}** | "
+            f"**{group.delta_k5.mean():+.4f}** | {_fmt(group.aupr_final.mean())} | "
+            f"{int(group.best_step.mean())} | {_fmt(group.auroc.mean(), 3)} |"
         )
 
     lines += _seed_section(frame)
@@ -355,13 +361,15 @@ def write_report(path: Path, frame: pd.DataFrame, per_domain: pd.DataFrame, conf
         "",
         "## Per regime, averaged over folds",
         "",
-        "| arm | regime | folds | model AUPR | baseline | delta |",
-        "|---|---|---:|---:|---:|---:|",
+        "| arm | regime | folds | model AUPR | `k=1` | delta | **`k=5`** | **delta k=5** |",
+        "|---|---|---:|---:|---:|---:|---:|---:|",
     ]
     for (arm, regime), group in frame.groupby(["arm", "regime"], sort=False):
         lines.append(
             f"| `{arm}` | {regime} | {len(group)} | **{_fmt(group.aupr.mean())}** | "
-            f"{_fmt(group.baseline_aupr.mean())} | {group.delta.mean():+.4f} |"
+            f"{_fmt(group.baseline_aupr.mean())} | {group.delta.mean():+.4f} | "
+            f"**{_fmt(group.baseline_k5_aupr.mean())}** | "
+            f"**{group.delta_k5.mean():+.4f}** |"
         )
 
     lines += [

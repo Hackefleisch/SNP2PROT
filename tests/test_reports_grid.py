@@ -50,6 +50,15 @@ def _summary_columns() -> set[str]:
         "random_p95",
     }
     keys |= {f"n_scored_{m}" for m in ("aupr", "auroc", "recall_at_precision", "precision_at_50")}
+    # joined on by `run_grid.baseline_by_fold`, not produced by `run_fold`
+    keys |= {
+        "baseline_aupr",
+        "baseline_median",
+        "delta",
+        "baseline_k5_aupr",
+        "baseline_k5_median",
+        "delta_k5",
+    }
     return keys
 
 

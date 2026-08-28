@@ -5,320 +5,247 @@ what happened when we did it, what it rules out, and what the evidence now point
 
 Generated artifacts stay where they are — [`reports/nn_baseline.md`](../reports/nn_baseline.md),
 [`reports/pooling_check.md`](../reports/pooling_check.md),
-[`reports/training.md`](../reports/training.md) carry the tables. This document carries the
-*reading* of them, which none of them can: they are each written by one script that sees one
-experiment.
+[`reports/training.md`](../reports/training.md),
+[`reports/representation_ceiling.md`](../reports/representation_ceiling.md) carry the tables.
+This document carries the *reading* of them, which none of them can: they are each written by one
+script that sees one experiment.
 
-> ## ⚠️ SUPERSEDED — do not quote a number from this document
->
-> The modelling audit of **2026-08-27** ([`DECISIONS.md` §12](DECISIONS.md)) changed the
-> baseline, the metrics, the training budget, the protein tower and the evaluation set. **The
-> grid behind every table below has not been rerun.** Specifically:
->
-> - **The bar in §1 is the wrong bar.** It copied the neighbour's continuous E-score profile,
->   which the model never sees; against the matched binary bar it scores 0.472 rather than 0.786
->   on `S1/fold-0` and 0.145 rather than 0.391 on `S2/fold-0` (`D7`). Every win/loss count in
->   this document is computed against the old bar and will invert on most folds.
-> - **§4 rests on two probes that have been deleted** (`D10`). The ridge probe was documented as
->   an upper bound and was violated on 5 of the 8 rows it was printed on. §4.2's conclusion —
->   *the tower is already at the linear ceiling* — does not follow, and §4.3's kernel result is
->   sound only in the direction it was **not** used in §4.4.
-> - **Every model number is from a 6,000-step budget** since raised to 15,000 for a measured
->   +0.02–0.03 AUPR (`D11`), a tower without its input `LayerNorm` (`D12`), and a training pool
->   that excluded the C1 set while the baseline's did not.
-> - **Spearman is gone** (`D8`), `recall_at_precision` was inflated up to 17-fold (`§12.5`), and
->   nothing here shows chance level — `A4` on `P1` turns out to be indistinguishable from a
->   random ranking.
->
-> The **structure** of the argument survives and is worth reading: what the regimes test, why
-> the identity bands matter, why C1 needs its own set. The **numbers** do not. This document is
-> rewritten from `reports/training.md` and `reports/nn_baseline.md` after the rerun.
+**Every number here is from the grid of 2026-08-28** — 38 runs, commit `38b7aa1`, clean tree,
+15,000 steps, 4.9 hours. It replaces the grid of 2026-08-25 in full, which was invalidated by the
+modelling audit ([`DECISIONS.md` §12](DECISIONS.md)); nothing from that run survives here.
 
 ---
 
-## 1. The bar (step 0, 2026-08-19)
+## The headline, in three sentences
 
-`ML_PLAN.md` §8.1 required the nearest-neighbour lookup before any model was trained, for two
-reasons: to set the level every later number is read against, and to check that the split
-regimes hold out what they claim. It did both, and the second job is where it earned its place.
+**The two-tower model beats a nearest-neighbour lookup on 19 of 19 folds, but by +0.005 to +0.052
+— not the +0.16 to +0.25 it appears to win by against a single-neighbour lookup.** Both baselines
+are now in [`reports/nn_baseline.md`](../reports/nn_baseline.md) and
+[`reports/training.md`](../reports/training.md); `k = 5` is the column to read. Four fifths of
+that apparent margin is the model being asked for a ranking while the baseline is asked for a set;
+against a five-neighbour lookup built from the same binary labels, the advantage is modest and on
+`S2` it wins three folds and loses two. **Claim C1 is directionally supported and quantitatively far
+short**: on variants that still bind, asking the model for the *variant* is no better than asking
+for its wild type (−0.011 mean, 34% improve), and the two predictions are 98% rank-correlated;
+on the 18 that lost binding it does call fewer actives than their wild types in 78% of cases
+against a 48% base rate, but only ~8% fewer where the right answer is ~100%.
 
-Mean per-protein AUPR, `k = 1`:
+---
 
-| regime | AUPR | median NN identity |
-|---|---:|---:|
-| `S1` random domains | 0.769 | 0.742 |
-| `S2` components at ≥ 0.5 identity | 0.296 | 0.386 |
-| `P1` homeodomain holdout | 0.024 | 0.268 |
-| `P2` non-homeodomain variant clusters | 0.882 | 0.824 |
-| `P3/all` every variant, wild types kept | 0.928 | 0.986 |
+## 1. The bar
 
-**The whole curve is one variable.** Banding every held-out domain by how identical its nearest
-training neighbour was gives AUPR 0.032 / 0.365 / 0.771 / 0.946 / 0.910 across the bands below
-0.3, 0.3–0.5, 0.5–0.7, 0.7–0.9 and above 0.9. That single fact is the most useful thing the
-baseline produced, and every later number has to be read against its own band rather than
-against a pooled mean.
+`snp2prot.baselines.nn_lookup` copies the most identical training domain's **binary calls**, under
+the alignment overlap guard. That it copies calls rather than E-scores is the correction `D7` made
+and it is the whole basis of the comparison: the model trains on thresholded labels, so a baseline
+copying the continuous profile is scored on information the model is never given — worth 29–76% of
+its AUPR. See [`DECISIONS.md` §12.1](DECISIONS.md).
 
-Two decisions came out of it, both the owner's, both recorded in
-[`DECISIONS.md`](DECISIONS.md) §2:
+**Two forms, both binary.** `k = 1` copies the nearest neighbour's calls — a *set*. `k = 5`
+averages the calls of the five nearest, weighted by identity — a *ranking*, built from nothing but
+binary labels. The second is the one that matters, and §2 explains why.
 
-- **`D5`** — `S2`'s edge threshold moved from 5 edits to **0.5 identity**. At 5 edits the
-  grouping cost the lookup only 0.018 AUPR, because copying a 70–90% identical neighbour already
-  scores 0.927; at 0.5 the lookup falls to 0.296 and the regime is genuinely hard.
-- **`D6`** — claim **C1** is evaluated on the **29 variants where the wild-type copy fails**,
-  because `P3/all` is otherwise saturated: mean 0.928 with a *median of 1.000*, so most single
-  substitutions genuinely do not change what a domain binds and there is no headroom in the mean.
+| regime | `k = 1` (a set) | `k = 5` (a ranking) | chance |
+|---|---:|---:|---:|
+| `S1` random domains | 0.4753 | 0.6797 | 0.0022 |
+| `S2` components at ≥ 0.5 identity | 0.1345 | 0.2560 | 0.0022 |
+| `P1` homeodomain holdout | 0.0058 | 0.0071 | 0.0031 |
+| `P2` non-homeodomain variant clusters | 0.5741 | 0.7521 | 0.0018 |
+| `P3/all` every variant, wild types kept | 0.6603 | 0.8398 | 0.0026 |
 
-## 2. The pre-flight (2026-08-19)
+## 2. The margin is real but small — and most of the apparent win is output format
 
-`ML_PLAN.md` §3.1 required a measurement before any training: does mean-pooling a protein
-language model to one vector per domain still leave a single-residue change visible?
+| arm | regime | model | bar | delta |
+|---|---|---:|---:|---:|
+| `A1` | S1 | **0.7017** | 0.4753 | **+0.2264** |
+| `A1` | S2 | **0.2938** | 0.1345 | **+0.1593** |
+| `A1` | P1 | **0.0125** | 0.0058 | +0.0067 |
+| `A1` | P2 | **0.7649** | 0.5741 | **+0.1908** |
+| `A1` | P3 | **0.8852** | 0.6387 | **+0.2466** |
+| `A4` | S1 | **0.7130** | 0.4753 | **+0.2377** |
+| `A4` | S2 | **0.2865** | 0.1345 | **+0.1520** |
+| `A4` | P1 | 0.0047 | 0.0058 | −0.0010 |
+| `A4` | P2 | **0.7946** | 0.5741 | **+0.2204** |
+| `A4` | P3 | **0.8859** | 0.6387 | **+0.2472** |
 
-| arm | variant vs family scale | own reference nearest | displacement ~ edits | C1 signal (AUC) |
+37 of 38 runs beat that bar; the exception is `A4` on `P1`, where both numbers are near chance.
+**Every fold also scored above its own random-ranking 95th percentile** — the first grid had one
+row that did not.
+
+**But `k = 1` outputs a set and the model outputs a ranking, and most of that gap is the
+difference between the two, not learned biophysics.** A `k = 1` prediction is ~50 tied positives
+above ~32,000 tied negatives; AUPR then measures set overlap and nothing else. Controlling for it
+costs nothing — `k = 5` averages five neighbours' calls by identity, producing a graded score from
+**binary labels only**, the same information the model has and the same shape of output:
+
+| regime | `k = 1` | `k = 5` | model `A1` | vs `k = 5` |
 |---|---:|---:|---:|---:|
-| `A1` ESM-2 650M | 0.028 | 73% | 0.408 | 0.622 (1.3σ) |
-| `A4` ESM-DBP | 0.026 | 79% | 0.410 | 0.709 (2.4σ) |
+| `S1` | 0.4753 | 0.6797 | 0.7017 | **+0.0220** |
+| `S2` | 0.1345 | 0.2560 | 0.2938 | **+0.0378** |
+| `P1` | 0.0058 | 0.0071 | 0.0125 | +0.0054 |
+| `P2` | 0.5741 | 0.7521 | 0.7649 | +0.0128 |
+| `P3` | 0.6387 | 0.8332 | 0.8852 | **+0.0520** |
 
-It passed on §3.1's own criterion — variants are separated from their wild types, the separation
-scales with the number of edits, and 96% of variants sit within the nearest 5% of their family —
-so pooling stayed and attention pooling was not reached for.
+**The honest margin is +0.005 to +0.052, not +0.16 to +0.25.** Roughly four fifths of the apparent
+advantage over `k = 1` was the model being asked for a ranking while the baseline was asked for a
+set.
 
-**In hindsight the number to have weighted more heavily is the first column: 0.028.** The signal
-that distinguishes a variant from its wild type is under 3% of the scale that distinguishes
-family members. §6 below is what that costs.
+And per fold it is not uniform. Under `S2` the model wins three folds and **loses two** —
+`fold-1` by 0.003 and `fold-3` by 0.044 — with the regime mean carried almost entirely by
+`fold-0`, where it wins by 0.215. On one seed, with the seed spread unmeasured (§6), `S2` is
+better described as *the model and a five-neighbour lookup are close, with one fold where the
+model is clearly ahead* than as a win.
 
-## 3. The grid (2026-08-25)
+## 3. What replaced this section
 
-19 folds × 2 sequence arms = **38 runs, 105 minutes**. Design in
-[`TRAINING.md`](TRAINING.md), per-fold tables in [`reports/training.md`](../reports/training.md).
+An earlier draft compared the model against a lookup copying the neighbour's **continuous E-score
+profile**, called it "the incumbent method", and read the model as losing to it on 15 of 19 folds.
+That comparison is removed and will not return. A universal-PBM E-score is a rank-enrichment
+statistic that the field reads at a cutoff — the binarisation is done by the researchers who
+produce it, not by us — so its ordering is not a quantity to predict, and a baseline built on it
+is scored with information that exists nowhere else in this project (`D7`,
+[`DECISIONS.md` §12.1](DECISIONS.md)). **The whole corpus is binary: training, baseline,
+evaluation.** §2's `k = 5` is the ranked comparison, and it is built from labels alone.
 
-**The model beats the baseline on 3 of 38 runs.** Mean delta −0.044.
+## 4. Claim C1: a weak signal in the right direction, an order of magnitude short
 
-| regime | A1 | A4 |
-|---|---:|---:|
-| `S1` | −0.074 | −0.062 |
-| `S2` | −0.024 | −0.015 |
-| `P1` | **+0.023** | −0.021 |
-| `P2` | −0.161 | −0.132 |
-| `P3` | −0.038 | −0.036 |
+C1 is that the model can infer which 8-mers a *mutated* TF engages, without having seen that
+mutation. The evaluation set is the 41 held-out variants whose own wild type does not predict them
+(`D6`), and it splits in two — the two halves behave completely differently.
 
-### 3.1 The identity bands are where the claim dies
+| group | n | bar | `A1` | `A4` |
+|---|---:|---:|---:|---:|
+| C1, **poorly predicted** (AUPR defined) | 23 | 0.0787 | **0.5934** | **0.6090** |
+| C1, **dead** — scored by `suppression` | 18 | 0.0000 | **0.4785** | 0.4567 |
+| the other 132 variants | 132 | 0.7624 | 0.9266 | 0.9377 |
 
-Pooling every held-out domain across all folds and banding by nearest-neighbour identity:
+**The first half works.** On 23 variants where copying the wild type scores 0.079, the model
+scores 0.593. It is recovering binding profiles that a lookup gets badly wrong, which is real.
 
-| NN identity | n | A1 model | A4 model | baseline | A1 wins |
-|---|---:|---:|---:|---:|---:|
-| 0.0–0.3 | 706 | 0.050 | 0.030 | 0.032 | 64% |
-| 0.3–0.5 | 1383 | 0.316 | 0.327 | 0.365 | 43% |
-| 0.5–0.7 | 315 | 0.676 | 0.690 | 0.771 | 26% |
-| 0.7–0.9 | 500 | 0.837 | 0.849 | 0.946 | 11% |
-| 0.9–1.0 | 915 | 0.881 | 0.883 | 0.910 | 13% |
+**The second half does not, and it is the half that matters.** `suppression` asks: of the sites
+the wild type binds, what fraction does the model rank *lower* in the variant? **1.0** means it
+saw the mutation abolish binding; **0.5** means the sites moved at random; **0.0** is what copying
+the wild type gives by construction. The model scores **0.4785** and **0.4567** — at chance, on
+both arms, over 18 variants whose binding measurably vanished.
 
-An early read of `S2/fold-0` alone suggested "the model wins where lookup fails". **Pooled, it
-does not.** `A1` wins only the bottom band, by 0.018, at absolute values where both methods are
-failing; `A4` does not win it at all.
+So the model has *not* learned that a point mutation destroyed binding. It rearranges those
+profiles no better than chance. This is the sharpest evidence the corpus holds for C1 and it is
+negative, and it is not softened by the first half: predicting a *changed* profile better than a
+lookup is a weaker claim than detecting that binding was *abolished*.
 
-**Losing the top bands is structural and expected.** A linear protein projection into a shared
-256-d cosine space cannot reproduce "copy your nearest neighbour" — that needs per-protein
-profiles memorised, and the shared space has nowhere to put 1,338 × 32,896 of them. The question
-was always whether it wins where lookup is hard. It does not.
+**Note what this is not.** It is not the "shifted prior" the old grid reported. A model that had
+merely learned to distrust wild types everywhere would gain on the C1 set and lose on the
+complement; this one is better on the complement (0.927) than on C1 (0.593), which is what a model
+that finds C1 genuinely harder looks like.
 
-### 3.2 The one fold it won, and why
+## 5. Family transfer fails
 
-| `S2` fold | test set | median same-family training domains | delta |
-|---|---|---:|---:|
-| fold-0 | 273, **100% homeodomain** | **155** | **+0.198** |
-| fold-2 | 266, 26 families | 54 | −0.033 |
-| fold-3 | 266, 26 families | 15 | −0.107 |
-| fold-1 | 267, 37 families | 11 | −0.112 |
-| fold-4 | 266, 28 families | 9 | −0.066 |
+`P1` holds out all 428 homeodomains. Chance is 0.0031 and the random-ranking 95th percentile is
+0.0036.
 
-fold-0 holds out the 273-domain homeodomain component and leaves 155 homeodomains in training at
-< 50% identity. A model can learn a homeodomain-general mapping from 155 examples; copying a
-< 50%-identical relative cannot. `P1` is the endpoint of the same axis — zero same-family
-training data, AUPR 0.048.
+| | AUPR | × chance | above the null? |
+|---|---:|---:|---|
+| `A1` | 0.0125 | 4.0× | yes |
+| `A4` | 0.0047 | 1.5× | barely |
+| lookup, `k = 1` | 0.0058 | 1.8× | — |
+| lookup, `k = 5` | 0.0071 | 2.3× | — |
 
-**Stated as a hypothesis, not a finding.** The rank correlation between same-family depth and
-delta across the twelve `S1`/`S2`/`P1`/`P2` folds is only **0.21**: fold-0 is an outlier whose
-distinguishing feature is 155, while eleven folds spanning 9–59 same-family domains sit flat at
-−0.02 to −0.15 with no trend. The honest claim is that 155 is 2.6× more than any other fold has,
-and that this is the obvious candidate explanation.
+`A1` is measurably above chance and roughly twice the lookup, but 0.0125 is not a working model of
+an unseen fold; `A4` is indistinguishable from guessing. **Nothing here transfers across a Pfam
+family.** The `LayerNorm` fix (`D12`) was tried against exactly this and moved `A4` from
+0.0035 to 0.0047 — the norm mismatch was real and was not the cause.
 
-### 3.3 C1 is the shifted prior `D6` predicted
+## 6. `A1` versus `A4` cannot be read
 
-| | A1 model | A4 model | baseline |
+| regime | `A1` | `A4` | `A4 − A1` |
 |---|---:|---:|---:|
-| C1 set, 29 variants | 0.301 | 0.277 | 0.244 |
-| the other 144 variants | 0.918 | 0.922 | 0.981 |
+| S1 | 0.7017 | 0.7130 | +0.0113 |
+| S2 | 0.2938 | 0.2865 | −0.0073 |
+| P1 | 0.0125 | 0.0047 | −0.0078 |
+| P2 | 0.7649 | 0.7946 | +0.0296 |
+| P3 | 0.8852 | 0.8859 | +0.0006 |
 
-The model gains **+0.057** on the variants where the wild-type copy fails and loses **−0.063** on
-the ones where it works — near-symmetric. `D6` wrote the test in advance: *"a model that had
-merely learned to distrust wild types everywhere would gain here and lose there, which is a
-shifted prior and not C1."*
+ESM-DBP is ahead on `S1`, `P2` and `P3`, behind on `S2` and `P1`. **Every one of those differences
+is within the run-to-run noise, and that noise is unmeasured.** The grid ran at one seed;
+`model.seed` now exists separately from `splits.seed` and two seeds of one fold differed by 0.016
+at a 300-step budget — larger than four of the five numbers above. `T37` measures it with
+`run_grid.py --seeds 3`. Until then **no claim about the pretraining corpus is supported either
+way**, which is the honest state of the `C2` comparison.
 
-**Claim C1 is not supported by this run.** Building the evaluation set before seeing a model is
-what makes that statement possible rather than arguable, and it is the clearest return the
-project has had on writing a caveat down early.
+What *is* visible is a consistent pattern rather than a magnitude: `A4` is better where training
+contains same-family relatives and worse where it does not, matching its embeddings being more
+family-clustered (within-Homeodomain cosine 0.963 vs 0.731 across, against `A1`'s 0.933 and 0.874).
 
-### 3.4 Two anomalies
+## 7. What is ruled out
 
-**`A4` collapses on `P1`**: AUPR 0.003, AUROC **0.452**, Spearman −0.116, with **61%** of
-held-out homeodomains scoring *below chance* against `A1`'s 8%. Systematically anti-correlated,
-not merely uninformative — something specific goes wrong in ESM-DBP's space when every
-homeodomain is removed from training. Unexplained.
+**The shared space is not the constraint.** A rank-256 factorisation of the **binary label**
+matrix reaches **0.9379** in sample, against 0.294 achieved on `S2` and 0.885 on `P3`. A representable solution
+far better than anything trained exists at `D = 256`. This is a *lower* bound on what rank 256 can
+express, and a lower bound licenses a conclusion when it comes out high — which it does.
+([`representation_ceiling.md`](../reports/representation_ceiling.md).)
 
-**`A4` beats `A1` on 15 of 19 folds** but by **+0.006** on average. §4.2 built `A4` to separate
-modality from pretraining corpus; on this evidence the answer is "the corpus barely matters",
-with the `P1` blow-up as the one large exception.
+**The step budget is no longer obviously the constraint, but it may still bind.** 15,000 steps,
+raised from 6,000 for a measured +0.02–0.03 (`D11`). Median best step is **13,900**, and **18 of
+38 runs selected a checkpoint at or past 14,000** — so the curve has flattened but has not clearly
+stopped. A further increase is cheap to test and has not been tested.
 
-## 4. What was ruled out, by measurement
+**Validation selection is close to a wash.** Selecting on the validation slice beats taking the
+model at the budget by **+0.0046** overall, and loses on 15 of 38 folds. It is worth keeping —
+it costs nothing now that both models are stored — but it is not doing much work.
 
-> **§4.2, §4.3 and §4.4 are withdrawn** (`D10`, 2026-08-27). They read the ridge and RBF probes
-> as upper bounds on the protein tower. They are **lower** bounds — one estimator's score, where
-> the class can always hold a better member — so they license a conclusion only when the number
-> comes out *high*: they can rule a component out as the constraint, never in. §4.2 and §4.4
-> argue from a *low* number, so they conclude nothing. §4.1 stands, because 0.9167 is high.
->
-> §4.3's observation is sound in the direction it was made — a kernel ridge on `A4` beat both
-> the model and the baseline on three `S2` folds, and a lower bound above your model does say
-> there is reachable signal you are not getting. That is `T36`, and it is now settled by
-> training a tower with `model.protein.hidden` set rather than by a probe.
+**Two things this grid cannot rule out**, because the probes that claimed to were deleted for being
+lower bounds read as upper ones (`D10`): whether a stronger or non-linear protein tower would help,
+and whether the pooled representation is the ceiling. Those are `T36` and `T34`, and both are
+settled by ablation — an achievable number on the same folds — rather than by a probe.
 
-Three candidate bottlenecks. The diagnostics discriminate between them.
+## 8. The limitation that qualifies everything above
 
-### 4.1 The shared space is not too small
+**The model produces a ranking. The dataset, the task and any biologist using it need a call, and
+the model has no rule for making one.** Raised by the owner on 2026-08-28 and open as
+[`TODO.md`](../TODO.md) `T38`.
 
-An **oracle** rank-D factorisation of the E-score matrix — the best any bilinear model could do
-choosing protein factors freely, with sight of test labels:
+Every metric here — AUPR, AUROC, precision@k, R@P0.5 — is rank-based, so none of them ever asks
+the model to commit to *this 8-mer binds, that one does not*. Turning the output into the binary
+answer the assay produces needs a threshold, and the two candidates both fail:
 
-| rank | macro AUPR |
-|---:|---:|
-| 16 | 0.422 |
-| 64 | 0.723 |
-| **256** | **0.917** |
-| 512 | 0.977 |
+- the **null anchor**, which was designed to be exactly this, calls a median of **15,396 of
+  32,896** 8-mers positive on the validation domains, against a true median of 44 (§ and
+  [`DECISIONS.md` §12.2](DECISIONS.md));
+- a **global cut calibrated on validation** at precision ≥ 0.5 averages sensibly — ~65 calls per
+  domain against a true median of 44 — but per domain it calls between **56 and 408**, an order of
+  magnitude of spread, for proteins whose real counts run 10 to 206.
 
-`D = 256` can represent 0.917 and the model delivers 0.27 on `S2`. **Not the constraint.**
+At 466:1 negative-to-positive the capability that matters is discriminating true non-binders, and
+that is precisely what an uncalibrated threshold fails to deliver. **So a per-protein AUPR of 0.70
+says the model orders one protein's 8-mers well relative to each other; it does not establish that
+its scores mean the same thing across proteins, and the measurements above suggest they do not.**
+Read every number in this document with that attached.
 
-### 4.2 The tower is not too weak — it is already at the linear ceiling
+## 9. What follows
 
-A ridge regression straight from the pooled ESM vector to the full 32,896-dim E-score profile:
-unconstrained output, no bottleneck, no DNA tower, `λ` tuned **on test**. A strict upper bound on
-any linear-in-ESM model, our tower included.
-
-| fold | ridge ceiling | our model | baseline |
-|---|---:|---:|---:|
-| `S2/fold-0` | 0.422 | **0.589** | 0.391 |
-| `S2/fold-2` | 0.294 | 0.261 | 0.294 |
-| `S2/fold-4` | 0.150 | 0.116 | 0.182 |
-| `P1` | 0.029 | **0.048** | 0.024 |
-
-**The two-tower model is at or above that ceiling**, beating an optimally-regularised
-unconstrained probe on two of four folds. The 256-d bottleneck and the DNA tower are not costing
-anything — they are regularising.
-
-### 4.3 Non-linearity does help — on `A4`, and by a lot
-
-> **Correction, 2026-08-25.** This section first said non-linearity bought ~0.02 and changed
-> nothing. That was measured on `A1` only. Running the same probe on `A4`, as
-> `scripts/measure_ceilings.py` now does for every arm, reverses the conclusion. The claim was
-> wrong because the experiment was half-run, not because the numbers were misread.
-
-RBF kernel ridge against linear ridge. `ceiling` picks `λ` and bandwidth on test; `honest` picks
-them on the fold's own validation slice — and here the two agree to three decimals, so this is
-**not** an oracle artefact:
-
-| arm | fold | linear | RBF | RBF (honest) | two-tower | NN baseline |
-|---|---|---:|---:|---:|---:|---:|
-| `A1` | `S2/fold-0` | 0.475 | 0.486 | 0.486 | **0.589** | 0.391 |
-| `A1` | `S2/fold-2` | 0.287 | 0.290 | 0.287 | 0.261 | 0.294 |
-| `A1` | `S2/fold-4` | 0.130 | 0.148 | 0.148 | 0.116 | 0.182 |
-| `A4` | `S2/fold-0` | 0.419 | **0.568** | 0.568 | 0.537 | 0.391 |
-| `A4` | `S2/fold-2` | 0.237 | **0.342** | 0.342 | 0.278 | 0.294 |
-| `A4` | `S2/fold-4` | 0.108 | **0.196** | 0.196 | 0.153 | 0.182 |
-| `A1` | `P1` | 0.028 | 0.012 | 0.012 | 0.048 | 0.024 |
-| `A4` | `P1` | 0.028 | 0.011 | 0.010 | 0.003 | 0.024 |
-
-**On `A4`, a kernel ridge beats the nearest-neighbour baseline on all three `S2` folds** —
-+0.177, +0.048, +0.014 — and beats the two-tower model on all three as well. `A1` shows almost
-no non-linear gain. On `P1`, where no same-family training data exists at all, non-linearity
-hurts both arms.
-
-So the two arms are not interchangeable in the way §3.4's +0.006 average suggested. ESM-DBP's
-space carries information a **linear** map cannot reach, and ESM-2's does not — which is
-consistent with their geometry: `A4`'s cross-family cosine distances run 0.28 against `A1`'s
-0.087 (`reports/pooling_check.md`), a far more spread-out space for a kernel to work in.
-
-### 4.4 What the three diagnostics leave standing
-
-- **The shared space is not the constraint.** Rank-256 can represent 0.917; nothing here is near
-  it.
-- **The protein tower being *linear* is a real limitation, for `A4`.** A non-linear function of
-  the same vector gains 0.09–0.15 on `S2` and overtakes the baseline. Our tower does not.
-- **The representation is still the deeper suspect, but it is no longer proven to be the
-  binding constraint.** Even the best probe measured — `A4` + RBF at 0.568 / 0.342 / 0.196 —
-  sits far below the 0.917 the space could hold, and collapses to 0.011 on `P1` where
-  same-family data runs out.
-
-§3.3's shifted prior and §2's 0.028 still point at the pooled representation, and §5's
-data-density reading is untouched. What has changed is the **order of the experiments**: the
-cheapest unexplored lever is now a non-linear protein tower on `A4`, which is one config flag,
-and it must be tried before concluding anything about pooling.
-
-**Things that still will not help:** more steps, larger `D`, more DNA channels, longer patience.
-Those address links that measure as non-binding.
-
-## 5. The alternative reading, which may be the right one
-
-`ML_PLAN.md` §5.1 predicted this outcome and named this cause before anything was run:
-
-> The expected cause is a **lack of overlap between proteins** — the panel is broad and shallow,
-> so holding out a family removes anything the model could have transferred from.
-
-1,338 domains in 1,165 clusters, 1,057 of them singletons. The single fold where the model won is
-the single fold with 155 same-family training domains. On that reading the result is a
-**data-density** result rather than a method failure, and no encoder change fixes it.
-
-The two readings are not exclusive and they are distinguishable: a better protein representation
-should lift the folds with 9–54 same-family domains toward what fold-0 achieves with 155. If it
-lifts nothing, §5 is the answer and the honest headline for the talk is about what this corpus
-can and cannot support.
-
-## 6. What follows
-
-**Tier 0 — a non-linear protein tower on `A4`.** §4.3's correction makes this the cheapest
-unexplored lever and it must come first: `model.protein.hidden` is already in
-`configs/experiment.yaml` and currently 0. A kernel ridge on the same embedding beats both our
-model and the baseline on every `S2` fold measured, so the two-tower model is demonstrably
-leaving reachable signal behind. Hours, not days, and it decides whether the pooling work is
-even the next question.
-
-**Tier 1 — pool over the DNA-contacting residues.** The protein table already stores each
-domain's Pfam envelope and padding offsets, so the recognition positions are addressable without
-new data or a new model. Replacing "mean over all ~77 residues" with "mean over the contacting
-subset" is a biological prior doing attention's job for free. It tests §4.4 directly, costs a
-rebuild of `build_embeddings.py` and one grid re-run, and needs nobody else.
-
-**Tier 2 — attention pooling** (`TODO.md` `T32`). §3.1 named it as the fallback and said not to
-reach for it until a measurement demanded it. The measurement now demands it. Still one
-fixed-width vector per domain, so every reason for pooling survives and the arms stay comparable.
-
-**Tier 3 — structure.** A predicted structure knows which residues face the DNA, which is the
-same information Tier 1 approximates by hand and Tier 2 tries to learn. Arms `A2`/`A3` are
-blocked on a colleague (`T31`), and this result raises their priority: they are no longer a
-"does modality matter" curiosity but the most direct attack on the measured bottleneck.
+1. **`T38` — the decision rule.** The limitation in §8 is the one that decides whether any of
+   this is usable, and it may not have an answer inside the current design. Ahead of the rest.
+2. **`T37` — seeds.** Nothing in §6, and none of the smaller deltas in §3, is interpretable
+   without an error bar. `run_grid.py --seeds 3 --regime S2` is about 70 minutes and is the
+   cheapest thing on this list.
+3. **`T36` — a non-linear protein tower.** `model.protein.hidden` is in the config and set to 0.
+   Note `dropout` changes meaning when it is not (`snp2prot.models.encoders`).
+4. **C1 is where the project's claim lives and it is currently negative.** §4's second half is the
+   number to move. It is worth asking whether 18 variants can support the claim at all, and what
+   evidence would.
+5. **A longer budget**, given §7 — cheap, and the curve has not clearly stopped.
 
 ---
 
 ## Appendix — provenance of every number here
 
-| claim | source |
+| number | source |
 |---|---|
-| baseline per regime, identity bands | `reports/nn_baseline.md`, `data/processed/nn_baseline_domains.parquet` |
-| pooling pre-flight | `reports/pooling_check.md` |
-| 38-run grid, per fold and per domain | `reports/training.md`, `data/processed/training_folds.parquet`, `training_domains.parquet`, and the MLflow store at `mlruns/mlflow.db` |
-| rank ceiling, ridge probe, kernel ridge | `reports/representation_ceiling.md`, from `scripts/measure_ceilings.py` (`T35`) |
-| same-family depth per fold | `snp2prot.splits` + `snp2prot.corpus` |
+| model AUPR, delta, suppression, selection, seeds | [`reports/training.md`](../reports/training.md), from `scripts/run_grid.py`, commit `38b7aa1` |
+| matched bar, chance, random-ranking band, C1 set | [`reports/nn_baseline.md`](../reports/nn_baseline.md), from `scripts/run_nn_baseline.py` |
+| rank ceiling | [`reports/representation_ceiling.md`](../reports/representation_ceiling.md) |
+| `k = 5` ranked binary bar | [`reports/nn_baseline.md`](../reports/nn_baseline.md), `run_nn_baseline.py --top-k` |
+| embedding geometry in §6 | `scripts/check_pooling.py` and the audit measurements in [`DECISIONS.md` §12](DECISIONS.md) |
 
-Every fold in the grid carries a `digest` of its held-out domains, and those digests match
-`reports/nn_baseline.md` exactly — so model and baseline are scored on identical held-out sets
-throughout, and the deltas above are like-for-like rather than a join on a fold name.
+Per-domain rows for every fold are in `data/processed/training_domains.parquet` and
+`data/processed/nn_baseline_domains.parquet`; the trained weights for all 38 runs are in
+`data/processed/checkpoints/`, both the validation-selected and the budget model in each file.

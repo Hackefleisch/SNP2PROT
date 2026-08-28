@@ -11,6 +11,14 @@ macro-averaged. Identity is `1 - n_edits / n_aligned` over a BLOSUM62 alignment 
 free terminal gaps, and a candidate must align over at least 60% of the
 shorter domain to be eligible.
 
+**Both columns copy binary calls, never E-scores.** `k = 1` takes the single most
+identical training domain; `k = 5` averages the five most identical weighted by percent
+identity, so each 8-mer scores as *the fraction of a domain's five nearest relatives that
+bind it*. **`k = 5` is the column to compare a model against.** `k = 1` emits ~50 tied 1s
+above ~32,000 tied 0s, so its AUPR can only measure set overlap, while a model emitting
+32,896 distinct scores is judged on a ranking — the gap between them is partly knowledge
+and partly output format. `k = 5` gives the lookup a ranking from the same labels.
+
 **It copies the neighbour's binary calls**, which is exactly the information the model
 is trained on, so the comparison is between methods rather than between inputs. Copying
 the continuous E-score profile instead — what this did until 2026-08-26 — scored 0.786
@@ -21,27 +29,27 @@ not a quantity to predict. The whole corpus is binary, baseline included.
 
 ## The regimes
 
-| regime | fold | test | train | AUPR | median | AUROC | P@10 | P@50 | R@P0.5 | NN identity |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| S1 | `fold-0` | 268 | 1047 | **0.4637** | 0.4370 | 0.774 | 0.618 | 0.421 | 0.468 | 0.746 |
-| S1 | `fold-1` | 268 | 1044 | **0.5005** | 0.5000 | 0.784 | 0.650 | 0.455 | 0.517 | 0.746 |
-| S1 | `fold-2` | 268 | 1041 | **0.4758** | 0.4909 | 0.770 | 0.623 | 0.431 | 0.476 | 0.699 |
-| S1 | `fold-3` | 267 | 1042 | **0.5045** | 0.5528 | 0.784 | 0.626 | 0.434 | 0.511 | 0.775 |
-| S1 | `fold-4` | 267 | 1042 | **0.4320** | 0.3956 | 0.764 | 0.602 | 0.419 | 0.436 | 0.745 |
-| S2 | `fold-0` | 273 | 1034 | **0.1480** | 0.0373 | 0.609 | 0.374 | 0.268 | 0.161 | 0.418 |
-| S2 | `fold-1` | 267 | 1046 | **0.1272** | 0.0037 | 0.584 | 0.230 | 0.142 | 0.129 | 0.360 |
-| S2 | `fold-2` | 266 | 1044 | **0.1477** | 0.0059 | 0.611 | 0.259 | 0.184 | 0.145 | 0.386 |
-| S2 | `fold-3` | 266 | 1041 | **0.1579** | 0.0152 | 0.622 | 0.315 | 0.170 | 0.168 | 0.383 |
-| S2 | `fold-4` | 266 | 1051 | **0.0919** | 0.0022 | 0.571 | 0.170 | 0.092 | 0.090 | 0.319 |
-| P1 | `Homeodomain` | 428 | 882 | **0.0058** | 0.0037 | 0.504 | 0.026 | 0.010 | 0.001 | 0.268 |
-| P2 | `non-Homeodomain` | 155 | 1150 | **0.5741** | 0.6667 | 0.797 | 0.678 | 0.380 | 0.587 | 0.824 |
-| P3 | `all` | 173 | 1132 | **0.6603** | 0.7759 | 0.859 | 0.718 | 0.537 | 0.665 | 0.986 |
-| P3 | `half:draw-0` | 86 | 1218 | **0.6586** | 0.7794 | 0.858 | 0.702 | 0.533 | 0.647 | 0.986 |
-| P3 | `half:draw-1` | 86 | 1218 | **0.6059** | 0.6681 | 0.828 | 0.716 | 0.484 | 0.615 | 0.982 |
-| P3 | `half:draw-2` | 86 | 1219 | **0.6554** | 0.7355 | 0.853 | 0.690 | 0.512 | 0.661 | 0.986 |
-| P3 | `quarter:draw-0` | 43 | 1262 | **0.5940** | 0.7245 | 0.828 | 0.569 | 0.408 | 0.596 | 0.987 |
-| P3 | `quarter:draw-1` | 43 | 1261 | **0.6291** | 0.7294 | 0.857 | 0.711 | 0.514 | 0.630 | 0.980 |
-| P3 | `quarter:draw-2` | 43 | 1261 | **0.6674** | 0.8483 | 0.845 | 0.709 | 0.549 | 0.667 | 0.985 |
+| regime | fold | test | train | `k = 1` | **`k = 5`** | median | AUROC | P@10 | P@50 | R@P0.5 | NN identity |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| S1 | `fold-0` | 268 | 1047 | 0.4637 | **0.6987** | 0.4370 | 0.774 | 0.618 | 0.421 | 0.468 | 0.746 |
+| S1 | `fold-1` | 268 | 1044 | 0.5005 | **0.6830** | 0.5000 | 0.784 | 0.650 | 0.455 | 0.517 | 0.746 |
+| S1 | `fold-2` | 268 | 1041 | 0.4758 | **0.6726** | 0.4909 | 0.770 | 0.623 | 0.431 | 0.476 | 0.699 |
+| S1 | `fold-3` | 267 | 1042 | 0.5045 | **0.7088** | 0.5528 | 0.784 | 0.626 | 0.434 | 0.511 | 0.775 |
+| S1 | `fold-4` | 267 | 1042 | 0.4320 | **0.6357** | 0.3956 | 0.764 | 0.602 | 0.419 | 0.436 | 0.745 |
+| S2 | `fold-0` | 273 | 1034 | 0.1480 | **0.3801** | 0.0373 | 0.609 | 0.374 | 0.268 | 0.161 | 0.418 |
+| S2 | `fold-1` | 267 | 1046 | 0.1272 | **0.1941** | 0.0037 | 0.584 | 0.230 | 0.142 | 0.129 | 0.360 |
+| S2 | `fold-2` | 266 | 1044 | 0.1477 | **0.2751** | 0.0059 | 0.611 | 0.259 | 0.184 | 0.145 | 0.386 |
+| S2 | `fold-3` | 266 | 1041 | 0.1579 | **0.2905** | 0.0152 | 0.622 | 0.315 | 0.170 | 0.168 | 0.383 |
+| S2 | `fold-4` | 266 | 1051 | 0.0919 | **0.1404** | 0.0022 | 0.571 | 0.170 | 0.092 | 0.090 | 0.319 |
+| P1 | `Homeodomain` | 428 | 882 | 0.0058 | **0.0071** | 0.0037 | 0.504 | 0.026 | 0.010 | 0.001 | 0.268 |
+| P2 | `non-Homeodomain` | 155 | 1150 | 0.5741 | **0.7521** | 0.6667 | 0.797 | 0.678 | 0.380 | 0.587 | 0.824 |
+| P3 | `all` | 173 | 1132 | 0.6603 | **0.8398** | 0.7759 | 0.859 | 0.718 | 0.537 | 0.665 | 0.986 |
+| P3 | `half:draw-0` | 86 | 1218 | 0.6586 | **0.8492** | 0.7794 | 0.858 | 0.702 | 0.533 | 0.647 | 0.986 |
+| P3 | `half:draw-1` | 86 | 1218 | 0.6059 | **0.8180** | 0.6681 | 0.828 | 0.716 | 0.484 | 0.615 | 0.982 |
+| P3 | `half:draw-2` | 86 | 1219 | 0.6554 | **0.8319** | 0.7355 | 0.853 | 0.690 | 0.512 | 0.661 | 0.986 |
+| P3 | `quarter:draw-0` | 43 | 1262 | 0.5940 | **0.7733** | 0.7245 | 0.828 | 0.569 | 0.408 | 0.596 | 0.987 |
+| P3 | `quarter:draw-1` | 43 | 1261 | 0.6291 | **0.8893** | 0.7294 | 0.857 | 0.711 | 0.514 | 0.630 | 0.980 |
+| P3 | `quarter:draw-2` | 43 | 1261 | 0.6674 | **0.8309** | 0.8483 | 0.845 | 0.709 | 0.549 | 0.667 | 0.985 |
 
 `AUPR` is the macro-average over held-out domains and `median` the median of the same
 per-domain values; they differ because the distribution is skewed, and the plan asks
@@ -213,6 +221,33 @@ there, which is a shifted prior and not C1.
 Note also that 12 families carry the whole set, so any C1 claim from it is a claim about those folds and has to be worded that way.
 
 
+## The top-k form
+
+Identity-weighted mean of the top neighbours instead of a single copy — the
+secondary, slightly stronger bar.
+
+| regime | fold | AUPR k=1 | AUPR k=5 | delta |
+|---|---|---:|---:|---:|
+| S1 | `fold-0` | 0.4637 | 0.6987 | +0.2350 |
+| S1 | `fold-1` | 0.5005 | 0.6830 | +0.1825 |
+| S1 | `fold-2` | 0.4758 | 0.6726 | +0.1968 |
+| S1 | `fold-3` | 0.5045 | 0.7088 | +0.2042 |
+| S1 | `fold-4` | 0.4320 | 0.6357 | +0.2037 |
+| S2 | `fold-0` | 0.1480 | 0.3801 | +0.2321 |
+| S2 | `fold-1` | 0.1272 | 0.1941 | +0.0669 |
+| S2 | `fold-2` | 0.1477 | 0.2751 | +0.1274 |
+| S2 | `fold-3` | 0.1579 | 0.2905 | +0.1326 |
+| S2 | `fold-4` | 0.0919 | 0.1404 | +0.0486 |
+| P1 | `Homeodomain` | 0.0058 | 0.0071 | +0.0013 |
+| P2 | `non-Homeodomain` | 0.5741 | 0.7521 | +0.1780 |
+| P3 | `all` | 0.6603 | 0.8398 | +0.1796 |
+| P3 | `half:draw-0` | 0.6586 | 0.8492 | +0.1906 |
+| P3 | `half:draw-1` | 0.6059 | 0.8180 | +0.2122 |
+| P3 | `half:draw-2` | 0.6554 | 0.8319 | +0.1765 |
+| P3 | `quarter:draw-0` | 0.5940 | 0.7733 | +0.1793 |
+| P3 | `quarter:draw-1` | 0.6291 | 0.8893 | +0.2602 |
+| P3 | `quarter:draw-2` | 0.6674 | 0.8309 | +0.1635 |
+
 ## Reproducing this
 
 ```bash
@@ -264,4 +299,4 @@ name and a seed do not pin down which domains were held out once the corpus chan
 | P3 | `quarter:draw-1` | 7 | 0.0839 |
 | P3 | `quarter:draw-2` | 2 | 0.0000 |
 
-Produced from `d2dcecb` (tree dirty).
+Produced from `38b7aa1` (tree dirty).

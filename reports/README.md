@@ -15,6 +15,8 @@ how the dataset changed.
 | `nn_baseline.md` | Phase 7 | the bar: nearest-neighbour lookup per fold, as a ranking **and** as a decision |
 | `training.md` | Phase 7 | the 19-fold x 2-arm grid, against that bar |
 | `calibration.md` | 2026-08-28 | the `λ` sweep on `L = L_infonce + λ · L_bce` — does the model have a decision rule (`T38`) |
+| `pooling_check.md` | Phase 7 | pre-flight: is a variant separated from its wild type in the pooled embedding at all |
+| `unpooling_check.md` | 2026-09-08 | pre-flight: does the single-residue signal survive *before* the mean, and does it beat BLOSUM62 (`T36`) |
 | `archive/` | — | superseded hand-maintained files, frozen; see `TODO.md` for what replaced them |
 
 Regenerate, never hand-edit. Open tasks and decisions live in [`TODO.md`](../TODO.md) at

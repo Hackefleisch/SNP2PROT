@@ -107,6 +107,18 @@ def embedding_table(arm: str) -> Path:
     return EMBEDDING_DIR / f"{arm}.npz"
 
 
+def residue_embedding_table(arm: str) -> Path:
+    """Per-residue embeddings for one protein arm — the un-pooled cache (`T36`).
+
+    Beside `embedding_table` rather than replacing it: the pooled vectors are what arms `A1`-`A4`
+    feed their towers, and `ML_PLAN.md` §3.1 chose that shape deliberately so the `A1` -> `A2`
+    comparison carrying claim C2 cannot confound modality with architecture. This file exists to
+    answer a different question — whether pooling is what destroys the single-residue signal —
+    and anything built on it is an additional arm, not a replacement for those.
+    """
+    return EMBEDDING_DIR / f"{arm}_residues.npz"
+
+
 def checkpoint_file(arm: str, regime: str, fold: str, seed: int, tag: str = "") -> Path:
     """Trained weights for one (arm, fold, seed), e.g. `("A1", "P3", "half:draw-0", 20260819)`.
 

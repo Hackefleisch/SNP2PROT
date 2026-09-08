@@ -170,7 +170,17 @@ model:
   # It lives under `model:` rather than `training:` because `model:` is the block Trainer.save
   # stores inside every checkpoint, and whether the calibration head was trained is exactly the
   # thing a reader of a checkpoint must know before trusting `TwoTower.probabilities`.
-  bce_weight: 0.0
+  #
+  # 30, adopted 2026-09-08 from the sweep (docs/ML_RESULTS.md section 9.1). Paired against each
+  # run's own lambda=0 control it costs -0.0005 AUPR overall and is the only value that is
+  # POSITIVE on S2 (+0.003); 100 is also free, 300 costs -0.0065 and everything above it more.
+  # What it buys is a decision rule: the median call count now tracks the truth and
+  # Spearman(predicted count, true count) is 0.48-0.52 wherever the model generalises.
+  #
+  # It does NOT buy dead-variant detection -- that stayed at the baseline's 0.492 at every
+  # lambda, because the model returns the wild type's answer for a single-residue variant. That
+  # is a representation failure and belongs to T36, not to this knob.
+  bce_weight: 30.0
 
   # CLIP convention: stored as log(1/temperature), clamped, and learned by default -- one
   # fewer thing to sweep across 19 folds x 4 arms, and the right scale depends on `width`.

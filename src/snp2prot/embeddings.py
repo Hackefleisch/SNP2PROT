@@ -46,13 +46,81 @@ from pathlib import Path
 
 import numpy as np
 
-from snp2prot.config import embedding_table
+from snp2prot.config import embedding_table, residue_embedding_table
 
 #: Arm -> the checkpoint it is built from. `A2`/`A3` are structural and are not built here.
 ARMS = {
     "A1": "esm2_t33_650M_UR50D",
     "A4": "esm_dbp",
 }
+
+
+@dataclass(frozen=True)
+class ResidueEmbeddings:
+    """**Un-pooled** embeddings: one vector per residue, for every domain, stored ragged.
+
+    The counterpart to `DomainEmbeddings` and the artifact `T36` needs. Domains run 30-378 aa, so
+    a dense `(n, max_len, width)` array would be two thirds padding; the vectors are concatenated
+    end to end and `offsets` says where each domain starts, the usual CSR-style layout.
+
+    **Why this exists.** Mean pooling dilutes a single-residue change and, measured, destroys it:
+    a variant sits 0.0004-0.0008 cosine from its own wild type in the pooled space, and that
+    displacement carries almost no information about whether the mutation changed binding
+    (Spearman +0.10 on `A1`, +0.22 on `A4`; `docs/ML_RESULTS.md` §9.3). Before building a tower on
+    per-residue inputs it is worth knowing whether the signal survives *anywhere* in the sequence
+    representation, which is what `scripts/check_unpooling.py` reads out of this file.
+
+    `float32`, not `float16`. The quantity being measured is a small difference between two nearly
+    identical sequences, and half precision carries about three decimal digits — the same order as
+    the effect. Halving the file is not worth risking the measurement.
+    """
+
+    arm: str
+    model: str
+    domains: np.ndarray  # (n,) dbd_seq, in `corpus.domains()` order
+    offsets: np.ndarray  # (n + 1,) int64 — domain i occupies vectors[offsets[i]:offsets[i + 1]]
+    vectors: np.ndarray  # (total_residues, width) float32
+
+    @property
+    def width(self) -> int:
+        return self.vectors.shape[1]
+
+    def residues(self, i: int) -> np.ndarray:
+        """`(length_i, width)` — one domain's per-residue vectors."""
+        return self.vectors[self.offsets[i] : self.offsets[i + 1]]
+
+    def pooled(self) -> np.ndarray:
+        """`(n, width)` — mean over each domain's residues.
+
+        Reproduces `DomainEmbeddings` exactly from this file, which is what makes the two
+        comparable: any difference the pre-flight reports is the pooling and not a second
+        inference run that drifted.
+        """
+        return np.stack([self.residues(i).mean(0) for i in range(len(self.domains))])
+
+    def save(self, path: str | Path | None = None) -> Path:
+        p = Path(path) if path else residue_embedding_table(self.arm)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        np.savez(
+            p,
+            arm=np.asarray(self.arm),
+            model=np.asarray(self.model),
+            domains=self.domains,
+            offsets=self.offsets,
+            vectors=self.vectors,
+        )
+        return p
+
+    @classmethod
+    def load(cls, arm: str, path: str | Path | None = None) -> ResidueEmbeddings:
+        p = Path(path) if path else residue_embedding_table(arm)
+        if not p.exists():
+            raise FileNotFoundError(
+                f"no {arm} per-residue embeddings at {p}\n"
+                f"run scripts/build_embeddings.py --arm {arm} --per-residue"
+            )
+        with np.load(p, allow_pickle=False) as z:
+            return cls(str(z["arm"]), str(z["model"]), z["domains"], z["offsets"], z["vectors"])
 
 
 @dataclass(frozen=True)

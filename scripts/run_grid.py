@@ -291,6 +291,51 @@ def _null_section(frame: pd.DataFrame, repeats: int) -> list[str]:
     return lines + [""]
 
 
+def _calibration_section(frame: pd.DataFrame) -> list[str]:
+    """The decision rule, in the fold table's own report.
+
+    Blank at `λ = 0`, and that is a statement rather than a gap: the calibration head takes no
+    gradient there, so its output is `sigmoid` of an initialisation and every number computed
+    from it would be a constant dressed up as a measurement.
+    """
+    if "cal_ece" not in frame or not np.isfinite(frame.cal_ece).any():
+        return [
+            "",
+            "## The decision rule",
+            "",
+            "**Not measured: every run in this table had `model.bce_weight = 0`.** The model",
+            "emits a ranking and no call — `snp2prot.models.loss.multi_positive_infonce` is a",
+            "per-row softmax and so is exactly invariant to a per-protein offset, which is why",
+            "the null anchor never became a threshold (`T38`). `scripts/run_lambda_sweep.py`",
+            "sweeps `λ` and writes [`calibration.md`](calibration.md).",
+            "",
+        ]
+    scored = frame[np.isfinite(frame.cal_ece)]
+    return [
+        "",
+        "## The decision rule",
+        "",
+        "Where `model.bce_weight > 0` the model emits a calibrated `P(binds)` and therefore a",
+        "*call*, not only a ranking. `calls` is the median number of 8-mers named per protein",
+        "under the parameter-free rule — keep the top `round(Σ p)` — against the median number",
+        "that truly bind; `spread` is the gap between the most and fewest called in the fold,",
+        "which is where `T38` recorded a global cut failing (56 to 408 for comparable proteins).",
+        "`dead` is the protein-level AUROC for calling a variant that binds nothing from its",
+        "predicted interaction power alone, over `n` such variants.",
+        "",
+        "| arm | regime | fold | λ | ECE | calls | true | spread | F1 | dead | n |",
+        "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+        *[
+            f"| `{r.arm}` | {r.regime} | `{r.fold}` | {r.bce_weight:g} | {_fmt(r.cal_ece)} | "
+            f"{r.cal_n_called_median:.0f} | {r.cal_n_true_median:.0f} | "
+            f"{r.cal_count_spread:.0f} | {_fmt(r.cal_call_f1, 3)} | "
+            f"**{_fmt(r.cal_dead_auroc, 3)}** | {r.cal_n_dead:.0f} |"
+            for r in scored.itertuples()
+        ],
+        "",
+    ]
+
+
 def _provenance_line(frame: pd.DataFrame) -> str:
     """Which commit produced these rows, and whether the tree was modified.
 
@@ -354,6 +399,7 @@ def write_report(path: Path, frame: pd.DataFrame, per_domain: pd.DataFrame, conf
 
     lines += _seed_section(frame)
     lines += _null_section(frame, int(config["metrics"]["null_repeats"]))
+    lines += _calibration_section(frame)
     lines += _suppression_section(frame)
     lines += _selection_section(frame)
 
@@ -418,6 +464,294 @@ def write_report(path: Path, frame: pd.DataFrame, per_domain: pd.DataFrame, conf
         "",
         "```bash",
         "python scripts/run_grid.py          # about 5 h for two arms at 15,000 steps",
+        "```",
+    ]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n")
+
+
+# --- the lambda sweep's report (`scripts/run_lambda_sweep.py`) -------------------------------
+
+
+def _lambda_table(group: pd.DataFrame) -> list[str]:
+    """One row per λ, aggregated over whatever seeds and folds the caller passed in."""
+    lines = [
+        "| λ | runs | AUPR | vs λ=0 | ECE | calls | true | spread | F1 | dead AUROC | ratio |",
+        "|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    control = group[group.bce_weight == 0].aupr.mean()
+    for lam, part in group.groupby("bce_weight", sort=True):
+        aupr = f"**{_fmt(part.aupr.mean())}**"
+        if len(part) > 1:
+            aupr += f" ±{part.aupr.std(ddof=1):.4f}"
+        delta = "—" if lam == 0 else f"{part.aupr.mean() - control:+.4f}"
+        lines.append(
+            f"| {lam:g} | {len(part)} | {aupr} | {delta} | "
+            f"{_fmt(part.cal_ece.mean())} | "
+            f"{_fmt(part.cal_n_called_median.mean(), 0)} | "
+            f"{_fmt(part.cal_n_true_median.mean(), 0)} | "
+            f"{_fmt(part.cal_count_spread.mean(), 0)} | "
+            f"{_fmt(part.cal_call_f1.mean(), 3)} | "
+            f"**{_fmt(part.cal_dead_auroc.mean(), 3)}** | "
+            f"{_fmt(part.cal_power_ratio.mean(), 3)} |"
+        )
+    return lines
+
+
+def _reading(frame: pd.DataFrame) -> list[str]:
+    """The arithmetic a reader would do first, done here so it is reproducible.
+
+    **This is a computation, not a decision.** It names the λ values whose ranking is
+    statistically indistinguishable from the `λ = 0` control and orders those by the capability
+    the sweep exists to obtain. Which one to adopt — and whether any of them is good enough to
+    adopt at all — belongs in `docs/DECISIONS.md` and is the owner's.
+    """
+    control = frame[frame.bce_weight == 0]
+    if not len(control):
+        return []
+    # The bar the ranking must clear: the control's mean, less one seed-spread. With one seed
+    # per cell there is no spread to subtract and the bar is the control itself, which is the
+    # strict reading and is stated as such.
+    spread = frame.groupby(["arm", "regime", "fold", "bce_weight"]).aupr.std(ddof=1).mean()
+    measured = bool(np.isfinite(spread))
+    spread = float(spread) if measured else 0.0
+    bar = control.aupr.mean() - spread
+    per_lambda = frame.groupby("bce_weight").agg(
+        aupr=("aupr", "mean"), dead=("cal_dead_auroc", "mean"), ece=("cal_ece", "mean")
+    )
+    survivors = per_lambda[(per_lambda.index > 0) & (per_lambda.aupr >= bar)]
+    lines = [
+        "",
+        "## Reading it",
+        "",
+        f"The `λ = 0` control ranks at **{control.aupr.mean():.4f}** over these folds, and the",
+        (
+            f"mean across-seed spread is **{spread:.4f}** — so a λ whose AUPR is at or above"
+            if measured
+            else "across-seed spread is **not yet measured** — no cell has a second seed, so the"
+            " bar below is the control itself, which is the strict reading. A λ whose AUPR is"
+            " at or above"
+        ),
+        f"**{bar:.4f}** has not measurably cost anything in ranking. Among those, the ones that",
+        "buy the most dead-variant detection:",
+        "",
+    ]
+    if not len(survivors):
+        return lines + [
+            "**None.** Every λ above 0 cost more ranking than the seed spread can explain, which",
+            "is the outcome that says the two objectives genuinely conflict on this data. The",
+            "honest reading is then `T38`'s third option: the output is a ranking, and the",
+            "deliverable is top-`k` retrieval.",
+            "",
+        ]
+    ordered = survivors.sort_values("dead", ascending=False)
+    lines += [
+        "| λ | AUPR | vs control | dead AUROC | ECE |",
+        "|---:|---:|---:|---:|---:|",
+        *[
+            f"| {lam:g} | {_fmt(r.aupr)} | {r.aupr - control.aupr.mean():+.4f} | "
+            f"**{_fmt(r.dead, 3)}** | {_fmt(r.ece)} |"
+            for lam, r in ordered.iterrows()
+        ],
+        "",
+        "A dead-variant AUROC at or below 0.5 means the model cannot tell a variant that binds",
+        "nothing from one that still binds, whatever its AUPR — which is the capability `T38`",
+        "was raised about, and a good ranking does not substitute for it.",
+        "",
+    ]
+    return lines
+
+
+def write_calibration_report(
+    path: Path,
+    frame: pd.DataFrame,
+    per_domain: pd.DataFrame,
+    config: dict,
+    baseline: pd.DataFrame,
+    grid_lambdas: tuple[float, ...] = (),
+) -> None:
+    """`reports/calibration.md` — the λ sweep, rewritten after every run so a partial sweep reads.
+
+    Shares `write_report`'s helpers deliberately: the two reports must anchor to the same null,
+    the same baseline and the same formatting rules, or a number lifted from one into the other
+    would silently change meaning.
+    """
+    frame = frame.merge(baseline, on=["regime", "fold"], how="left")
+    frame["delta_k5"] = frame.aupr - frame.get("baseline_k5_aupr", np.nan)
+    for column in (
+        "cal_ece",
+        "cal_dead_auroc",
+        "cal_n_called_median",
+        "cal_n_true_median",
+        "cal_count_spread",
+        "cal_call_f1",
+        "cal_power_ratio",
+    ):
+        if column not in frame:
+            frame[column] = np.nan
+
+    done = frame.groupby("stage").size() if "stage" in frame else pd.Series(dtype=int)
+    lines = [
+        "# The decision rule — sweeping λ on `L = L_infonce + λ · L_bce`",
+        "",
+        "Generated by `scripts/run_lambda_sweep.py`. The question is `T38`: the model produced a",
+        "ranking and the deliverable needs a **call**, and no defensible threshold existed.",
+        "",
+        "**The diagnosis.** `multi_positive_infonce` is a per-row softmax, so it depends only on",
+        "differences *within* one protein's row and is exactly invariant to adding a constant to",
+        "that row. Nothing in it ever says where a protein's scores should sit relative to",
+        "another's. That is why the null anchor settled inside the negative cloud rather than",
+        "between the classes, and why a global Platt fit on the validation slice could not rescue",
+        "it either — no post-hoc step recovers an offset the objective never constrained.",
+        "",
+        "**The change.** A masked, unweighted binary cross-entropy term over the same cells,",
+        "through a two-scalar calibration head, weighted by `λ`. It is not shift-invariant, and",
+        "`sigmoid` of its output is a probability comparable across proteins. **`λ = 0` is the",
+        "pure-ranking objective exactly**, and it is re-run inside this experiment rather than",
+        "quoted from `training.md` — GPU training is not reproducible across processes (~0.003",
+        "AUPR on `S1/fold-2`), so a control from another invocation would carry that into every",
+        "delta.",
+        "",
+        "**What the columns mean.** `calls` is the median number of 8-mers named per protein",
+        "under the parameter-free rule — keep the top `round(Σ p)`, which has no threshold to",
+        "choose — against `true`, the median number that actually bind. `spread` is the gap",
+        "between the most and fewest called within a fold: `T38` measured a global cut calling 56",
+        "for one protein and 408 for another with comparable true counts, and a spread that",
+        "tracks the truth's is the outcome that fixes it. **`dead AUROC`** is the one the project",
+        "wants — separating variants that bind *nothing* from variants that still bind, using",
+        "the predicted interaction power `Σ p` and nothing else. `power ratio` is its paired",
+        "form: a dead variant's predicted power over its own wild type's, where 0 is *the",
+        "mutation abolished binding* and 1 is *the mutation did nothing*, which is what copying",
+        "the wild type scores by construction.",
+        "",
+        f"**{len(frame)} runs so far.**"
+        + (
+            "  Stages completed: " + ", ".join(f"`{k}` ({v})" for k, v in done.items())
+            if len(done)
+            else ""
+        ),
+        "",
+    ]
+
+    curve_stages = ["1-curve", "2-seeds", "3-arm"]
+    diagnostic = frame[frame.stage.isin(curve_stages)] if "stage" in frame else frame
+    if len(diagnostic):
+        lines += [
+            "## 1. The λ curve, on the three diagnostic folds",
+            "",
+            "`S1/fold-2`, `S2/fold-3` and `P3/all` — the folds the step-budget curve was measured",
+            "on, so this curve and that one stand on the same ground. Averaged over folds and",
+            "seeds; the ± is the across-seed spread where more than one seed has run.",
+            "",
+        ]
+        for arm, group in diagnostic.groupby("arm", sort=True):
+            lines += [f"### arm `{arm}`", "", *_lambda_table(group), ""]
+
+        lines += ["### Per fold, so an average cannot hide a disagreement", ""]
+        for keys, group in diagnostic.groupby(["arm", "regime", "fold"], sort=True):
+            arm, regime, fold = keys
+            lines += [f"**`{arm}` · {regime}/`{fold}`**", "", *_lambda_table(group), ""]
+        lines += _reading(diagnostic)
+
+    # **Not selected by stage.** A run that appears in more than one stage of the plan is trained
+    # once and carries the label of the first stage that wanted it — the `λ = 0` diagnostic folds
+    # belong to `1-curve` and to `4-grid` both — so filtering the grid table by stage name would
+    # silently drop three folds from it. The λ values and the base seed select it instead.
+    base_seed = int(config["model"]["seed"])
+    grid = (
+        frame[frame.bce_weight.isin(grid_lambdas) & (frame.model_seed == base_seed)]
+        if grid_lambdas
+        else frame.iloc[0:0]
+    )
+    if len(grid):
+        lines += [
+            "",
+            "## 2. The full 19-fold grid, at the λ values that got it",
+            "",
+            "Every regime, so the λ effect can be read where it matters — `S2`, unseen protein",
+            "components — rather than only where the model does well. `k=5` is the",
+            "nearest-neighbour baseline on the same held-out domains ([`nn_baseline.md`]"
+            "(nn_baseline.md)).",
+            "",
+            "**`folds` says how complete each row is** — a λ whose grid stage has not run yet",
+            "shows only the three diagnostic folds, and the count is how you can tell.",
+            "",
+            "| arm | regime | λ | folds | AUPR | `k=5` | delta | ECE | calls | true | dead AUROC |",
+            "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+        for keys, group in grid.groupby(["arm", "regime", "bce_weight"], sort=True):
+            arm, regime, lam = keys
+            lines.append(
+                f"| `{arm}` | {regime} | {lam:g} | {len(group)} | "
+                f"**{_fmt(group.aupr.mean())}** | {_fmt(group.baseline_k5_aupr.mean())} | "
+                f"{group.delta_k5.mean():+.4f} | {_fmt(group.cal_ece.mean())} | "
+                f"{_fmt(group.cal_n_called_median.mean(), 0)} | "
+                f"{_fmt(group.cal_n_true_median.mean(), 0)} | "
+                f"**{_fmt(group.cal_dead_auroc.mean(), 3)}** |"
+            )
+        lines.append("")
+
+    # `power_ratio` is absent entirely until a λ > 0 run has scored a dead variant whose wild
+    # type stayed in training, so the column is checked for rather than assumed.
+    if "power_ratio" in per_domain:
+        dead = per_domain[np.isfinite(per_domain.power_ratio.to_numpy(dtype=float))]
+    else:
+        dead = per_domain.iloc[0:0]
+    if len(dead):
+        lines += [
+            "",
+            "## 3. The dead variants, one row each",
+            "",
+            "Variants whose binding measurably vanished, paired with their own wild type. One row",
+            "per (fold, λ) occurrence, so `rows` exceeds `variants` wherever a variant is held out",
+            "in more than one fold — the corpus holds 18 of them under `label_health`.",
+            "`power ratio` near 0 is the model saying the mutation abolished binding; near 1 is",
+            "the model saying it did nothing, which is what the nearest-neighbour baseline says",
+            "by construction. `suppression` is the rank-based metric that predates this work and",
+            "needs no threshold, kept beside it as a cross-check.",
+            "",
+            "| λ | rows | variants | mean power ratio | median | below 0.5 | mean suppression |",
+            "|---:|---:|---:|---:|---:|---:|---:|",
+            *[
+                f"| {lam:g} | {len(g)} | {g.domain.nunique()} | {_fmt(g.power_ratio.mean(), 3)} | "
+                f"{_fmt(g.power_ratio.median(), 3)} | "
+                f"{_fmt(float((g.power_ratio < 0.5).mean()), 3)} | "
+                f"{_fmt(np.nanmean(g.suppression), 3)} |"
+                for lam, g in dead.groupby("bce_weight", sort=True)
+            ],
+            "",
+        ]
+
+    lines += [
+        "",
+        "## What this cannot say",
+        "",
+        "**The dead-variant numbers rest on 18 variants** (`label_health`'s `dead_variant`",
+        "records, `no_evidence` excluded). At that `n` a detection AUROC is a direction and not a",
+        "result, and the paired `power ratio` is the stronger read. `T30` is the open decision",
+        "that would enlarge the set.",
+        "",
+        "**A calibrated probability is not a validated one.** ECE says the numbers are not lies;",
+        "it does not say they are informative — a model predicting the base rate for every cell",
+        "scores an excellent ECE and is useless. Read it beside `F1` and `calls`/`true`, never",
+        "alone.",
+        "",
+        "**The calibration columns are blank at `λ = 0` by construction**, not by omission: the",
+        "head takes no gradient there, so its output is `sigmoid` of an initialisation.",
+        "",
+        "## Configuration",
+        "",
+        "```yaml",
+        f"width: {config['model']['width']}",
+        f"dna: {config['model']['dna']}",
+        f"protein: {config['model']['protein']}",
+        f"training: {config['training']}",
+        "```",
+        "",
+        _provenance_line(frame),
+        "",
+        "```bash",
+        "python scripts/run_lambda_sweep.py --budget-hours 55   # resumable, see the docstring",
         "```",
     ]
     path.parent.mkdir(parents=True, exist_ok=True)

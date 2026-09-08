@@ -208,9 +208,13 @@ were already parsed and one fails condition 2 outright. See
 
 ## Open tasks
 
-### T38 — the model has no decision rule, and it is not clear this approach can have one
-**Raised by the owner on 2026-08-28. This is a conceptual problem about the whole approach, not a
-task with a known fix, and it should be resolved before the method is presented as usable.**
+### T38 — the model now has a decision rule; it still cannot see a lost interaction
+**Raised by the owner on 2026-08-28, measured 2026-08-30. HALF ANSWERED, and the unanswered half
+moved to `T36`.** The objective gained a calibration term and the 312-run λ sweep it called for
+has run. Of the three closing conditions at the end of this entry, **1 and 2 are met and 3 is
+not** — and the reason 3 fails is not the objective, so no further sweeping will help. Read
+[`docs/ML_RESULTS.md`](docs/ML_RESULTS.md) §9 first; the problem statement below is preserved
+because it is still the right statement of what was wrong.
 
 The dataset's ground truth is binary: an 8-mer is bound or it is not, and the field reads a PBM
 E-score at a cutoff to decide which. **The model does not produce that.** It produces a continuous
@@ -250,6 +254,69 @@ a loss that has a decision boundary in it rather than a pure ranking objective; 
 output is a ranking and define the deliverable as top-`k` retrieval, which is honest but is a
 narrower claim than the project has been making.
 
+#### What was done, 2026-08-28 — and why the first option is dead
+
+**The first direction is not available, and neither is any other post-hoc fix.**
+`multi_positive_infonce` is a softmax over one row, so its value depends only on differences
+*within* a protein's row: **adding a constant to every entry of a row changes the loss by
+nothing at all.** The objective is exactly invariant to a per-protein offset, so it never
+constrains where a row sits — and no calibration applied afterwards can recover a quantity
+training never expressed. That also explains the null anchor's failure more deeply than the
+1,318-to-2 arithmetic above: even winning that vote, it had no defined place to settle.
+
+So the second direction was taken. `L = L_infonce + λ · L_bce`, a masked unweighted binary
+cross-entropy through a two-scalar calibration head — the cheapest term that is *not*
+shift-invariant, and whose output is a probability comparable across proteins. **`λ = 0` is the
+previous objective exactly** — verified on the last bit — so this is one knob, not a redesign.
+`docs/TRAINING.md` §2.5 is the design; `docs/DECISIONS.md` §13 is the decision and the three
+rejected alternatives.
+
+**Running now** (launched 2026-08-28): `scripts/run_lambda_sweep.py --budget-hours 55`, 312 runs
+over `λ ∈ {0, 1, 3, 10, 30, 100, 300, 1000, 3000, 10000}`, priority-ordered, resumable, writing
+[`reports/calibration.md`](reports/calibration.md) after every run. About 48 h.
+
+**What came back, 2026-08-30** (312 runs, 280 distinct configurations, 42.0 h, no failures;
+seed noise floor 0.005 AUPR):
+
+1. **The ranking survives.** ✅ Paired against each run's own `λ = 0` control: `λ = 30` costs
+   −0.0005 and is **+0.003 on `S2`**, `λ = 100` −0.002, `λ = 300` −0.007, `λ ≥ 1000` −0.005 to
+   −0.010. **Set `model.bce_weight: 30`** if calibrated output is wanted.
+2. **The calibration arrives.** ✅ Median calls now track the truth (`S1` 49 vs 49, `P2` 34 vs 35)
+   and it is per-protein informative — Spearman(predicted count, true count) 0.48-0.52 on `P3`,
+   `S1`, `P2`. **But 0.11-0.18 on `S2` and −0.09 on `P1`**: it transfers exactly as far as the
+   ranking does and no further.
+3. **Dead-variant detection does not beat 0.492.** ❌ On `P3/all` it is **0.43-0.52** against the
+   baseline's 0.492, and the model calls a median of **89** 8-mers for a protein that binds
+   nothing against 75 for one that does. It called zero for **0 of 18** dead variants at every λ.
+
+**Why, and where the problem actually is.** For those 18 variants, Spearman between the predicted
+interaction power and **the wild type's true binding count** is **+0.77 to +0.91, rising with λ**.
+The model returns the wild type's answer for a single-residue variant; better calibration only
+makes it a more confident wild-type copy. `suppression` agrees and is unmoved at 0.46-0.54 (random)
+for every λ. **This is a representation failure, not a threshold failure** — the thing `T38`
+assumed. It belongs to `T36` (a protein tower that can resolve a point mutation), which is
+therefore promoted from backlog to critical path.
+
+**One more result, and it is not comfortable.** Scoring calls rather than rankings made the
+baseline and the model commensurable for the first time. Pooled over 19 folds the model beats
+`k = 5` on AUPR by **+0.035** and loses to `k = 1` on call F1 by **−0.006**. The margin the
+project has been reporting is a ranking margin; as a decision there is no margin. `D7` a second
+time, from the other side.
+
+**The original closing conditions, kept for the record:**
+
+1. **the ranking survives.** If every `λ > 0` costs more AUPR than the across-seed spread
+   explains, the objectives conflict and the honest outcome is this entry's third option — a
+   ranking, and a top-`k` deliverable.
+2. **the calibration arrives** — the per-protein call count tracks the truth instead of spreading
+   over an order of magnitude, which is the failure measured above.
+3. **the dead-variant detection beats 0.492.** That is the nearest-neighbour baseline's
+   protein-level AUROC on `P3/all` (`reports/nn_baseline.md`), and it is the *literal* null
+   hypothesis: under that regime the baseline copies the variant's own wild type, so 0.492 is
+   what "the mutation does nothing" scores. **It rests on 18 variants** — a direction, not a
+   result. `T30` is the decision that would enlarge the set, and it is now on this entry's
+   critical path rather than being an optional extra.
+
 ### T37 — measure the across-seed variance, and decide what a seed should vary
 `model.seed` was split out of `splits.seed` on 2026-08-26: which domains are held out and how the
 towers are initialised are unrelated choices, and one number was doing both. `scripts/run_grid.py
@@ -258,8 +325,17 @@ per-regime spread; the default is 1 seed, so the grid stays one run per (arm, fo
 
 **Nothing has measured that spread yet, and several claims need it.** The `A1` -> `A4` deltas ran
 0.01-0.05 in the first grid, and a difference smaller than the run-to-run noise is not a result.
-Within-seed reproducibility is excellent — two identical runs agreed to 4e-6 — but that says
-nothing about a different initialisation.
+
+**And the floor under that is higher than recorded.** "Within-seed reproducibility is excellent —
+two identical runs agreed to 4e-6" was measured within one process and **does not hold across
+invocations.** Measured 2026-08-28: same code, same seeds, two processes, losses `8.96644592285`
+and `8.96644687653` at step 50, diverging thereafter — CUDA's `Conv1d` backward accumulates with
+atomics. End to end on `A1`/`S1/fold-2` it moved the selected step from 14,400 to 11,800 and the
+at-budget AUPR by **0.0026**. So the seed spread this task is meant to measure sits on top of a
+non-determinism floor of roughly that size, and **every delta this project has reported at the
+third decimal is inside it** (`docs/DECISIONS.md` §13.5). The open choice: turn on
+`torch.use_deterministic_algorithms` and pay the speed, or accept the floor and refuse to read
+deltas below ~0.005.
 
 Start with `--seeds 3` on one arm restricted to a few folds (`--regime S2` is the one that
 matters), roughly 70 min at the 15,000-step budget, and read the spread off the new section. The

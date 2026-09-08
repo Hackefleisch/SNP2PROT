@@ -46,6 +46,16 @@ treat it as an operating point; `snp2prot.evaluation.metrics.suppression` exists
 What `ν` does do is the paragraph above: it gives a domain with no positives a target, so such a
 row contributes a gradient instead of nothing at all. That job is real and is why it stays.
 
+## The decision rule lives in a second term, not in the anchor
+
+`calibration_bce` below, and `hybrid_loss` which adds it — `L = L_infonce + λ · L_bce`. The
+diagnosis that motivates it is one line: **the loss above is exactly invariant to adding a
+constant to a whole row**, being a softmax over that row, so nothing in it ever says where a
+protein's scores should sit relative to another protein's. A per-protein threshold cannot be
+recovered afterwards from a quantity training never constrained, which is why the anchor failed
+and why global Platt scaling on the validation slice failed after it (`T38`). Binary
+cross-entropy is not shift-invariant; `λ = 0` recovers this file's original behaviour exactly.
+
 ## Computed in O(K), not O(|P| · K)
 
 The negative part of the denominator is shared across all of a domain's positives, so with
@@ -99,3 +109,80 @@ def multi_positive_infonce(
     n_targets = targets.sum(dim=1).clamp(min=1)
     per_domain = (per_positive * targets).sum(dim=1) / n_targets
     return per_domain.mean(), per_domain
+
+
+def calibration_bce(
+    calibrated: torch.Tensor, labels: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Masked binary cross-entropy over the real 8-mers: the term that pins the row offsets.
+
+    **This exists because `multi_positive_infonce` is exactly invariant to a per-domain score
+    offset, and that is why the model has no decision rule** (`T38`). Its per-domain loss is a
+    softmax over one row, so it depends only on `logC_p - s(p, k⁺)` — differences *within* a
+    row. Add a constant to every entry of a row and the loss does not change by a float. The
+    objective therefore never says where a row should sit, only how it should be ordered, and
+    no post-hoc calibration can recover an offset the training signal never constrained. Measured
+    consequence: a globally-calibrated cut called between 56 and 408 8-mers per domain against a
+    true median of 44, and the null anchor — designed to be the threshold — settled inside the
+    negative cloud.
+
+    Binary cross-entropy is not shift-invariant. It is the cheapest term with that property, and
+    it produces the quantity the deliverable actually needs: `sigmoid(calibrated)` is a
+    probability that *this* protein binds *this* 8-mer, comparable across proteins, so a protein
+    that binds nothing is one whose probabilities are all low rather than one whose ranking has
+    to be interpreted.
+
+    **Unweighted, deliberately.** At 466:1 the negatives are 99.8% of every row and the usual
+    reflex is to class-weight or to reach for focal loss. Both re-bias the output away from the
+    empirical rate, which is precisely the thing being asked for here — a weighted BCE is
+    calibrated to a class balance that does not exist. The ranking is already supplied by the
+    InfoNCE term; this term's only job is to be honest about the base rate, so it is left alone
+    and `λ` (`training.bce_weight`) sets how much it counts.
+
+    **Per-domain mean, then mean over domains**, matching §2.3(c): every protein counts once
+    whatever its positive count, exactly as the InfoNCE term and the reported metric do. Gray
+    cells (`label == -1`) are masked out of both the sum and the count, so a domain with a wide
+    no-call band is not quietly averaged over cells it has no evidence for.
+
+    `calibrated` is `(B, K)` — **no null-anchor column**. The anchor is not a labelled 8-mer, so
+    it has no target here and taking one would invent evidence.
+    """
+    if calibrated.shape != labels.shape:
+        raise ValueError(
+            f"calibrated logits are {tuple(calibrated.shape)} and labels {tuple(labels.shape)}; "
+            "the BCE term is over the real 8-mers only, so the null anchor's column must be "
+            "dropped before calling this"
+        )
+    scored = labels != GRAY
+    target = (labels == BIND).to(calibrated.dtype)
+    per_cell = nn.functional.binary_cross_entropy_with_logits(calibrated, target, reduction="none")
+    counts = scored.sum(dim=1).clamp(min=1)
+    per_domain = (per_cell * scored).sum(dim=1) / counts
+    return per_domain.mean(), per_domain
+
+
+def hybrid_loss(
+    logits: torch.Tensor,
+    calibrated: torch.Tensor,
+    labels: torch.Tensor,
+    bce_weight: float,
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    """`L = L_infonce + λ · L_bce`, and the two terms behind it.
+
+    **`λ = 0` is the pure-ranking objective exactly** — the calibration head takes no gradient at
+    all and the returned total *is* the InfoNCE value, to the last bit. That is what makes this a
+    one-knob ablation rather than a redesign (`docs/DECISIONS.md` §13). It does not make an old
+    run's *numbers* reproducible: GPU training is not deterministic across processes, so a `λ = 0`
+    control has to be re-run alongside whatever it is controlling for.
+
+    The two terms are on very different scales and that is expected rather than a defect. At
+    initialisation the InfoNCE term is about `log K ≈ 10.4` while the BCE term, predicting the
+    base rate, is about `0.014` — the entropy of a 0.0015 Bernoulli. So the useful `λ` grid is
+    logarithmic and centred near their ratio, ~10³, not near 1. Both terms are returned
+    separately and logged separately, so a run says which of them it was actually minimising.
+    """
+    infonce, _ = multi_positive_infonce(logits, labels)
+    if not bce_weight:
+        return infonce, {"infonce": infonce.detach(), "bce": torch.zeros((), device=logits.device)}
+    bce, _ = calibration_bce(calibrated, labels)
+    return infonce + bce_weight * bce, {"infonce": infonce.detach(), "bce": bce.detach()}

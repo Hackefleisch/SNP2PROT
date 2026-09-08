@@ -55,7 +55,7 @@ from snp2prot import (
 from snp2prot.baselines import nn_lookup
 from snp2prot.config import PROCESSED_DIR, REPORTS_DIR
 from snp2prot.data.matrix import KmerMatrix
-from snp2prot.evaluation import c1, metrics
+from snp2prot.evaluation import c1, calibration, metrics
 
 DEFAULT_OUT = REPORTS_DIR / "nn_baseline.md"
 #: Every held-out domain's own numbers, for the figures §5.2 asks for: the report can
@@ -120,6 +120,42 @@ def score_fold(
         for i, row in enumerate(fold.test)
     ]
     summary = metrics.macro_average(scores)
+
+    # **The baseline has a decision rule and the model did not, which is why its AUPR was never a
+    # like-for-like number** (`T38`). `k = 1` emits a SET — the neighbour's positive calls — so
+    # scoring it as a set costs nothing and finally puts the two on the same footing. The rule is
+    # the same one the model is scored under, `expected_count_rule`, which for a 0/1 profile is
+    # exactly "the 8-mers the neighbour binds" and for the `k = 5` vote is "as many as the
+    # weighted vote expects".
+    calls = []
+    for i, row in enumerate(fold.test):
+        scored_cells = matrix.label[row] != -1
+        profile = prediction.profile[i][scored_cells]
+        truth = matrix.label[row][scored_cells]
+        entry = calibration.score_calls(
+            truth, profile, calibration.expected_count_rule(profile)
+        ).as_dict()
+        entry["power"] = calibration.interaction_power(profile)
+        calls.append(entry)
+    call_frame = pd.DataFrame(calls)
+    judgeable = domains.verdict.to_numpy()[fold.test] != label_health.NO_EVIDENCE
+    binds_nothing = (matrix.label[fold.test] == 1).sum(axis=1) == 0
+    # `name`, not `k`: `k` is this function's top-k parameter and shadowing it inside a
+    # comprehension is a bug waiting for someone to move the line out of one.
+    summary |= {f"cal_{name}": float(np.nanmean(call_frame[name])) for name in call_frame.columns}
+    summary |= {
+        "cal_n_called_median": float(np.nanmedian(call_frame.n_called)),
+        "cal_n_true_median": float(np.nanmedian(call_frame.n_true)),
+        "cal_count_spread": float(np.nanmax(call_frame.n_called) - np.nanmin(call_frame.n_called)),
+        # The protein-level question, asked of the baseline: can "how many 8-mers does my nearest
+        # relative bind" tell a dead variant from a live one. Under `P3/all` the nearest relative
+        # IS the wild type, so this is the literal null hypothesis — the mutation does nothing —
+        # and a value near 0.5 is what it should score.
+        "cal_dead_auroc": calibration.detection_auroc(
+            binds_nothing[judgeable], call_frame.power.to_numpy()[judgeable]
+        ),
+        "cal_n_dead": float(binds_nothing[judgeable].sum()),
+    }
     summary |= {
         "regime": fold.regime,
         "fold": fold.name,
@@ -150,6 +186,7 @@ def score_fold(
             "neighbour_edits": prediction.neighbours.n_edits.to_numpy(),
         }
     )
+    per_domain = pd.concat([per_domain, call_frame], axis=1)
     return summary, per_domain
 
 
@@ -511,6 +548,35 @@ def write_report(
                 f"| {row.regime} | `{row.fold}` | {_fmt(row.aupr_1)} | {_fmt(row.aupr_k)} | "
                 f"{row.aupr_k - row.aupr_1:+.4f} |"
             )
+
+    lines += [
+        "",
+        "## As a decision, not a ranking",
+        "",
+        "**The baseline always had a decision rule and the model did not**, and that asymmetry is",
+        "why its AUPR was never a like-for-like number (`T38`). `k = 1` emits a *set* — the 8-mers",
+        "its nearest training relative binds — so scoring it as a set costs nothing and puts the",
+        "two on the same footing at last. The rule is the one the model is scored under,",
+        "`calibration.expected_count_rule`: keep the top `round(Σ p)`, which for a 0/1 profile is",
+        "exactly the neighbour's own calls.",
+        "",
+        "`dead` is the protein-level AUROC for spotting a variant that binds nothing from the",
+        "predicted set size alone. **Near 0.5 is the expected value and the informative one**:",
+        "under `P3/all` the nearest relative of a held-out variant *is* its wild type, so this",
+        "column is the literal null hypothesis — the mutation does nothing — and any model that",
+        "cannot beat it has not learned to see a lost interaction.",
+        "",
+        "| regime | fold | called | true | spread | precision | recall | F1 | dead | n |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for row in primary.itertuples():
+        lines.append(
+            f"| {row.regime} | `{row.fold}` | {row.cal_n_called_median:.0f} | "
+            f"{row.cal_n_true_median:.0f} | {row.cal_count_spread:.0f} | "
+            f"{_fmt(row.cal_call_precision, 3)} | {_fmt(row.cal_call_recall, 3)} | "
+            f"{_fmt(row.cal_call_f1, 3)} | **{_fmt(row.cal_dead_auroc, 3)}** | "
+            f"{row.cal_n_dead:.0f} |"
+        )
 
     lines += [
         "",

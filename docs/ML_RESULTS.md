@@ -14,6 +14,14 @@ script that sees one experiment.
 15,000 steps, 4.9 hours. It replaces the grid of 2026-08-25 in full, which was invalidated by the
 modelling audit ([`DECISIONS.md` §12](DECISIONS.md)); nothing from that run survives here.
 
+> **Those runs were all `model.bce_weight = 0`, which is now a setting rather than the only
+> behaviour.** §8's limitation was acted on the same day: the objective gained a calibration term
+> and a 312-run sweep of `λ` is measuring what it costs and what it buys
+> ([`DECISIONS.md` §13](DECISIONS.md), [`reports/calibration.md`](../reports/calibration.md)).
+> **`λ = 0` is the objective every run below used**, so nothing here is invalidated — but §8 is no
+> longer the last word on it: **§9 is the result**, and it relocates the problem rather than
+> solving it.
+
 ---
 
 ## The headline, in three sentences
@@ -220,18 +228,131 @@ says the model orders one protein's 8-mers well relative to each other; it does 
 its scores mean the same thing across proteins, and the measurements above suggest they do not.**
 Read every number in this document with that attached.
 
-## 9. What follows
+**Why neither candidate could have worked, found 2026-08-28.** The loss is a per-row softmax, so
+it depends only on differences *within* a protein's row and is **exactly invariant to adding a
+constant to that row**. Nothing in the objective ever said where a row should sit. That rules out
+the null anchor on principle rather than on arithmetic, and it rules out the global cut and every
+other post-hoc calibration with it — none of them can recover a quantity training never
+constrained. The fix is a second term in the loss that is not shift-invariant, and it is running:
+[`DECISIONS.md` §13](DECISIONS.md), [`reports/calibration.md`](../reports/calibration.md).
 
-1. **`T38` — the decision rule.** The limitation in §8 is the one that decides whether any of
-   this is usable, and it may not have an answer inside the current design. Ahead of the rest.
-2. **`T37` — seeds.** Nothing in §6, and none of the smaller deltas in §3, is interpretable
-   without an error bar. `run_grid.py --seeds 3 --regime S2` is about 70 minutes and is the
-   cheapest thing on this list.
-3. **`T36` — a non-linear protein tower.** `model.protein.hidden` is in the config and set to 0.
-   Note `dropout` changes meaning when it is not (`snp2prot.models.encoders`).
+**One number from that work belongs here already**, because it sets the bar the rest of this
+document is silent about. Scored as a *decision* rather than a ranking, the nearest-neighbour
+baseline detects a variant that binds nothing at AUROC **0.492** on `P3/all` — chance, and
+correctly so, since under that regime it copies the variant's own wild type and is therefore the
+literal hypothesis *the mutation does nothing*. **No model in this document has been shown to
+beat it**, because until now nothing here could be asked the question.
+
+## 9. The decision rule, measured — and the capability it was meant to unlock is not there
+
+The λ sweep `T38` called for finished 2026-08-30: **312 runs (280 distinct configurations), 42.0
+hours, no failures**, over `λ ∈ {0, 1, 3, 10, 30, 100, 300, 1000, 3000, 10000}`, both arms, 3 seeds
+on the diagnostic folds. [`reports/calibration.md`](../reports/calibration.md) is the table; this
+is the reading. **The noise floor is 0.005 AUPR** — the mean within-cell spread across the three
+seeds, max 0.012 — and nothing below it is read here.
+
+`T38` set three conditions. **Two are met and the third, which is the one the work was for, is
+not.**
+
+### 9.1 The ranking survives — `λ ≤ 100` is free
+
+Paired against each run's own `λ = 0` control on the same arm, fold and seed, so the
+fold-to-fold variance cancels:
+
+| λ | pairs | mean Δ AUPR | on `S2` alone |
+|---:|---:|---:|---:|
+| 1 – 10 | 12 each | −0.000 to +0.002 | −0.001 to +0.007 |
+| **30** | 52 | **−0.0005** | **+0.003** |
+| 100 | 52 | −0.0019 | −0.003 |
+| 300 | 52 | −0.0065 | −0.011 |
+| 1000 – 10000 | 12 each | −0.005 to −0.010 | −0.009 to −0.011 |
+
+So calibration is genuinely free up to `λ = 100` and costs a real amount from `λ = 300` up. On
+`S2` — the regime the project hangs on — `λ = 30` is the only value that is not negative.
+
+### 9.2 The calibration arrives, and transfers exactly as far as the ranking does
+
+`T38`'s original complaint was a global cut calling 56 to 408 8-mers for proteins whose true
+counts ran 10 to 206. That is fixed: under `expected_count_rule` — keep the top `round(Σ p)`, no
+free parameter — the median call count now tracks the truth (`S1` 49 against 49, `P2` 34 against
+35, `P3` 70 against 55).
+
+And it is per-protein informative, not a global average dressed up: Spearman between the
+predicted count and the true count is **0.48–0.52** on `P3`, `S1` and `P2`. **But 0.11–0.18 on
+`S2` and −0.09 to −0.05 on `P1`.** The model knows how much a protein binds when it has seen its
+relatives and does not otherwise — the same generalisation boundary §5 found for the ranking, and
+calibration does not cross it either.
+
+### 9.3 It cannot see a lost interaction. It never could, and the loss was not the reason
+
+The capability the work was for. On `P3/all`, where all 18 dead variants are held out:
+
+| | model, best λ | nearest-neighbour lookup |
+|---|---:|---:|
+| dead-variant detection AUROC | **0.43 – 0.52** | **0.492** |
+| median 8-mers called for a protein that binds nothing | **89** | — |
+| median 8-mers called for a protein that does bind (true 79) | 75 | — |
+| dead variants for which it called **zero** 8-mers | **0 of 18**, at every λ | — |
+
+**The model calls more 8-mers for proteins that bind nothing than for proteins that bind.**
+Across the full grid the detection AUROC runs 0.33–0.56 and is at or below chance nearly
+everywhere; the one region above it (`S2/fold-3`, 0.76–0.82) rests on **3** variants.
+
+The mechanism is unambiguous. For those 18 variants, Spearman between the model's predicted
+interaction power and **its wild type's true binding count** is **+0.77 to +0.91 — and it rises
+with λ.** The model is predicting *this protein binds about as much as its wild type does*, which
+is the null hypothesis, and better calibration only makes it a more confident null hypothesis.
+`suppression`, the rank-based metric that predates this work, agrees and is unmoved: 0.46–0.54 at
+every λ, which is random.
+
+**So the failure is upstream of the objective.** The protein tower reads a pooled embedding of a
+domain that differs from its wild type at one residue, and returns the wild type's answer. No
+weighting of the two loss terms can fix that, and the sweep is the evidence that none does. This
+is the same wall §4's C1 result hit from the other side — and consistent with it, the C1 set's
+AUPR is unchanged at every λ (0.59–0.61), with call F1 0.17–0.23 against 0.66–0.79 on the rest.
+
+### 9.4 The new comparison, and it is not flattering
+
+Scoring calls rather than rankings finally makes the baseline and the model commensurable, since
+`k = 1` always emitted a set. Pooled over all 19 folds:
+
+| | model | lookup | delta |
+|---|---:|---:|---:|
+| AUPR (vs `k = 5`) | 0.628 | 0.593 | **+0.035** |
+| **call F1 (vs `k = 1`)** | **0.451** | **0.457** | **−0.006** |
+
+**The +0.035 AUPR margin does not survive being asked for a call.** Per regime the model wins as
+a decision only on `S2` (+0.013 to +0.016) and on `P3` at `λ = 300` (+0.013); it loses on `P1`,
+`P2` and `S1`. This is `D7`'s lesson a second time — there the baseline's apparent strength came
+from ordering information the model never had, here the model's apparent strength comes from
+emitting an ordering the task never asked for. **Nothing in §2's margin is invalidated; §2 is
+simply not a statement about the deliverable.**
+
+### 9.5 What to set, and what to stop claiming
+
+**`model.bce_weight: 30`** if calibrated output is wanted: free on every regime, the only λ that
+is positive on `S2`, and count-tracking as good as any. Nothing above 100 is worth its cost.
+
+**Drop the pathogenic-variant claim.** On the evidence here the model cannot detect a lost
+interaction, and it fails in the specific way that is worst for that use — confidently calling
+~90 sites for a protein that binds none. That is not a threshold problem, which is what `T38`
+took it to be; it is a representation problem, and it puts `T36` (a protein tower that can
+resolve a point mutation) on the critical path rather than in the backlog.
+
+## 10. What follows
+
+1. **`T36` — a protein tower that can resolve a point mutation.** §9.3 relocated the problem:
+   the model returns the wild type's answer for a single-residue variant, and no objective fixes
+   that. This was a backlog item and is now the critical path for the project's central claim.
+2. **`T38` — measured, and only half answered.** The decision rule exists and is honest (§9.1,
+   §9.2); the capability it was built for is absent (§9.3). What is still open is what to claim:
+   §9.4 says the model's margin is a ranking margin and not a decision margin.
+3. **`T37` — seeds. Partly answered, and the news is bad.** The sweep's three seeds put the
+   within-cell spread at **0.005 mean, 0.012 max**, on top of a cross-process non-determinism
+   floor of the same size (`DECISIONS.md` §13.5). Several deltas in §3 and §6 are inside it.
 4. **C1 is where the project's claim lives and it is currently negative.** §4's second half is the
-   number to move. It is worth asking whether 18 variants can support the claim at all, and what
-   evidence would.
+   number to move, and §9.3 says why it has not moved. It is worth asking whether 18 variants can
+   support the claim at all, and what evidence would.
 5. **A longer budget**, given §7 — cheap, and the curve has not clearly stopped.
 
 ---

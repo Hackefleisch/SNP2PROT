@@ -147,6 +147,31 @@ model:
   # keeps the grid at one run per (arm, fold).
   seed: 20260819
 
+  # THE DECISION RULE (T38, resolved 2026-08-28 -- docs/DECISIONS.md section 13).
+  #
+  # lambda in `L = L_infonce + lambda * L_bce`. The InfoNCE term is a per-row softmax and is
+  # therefore EXACTLY invariant to adding a constant to a whole protein's row, so it never says
+  # where a row should sit -- only how it should be ordered. That is why the null anchor never
+  # became a threshold and why a global Platt fit on the validation slice could not be one
+  # either: no post-hoc step recovers an offset training never constrained. Binary cross-entropy
+  # is not shift-invariant, and `sigmoid(model.calibrate(cosine))` is then a probability
+  # comparable across proteins.
+  #
+  # 0.0 is the pure-ranking objective EXACTLY -- the calibration head takes no gradient at all --
+  # which is what makes this one knob rather than a redesign. It does not reproduce an older run's
+  # numbers: GPU training is not deterministic across processes (~0.003 AUPR on S1/fold-2), so a
+  # lambda=0 control is re-run beside every sweep rather than read off reports/training.md.
+  #
+  # THE SCALE IS NOT 1. At initialisation the InfoNCE term is ~log(32896) = 10.4 while the BCE
+  # term, predicting the base rate, is the entropy of a 0.0021 Bernoulli, ~0.0155. The terms
+  # differ by ~670x, so the useful grid is logarithmic around 10^2-10^3 and `bce_weight: 1` is
+  # very nearly `bce_weight: 0`. `scripts/run_lambda_sweep.py` enumerates it.
+  #
+  # It lives under `model:` rather than `training:` because `model:` is the block Trainer.save
+  # stores inside every checkpoint, and whether the calibration head was trained is exactly the
+  # thing a reader of a checkpoint must know before trusting `TwoTower.probabilities`.
+  bce_weight: 0.0
+
   # CLIP convention: stored as log(1/temperature), clamped, and learned by default -- one
   # fewer thing to sweep across 19 folds x 4 arms, and the right scale depends on `width`.
   temperature: 0.07
@@ -173,8 +198,18 @@ training:
   #   S2/fold-3                     0.2275      0.2457   +0.018
   #   S1/fold-2                     0.6584      0.6863   +0.028
   #
-  # (Windows of three evals, compared within a single run, so no cross-run variation enters;
-  # two identical runs agree to 4e-6.) Memorising the training set and generalising to unseen
+  # (Windows of three evals, compared WITHIN a single run, which is what makes the comparison
+  # readable -- see below, cross-run variation is far from negligible.)
+  #
+  # CORRECTION, 2026-08-28: this comment used to add "two identical runs agree to 4e-6". That
+  # holds within one process and NOT across invocations. Two processes, identical code, identical
+  # seeds, gave losses 8.96644592285 and 8.96644687653 at step 50 and diverged from there -- CUDA
+  # accumulates the Conv1d backward with atomics. End to end it moved the selected step from
+  # 14,400 to 11,800 and the AUPR by 0.0026, and the sweep's three seeds put the within-cell
+  # spread at 0.005 (max 0.012). The +0.018 to +0.028 gains above survive that floor comfortably;
+  # several other deltas this project has reported do not (docs/DECISIONS.md section 13.5).
+  #
+  # Memorising the training set and generalising to unseen
   # proteins are simply not coupled here. Cosine LR decay was measured as an alternative and is
   # slightly WORSE at equal budget -- 0.8438 against 0.8458 on P3/all -- so the budget is the
   # lever, not the schedule. All three folds were still climbing at 15,000.
@@ -206,6 +241,18 @@ metrics:
   # Recall once the ranking is thresholded at this precision. Undefined for a domain whose
   # ranking never reaches it, and reported as such rather than as zero.
   recall_at_precision: 0.5
+
+  # The calibration curve's bins, equal-mass rather than equal-width. At a 0.0021 base rate an
+  # equal-width binning puts 99.9% of cells in the first bin and reports one number for the whole
+  # negative cloud, which is the part being asked about
+  # (snp2prot.evaluation.calibration.expected_calibration_error).
+  calibration_bins: 15
+
+  # The naive decision rule, reported beside the parameter-free one. `call_threshold` is a fixed
+  # probability cut; `expected_count_rule` instead keeps the top round(sum p) 8-mers per protein,
+  # which has no free parameter and cannot produce T38's failure mode -- one global cut calling
+  # 56 8-mers for one protein and 408 for another with a comparable true count.
+  call_threshold: 0.5
 
   # How many draws of the random-ranking null to sample per fold. A per-protein AUPR is anchored
   # to the protein's own positive rate, so a raw number is not comparable between folds and a

@@ -1526,3 +1526,168 @@ non-binding is pushed far away.
   sequences, since a reordered corpus passes both a length check and a set check.
 * **`snp2prot.training` had no tests.** It is the module that decides which domains a model
   sees and which checkpoint is kept. It now has 15, and the suite went 262 → 320.
+
+---
+
+## 13. The decision rule — 2026-08-28
+
+`T38` was raised on 2026-08-28 and is resolved here as far as a design decision can resolve it:
+the objective changed, and a sweep is running to say whether the change works. **The claim that
+the model now has a decision rule is not yet supported by a measurement** — that is
+[`reports/calibration.md`](../reports/calibration.md), which is written by the sweep and should be
+read before anything in this section is treated as an outcome.
+
+### 13.1 Why no threshold could ever have been recovered
+
+The model produced a continuous score per (protein, 8-mer) and every metric in the project —
+AUPR, AUROC, precision@k, R@P — is rank-based, so nothing ever required it to commit to a call.
+`T38` recorded three failed attempts at extracting one after the fact: the null anchor sat inside
+the negative cloud with a median of 15,396 of 32,896 8-mers above it; a globally calibrated cut
+called between 56 and 408 8-mers per domain for proteins whose true counts ran 10 to 206; and on
+the 18 variants that bind *nothing* it called 56 to 408.
+
+**The reason is one line and it is structural.** `multi_positive_infonce` is a softmax over one
+row, so its value depends only on `logC_p − s(p, k⁺)` — differences *within* a protein's row.
+**Adding a constant to every entry of a row leaves the loss unchanged to the last bit.** The
+objective is exactly invariant to a per-protein offset and therefore never says where a row
+should sit, only how it should be ordered.
+
+That kills the whole class of post-hoc fixes at once. A Platt scaling, a per-family
+recalibration, a smarter reading of the anchor — none of them can recover a quantity the training
+signal never constrained. **The fix had to be in the loss**, which is what the owner concluded
+independently when the options were put on 2026-08-28.
+
+`tests/test_loss.py::test_infonce_is_exactly_invariant_to_a_per_row_shift` pins the diagnosis so
+it cannot quietly stop being true.
+
+### 13.2 What was chosen, of four options
+
+Four were considered: BCE replacing InfoNCE; **BCE added to it**; a cardinality head predicting
+`Σ p` with the loss untouched; and a per-protein learned boundary trained with a two-sided hinge.
+The second was taken, for one reason above the others — **`λ = 0` is the previous objective
+exactly**, so it is a one-knob ablation rather than a redesign and no earlier result becomes
+unreachable. The control still has to live *inside* the new experiment rather than be quoted from
+`reports/training.md`, for the reason in §13.5. Replacing InfoNCE outright (option A) was
+rejected because at 466:1 the term that delivers the ranking would have been the one removed.
+
+```
+L  =  L_infonce  +  λ · L_bce
+```
+
+`docs/TRAINING.md` §2.5 is the design and states the four choices inside it — the head's own
+scale and bias rather than the temperature, the deliberate absence of class weighting, the bias
+initialised at the *training* pool's base rate, and the per-domain normalisation that matches
+§2.3(c).
+
+### 13.3 The λ grid is placed by measurement
+
+Measured at initialisation on `A1`/`P3/all`: InfoNCE **10.44**, BCE **0.0166** (the entropy of a
+0.0021 Bernoulli) — a ratio of **631**. So `λ = 1` is nearly the control and the terms are
+comparable near `λ ≈ 600`. The ratio does not hold still either: InfoNCE falls to ~0.005 by step
+6,000 while the BCE term plateaus, so a `λ` that is negligible at step 1 can dominate by step
+10,000. The grid is therefore logarithmic and wide: `λ ∈ {0, 1, 3, 10, 30, 100, 300, 1000, 3000,
+10000}`.
+
+### 13.4 Four metrics that are not rank-based, and a baseline that finally compares
+
+`snp2prot.evaluation.calibration`, new. `expected_calibration_error` (quantile-binned, because at
+a 0.0021 base rate equal-width bins put 99.9% of cells in the first one); `score_calls` for the
+named set; `expected_count_rule` — **keep the top `round(Σ p)`, a decision rule with no free
+parameter**, which cannot reproduce `T38`'s failure because the count *is* the per-protein
+quantity; and `interaction_power` / `detection_auroc` / `power_ratio`, the protein-level
+statistics that answer *has the interaction gone* without needing a wild type to compare against.
+
+**The nearest-neighbour baseline now carries all of them** (`reports/nn_baseline.md`, "As a
+decision, not a ranking"). This matters more than it looks: `k = 1` always emitted a *set* and
+the model only ever emitted a ranking, which is part of why `D7`'s AUPR comparison was never
+quite like for like. Scored as decisions, the bar on 2026-08-28 is:
+
+| fold | baseline call F1 | baseline dead-detection AUROC |
+|---|---:|---:|
+| `P3/all` | 0.659 | **0.492** |
+| `S2`, mean over 5 folds | 0.188 | 0.24-0.71 (n = 0-10) |
+| `P1/Homeodomain` | 0.010 | 0.545 |
+
+**The 0.492 is the number to keep.** Under `P3/all` a held-out variant's nearest training
+relative *is* its wild type, so that column is the literal null hypothesis — the mutation does
+nothing — and it scores chance, exactly as it should. A model that cannot beat 0.492 has not
+learned to see a lost interaction, whatever its AUPR says.
+
+### 13.5 GPU training is not reproducible across processes, and it is worth 0.003 AUPR
+
+Found while checking that the sweep's first `λ = 0` run matched the committed grid. It did not:
+`A1`/`S1/fold-2` selected step **11,800** where `reports/training.md` recorded 14,400, and the
+model at the step budget scored **0.6806** against 0.6832 — the same code, the same seeds, the
+same fold.
+
+**It is not the calibration term.** At `λ = 0` the head takes no gradient and the objective is
+identical to the last bit. The cause is CUDA's own non-determinism — the DNA tower's `Conv1d`
+backward accumulates with atomics — and it predates all of this work. Measured directly, two
+processes running identical code with identical seeds:
+
+| step | run A | run B |
+|---:|---|---|
+| 50 | `8.96644592285` | `8.96644687653` |
+| 300 | `5.33333396912` | `5.33361291885` |
+
+They diverge at the first evaluation and the gap compounds over 15,000 steps.
+
+**Two things follow.** First, `configs/experiment.yaml`'s "two identical runs agree to 4e-6" —
+written of two runs in one process — does not hold across invocations, and any delta this
+project has reported at the third decimal needs that attached — several in `ML_RESULTS.md` §3
+and §6 are of that size. Second, and this is why the
+sweep is built the way it is: **a `λ = 0` control has to be re-run inside the experiment**, on the
+same fold, in the same process family, rather than read off `reports/training.md`. Comparing a
+`λ > 0` run against a committed number would put 0.003 of unattributed noise into every delta the
+sweep exists to measure. `T37` inherits the question of what to do about it — a deterministic
+mode (`torch.use_deterministic_algorithms`) would cost speed, and the alternative is to keep
+reporting seeds and treat sub-0.005 deltas as unresolvable.
+
+### 13.6 A defect found while building it
+
+`expected_count_rule` expressed "call nothing" as a threshold one ulp above the maximum. Under
+NumPy's weak scalar promotion a Python float compared against a `float32` array is cast down to
+`float32`, and `nextafter(0.0, inf)` — a denormal double — becomes exactly `0.0` there. **The cut
+meant to call nothing called everything**: measured on the baseline, a held-out domain whose
+nearest neighbour binds no 8-mer was reported at 32,894 calls rather than 0, and the per-fold
+call spread read 32,893 rather than ~200. It is `inf` now, which survives any downcast.
+
+Both the model's probabilities and the baseline's profiles are `float32`, and the case it
+corrupts — *the model believes this protein binds nothing* — is precisely the one the whole
+change exists to detect.
+`tests/test_calibration.py::test_calling_nothing_survives_a_float32_profile`.
+
+### 13.7 The outcome — 2026-08-30
+
+312 runs, 280 distinct configurations, 42.0 h, no failures.
+[`reports/calibration.md`](../reports/calibration.md) is the table and
+[`ML_RESULTS.md`](ML_RESULTS.md) §9 is the reading. In one paragraph: **the loss change did
+exactly what it was designed to do, and the capability it was designed to unlock is not there.**
+`λ ≤ 100` costs nothing in ranking (paired, against each run's own control, on a 0.005 noise
+floor); the per-protein call count now tracks the truth and is informative wherever the model
+generalises; and dead-variant detection stays at or below the baseline's 0.492 at every λ, because
+the model returns the wild type's answer for a single-residue variant — Spearman(predicted power,
+wild type's true count) **+0.77 to +0.91**, rising with λ. `model.bce_weight: 30` is the setting
+worth adopting. The pathogenic-variant claim is not supportable and `T36` becomes critical path.
+
+**One defect in the sweep itself, found in the analysis and fixed.** `plan()`'s stages overlap by
+design — `1-curve` and `6-grid-wide` both want `A1`/`P3/all` at `λ = 30` — and `expand()` did not
+deduplicate within a single invocation, only against what was already on disk. **32 of 312 runs
+were repeats, about 4.3 h**, and every duplicated cell was double-weighted in a naive average over
+the summary table. `expand()` now drops them, keeping the first stage that wants each
+configuration so the priority ordering is preserved. No conclusion above depends on it — the
+analysis deduplicates — but a table built straight off the parquet without `drop_duplicates` will
+be subtly wrong.
+
+### 13.8 What is still open
+
+`T38` is **not** closed by this. Three things have to come back from the sweep before the
+approach can be called usable, and each has a way of failing:
+
+1. **the ranking has to survive.** If every `λ > 0` costs more AUPR than the across-seed spread
+   explains, the two objectives genuinely conflict on this data and the honest outcome is
+   `T38`'s third option — the output is a ranking and the deliverable is top-`k` retrieval;
+2. **the calibration has to arrive**, meaning the per-protein call count tracks the truth rather
+   than spreading over an order of magnitude;
+3. **the dead-variant detection has to beat 0.492.** This rests on **18 variants**, so a result
+   here is a direction and not a result; `T30` is the decision that would enlarge the set.

@@ -85,6 +85,28 @@ concrete consequences that shape the code:
    defensible threshold exists.
    [docs/ML_RESULTS.md](docs/ML_RESULTS.md) is the reading of all of it.
 
+4. **The ranking is not the deliverable, and as of 2026-08-28 the loss says so.** The InfoNCE
+   objective is a per-row softmax and is therefore *exactly invariant to adding a constant to a
+   protein's row* — it never says where a row sits, only how it is ordered, which is why the null
+   anchor never became a threshold and why no post-hoc calibration could have. `L = L_infonce +
+   λ · L_bce` adds the term that is not shift-invariant, and `λ = 0` is the earlier objective
+   exactly. (It does not reproduce earlier *numbers*: GPU training is not reproducible across
+   processes — measured at ~0.003 AUPR on `S1/fold-2` — so the sweep carries its own `λ = 0`
+   control.)
+
+   **Measured 2026-08-30 over 312 runs, and the result splits in two.** The decision rule works:
+   `λ = 30` costs nothing in ranking, the per-protein call count now tracks the truth, and
+   Spearman(predicted count, true count) is 0.48-0.52 wherever the model generalises. **The
+   capability it was built for is absent**: dead-variant detection is 0.43-0.52 against the
+   baseline's **0.492** — chance, and the literal null hypothesis, since under `P3/all` the
+   baseline copies the variant's own wild type. The model returns the wild type's answer for a
+   single-residue variant (Spearman with the wild type's true count **+0.77 to +0.91**, rising
+   with λ), so **this was never a threshold problem — it is a representation problem**, and it
+   belongs to `T36`. Scored as decisions rather than rankings the model also loses to `k = 1` by
+   0.006 call F1 while beating `k = 5` by 0.035 AUPR: the margin is a ranking margin.
+   `docs/ML_RESULTS.md` §9 is the reading, `docs/DECISIONS.md` §13, `docs/TRAINING.md` §2.5,
+   [reports/calibration.md](reports/calibration.md).
+
 3. **Read a per-protein AUPR against its chance level, never raw.** It is anchored to that
    protein's own positive rate, which ranges 0.0015-0.0034 across the folds — so 0.05 on `P1` and
    0.05 on `S2` are not the same statement. Every fold reports `chance_aupr` and a sampled
@@ -103,7 +125,8 @@ docs/DOMAIN_POLICY.md       what dbd_seq is, the padding, and what gets excluded
 docs/METHODS.md             publication-quality account of how the dataset was built
 docs/ML_PLAN.md             the modelling plan for the talk; §10 is a review, not the plan
 docs/ML_RESULTS.md          what phase 7 measured and what it rules out  <- READ WITH ML_PLAN
-docs/TRAINING.md            how the two-tower model is trained: loss, null anchor, batch shape
+docs/TRAINING.md            how the two-tower model is trained: loss, null anchor, batch shape,
+                            and section 2.5 the calibration term that gives it a decision rule
                             <- READ BEFORE TOUCHING src/snp2prot/models/ OR training.py
 docs/papers/                paper PDFs (git-ignored); README.md there is the manifest
 docs/papers_inbox/          the owner drops papers here; Claude identifies and files them
@@ -141,6 +164,9 @@ src/snp2prot/
   evaluation/     metrics.py — per-protein AUPR / precision@k / R@P, macro-averaged, each with
                   its chance level and a sampled random-ranking band; `suppression` for the dead
                   variants, where every ranking metric is undefined
+                  calibration.py — the NON-rank metrics (T38): ECE, the called set's F1/Jaccard,
+                  the parameter-free `expected_count_rule`, and `interaction_power` /
+                  `detection_auroc` — has this protein lost binding altogether
                   ceilings.py — rank_ceiling only; the ridge and RBF probes were deleted (D10)
                   c1.py — the C1 evaluation set: variants the wild-type copy fails on (D6)
   data/matrix.py  the merged table as a dense domain x 8-mer array pair, for modelling
@@ -155,6 +181,8 @@ data/external/uniprot/   cached canonical sequences
 data/processed/checkpoints/ trained weights, one file per (arm, fold, seed), both the
                          validation-selected model and the model at the step budget
 data/processed/          merged training table: 1,338 domains x 32,896 8-mers  (git-ignored)
+                         plus lambda_sweep_folds.parquet / lambda_sweep_domains.parquet (the
+                         T38 sweep, resumable -- deleting them restarts it from zero)
                          plus the cached modelling artifacts: kmer_matrix.npz (the same
                          table as arrays), distances.npz (all-vs-all domain identity),
                          nn_baseline_domains.parquet (per-domain baseline scores),
@@ -282,6 +310,7 @@ uv venv --python 3.11 .venv && uv pip install --python .venv -e ".[dev]"
 .venv/bin/python scripts/check_pooling.py                 # the ML_PLAN 3.1 pre-flight, ~10 s
 .venv/bin/python scripts/train.py --arm A1 --fold P3/all  # one fold, ~8 min -- the fast check
 .venv/bin/python scripts/run_grid.py [--seeds N]          # 19 folds x 2 arms -> reports/training.md, ~5 h
+.venv/bin/python scripts/run_lambda_sweep.py --budget-hours 55  # T38 sweep, 42 h; resumable
 .venv/bin/python scripts/measure_ceilings.py              # is the shared space wide enough, ~15 s
 .venv/bin/python -m ruff check . && .venv/bin/python -m ruff format .
 .venv/bin/python scripts/record_provenance.py data/raw/<source>/<file> --url ... --desc ...
@@ -302,10 +331,7 @@ Use `uv` (already installed at `~/.local/bin/uv`).
 | 5 | merge, overlap report, splits, NN baseline | **done 2026-08-19** — merge and overlap on 2026-08-18 (`data/processed/training.parquet`, `reports/merge.md`, `docs/RESULTS.md`); splits and the NN baseline on 2026-08-19 (`reports/nn_baseline.md`) |
 | — | **extend PBM coverage beyond UniPROBE** | **CLOSED 2026-08-18** — CIS-BP landed as `weirauch2014`; Kock 2024 screened and excluded (`reports/kock2024_excluded.md`). The corpus is UniPROBE + CIS-BP and grows no further |
 | 6 | ~~Tier 4 test sets, in `data/testsets/`~~ | **DROPPED 2026-08-17** — the owner no longer wants the bHLH dimer sets. `data/testsets/` stays as empty scaffolding for any future held-out set |
-| 7 | **modelling** — contrastive two-tower over Codebook SELEX + PBM | **the harness is built, 2026-08-20** — [docs/TRAINING.md](docs/TRAINING.md) is the design and records what the first runs measured; the remaining step is the owner running `scripts/run_grid.py` (**~5 h** at the 15,000-step
-budget). **A modelling audit on 2026-08-27 (`docs/DECISIONS.md` §12) changed the baseline, the
-metrics, the budget, the tower and the evaluation set — every committed result predates it and
-must be rerun.** Steps 0 and the sequence arms done 2026-08-19 ([reports/nn_baseline.md](reports/nn_baseline.md), [reports/pooling_check.md](reports/pooling_check.md)). Plan: [docs/ML_PLAN.md](docs/ML_PLAN.md). Build order is PBM + sequence embeddings first (no collaborator dependency); SELEX and structure ensembles are blocked on others. `S2` holds out **connected components at >= 0.5 identity**, not clusters (`T27`, then `D5` on 2026-08-19 — `docs/DECISIONS.md` §2) |
+| 7 | **modelling** — contrastive two-tower over Codebook SELEX + PBM | **the sequence arms are finished, 2026-08-30.** [docs/TRAINING.md](docs/TRAINING.md) is the design; [docs/ML_RESULTS.md](docs/ML_RESULTS.md) is what they measured and **§9 is the last word: the model beats `k = 5` by +0.035 AUPR, loses to `k = 1` by 0.006 call F1, and cannot detect a lost interaction.** The 312-run λ sweep closed the decision-rule question (`T38`) and relocated the open one to the protein representation (`T36`). What remains on this arm is incremental; the structure arms (`A2`/`A3`) are the next real step and are blocked on `T31`. Steps 0 and the sequence arms done 2026-08-19 ([reports/nn_baseline.md](reports/nn_baseline.md), [reports/pooling_check.md](reports/pooling_check.md)). Plan: [docs/ML_PLAN.md](docs/ML_PLAN.md). Build order is PBM + sequence embeddings first (no collaborator dependency); SELEX and structure ensembles are blocked on others. `S2` holds out **connected components at >= 0.5 identity**, not clusters (`T27`, then `D5` on 2026-08-19 — `docs/DECISIONS.md` §2) |
 
 ## Deferred to the owner — flag, do not resolve
 

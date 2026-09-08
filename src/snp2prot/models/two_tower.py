@@ -1,6 +1,6 @@
 """The two towers, the null anchor and the temperature, as one module.
 
-`docs/TRAINING.md` is the design document; this is the assembly. The model owns three things
+`docs/TRAINING.md` is the design document; this is the assembly. The model owns four things
 beyond the encoders:
 
 **The null anchor** — a learned vector in the shared space that is not any 8-mer, appended to
@@ -33,6 +33,13 @@ precision, and end to end the fold scores 0.8558 clamped at 100 against 0.8554 r
 how much of the negative-side gradient lands on the hardest few 8-mers rather than being spread
 across all 32,000 measured negatives. Whether the clamp is binding is reported with every run.
 
+**The calibration head** — two scalars, `calibration_scale` and `calibration_bias`, that turn a
+cosine into the logit of `P(binds)`. It is what gives the model a decision rule, and it is
+trained by the `λ · L_bce` term of `snp2prot.models.loss.hybrid_loss` rather than by InfoNCE,
+which cannot supply one: that loss is a per-row softmax and so is exactly invariant to a
+per-protein offset (`T38`). At `λ = 0` the head takes no gradient and sits at its
+initialisation — present, inert, and not to be read.
+
 **The DNA table is computed once per step, not once per pair.** Every domain in a batch is scored
 against the same 32,896 8-mers, so the encoder runs once over the vocabulary and the result is
 shared across the batch — which is what makes a step cost well under a GFLOP
@@ -47,6 +54,18 @@ import torch
 from torch import nn
 
 from snp2prot.models.encoders import DNAEncoder, ProteinTower
+
+#: Where the calibration head starts. The scale is deliberately modest — a cosine lives in
+#: [-1, 1], so 10 spans roughly [-10, 10] in logit space, which is wide enough to express
+#: p = 5e-5 to p = 1 - 5e-5 and narrow enough not to saturate at initialisation.
+CALIBRATION_SCALE_INIT = 10.0
+#: The default base rate for the calibration bias, replaced per fold by
+#: `TwoTower.set_calibration_prior`. The corpus rate is ~0.0021 positives per scored cell.
+CALIBRATION_PRIOR_INIT = 0.002
+
+
+def _logit(p: float) -> float:
+    return float(math.log(p / (1.0 - p)))
 
 
 class TwoTower(nn.Module):
@@ -71,6 +90,9 @@ class TwoTower(nn.Module):
         logit_scale = torch.tensor(math.log(1.0 / temperature))
         self.logit_scale = nn.Parameter(logit_scale, requires_grad=learn_temperature)
         self.max_logit_scale = float(max_logit_scale)
+        # The calibration head: two scalars, and its own, because `logit_scale` is saturated.
+        self.calibration_scale = nn.Parameter(torch.tensor(math.log(CALIBRATION_SCALE_INIT)))
+        self.calibration_bias = nn.Parameter(torch.tensor(_logit(CALIBRATION_PRIOR_INIT)))
 
     @torch.no_grad()
     def clamp_temperature(self) -> None:
@@ -108,13 +130,58 @@ class TwoTower(nn.Module):
         null = nn.functional.normalize(self.null, dim=-1).unsqueeze(0)
         return torch.cat([embedded, null], dim=0)
 
+    def cosine(self, protein_vectors: torch.Tensor, dna_table: torch.Tensor) -> torch.Tensor:
+        """`(B, 1280)` and `(K + 1, D)` -> `(B, K + 1)` cosine similarities, no temperature.
+
+        Both heads read this, so the matmul — the one real cost of a step on the protein axis —
+        happens once whether or not the calibration term is in play.
+        """
+        return self.protein(protein_vectors) @ dna_table.T
+
     def score(self, protein_vectors: torch.Tensor, dna_table: torch.Tensor) -> torch.Tensor:
         """`(B, 1280)` and `(K + 1, D)` -> `(B, K + 1)` logits.
 
         No clamp here. The scale is bounded by `clamp_temperature` after each optimiser step,
         which keeps the gradient live rather than zeroing it past the ceiling.
         """
-        return self.protein(protein_vectors) @ dna_table.T * self.logit_scale.exp()
+        return self.cosine(protein_vectors, dna_table) * self.logit_scale.exp()
+
+    def calibrate(self, cosine: torch.Tensor) -> torch.Tensor:
+        """Cosine similarities -> logits of `P(binds)`, on a scale shared across proteins.
+
+        **Its own scale and bias, not the temperature.** Reusing `logit_scale` would look
+        economical and would be wrong twice: it is clamped at `max_logit_scale` and reaches that
+        ceiling by about step 4,000, so from there it is a constant and could not move to fit a
+        probability; and the temperature's job is how peaked the softmax is, which is a
+        statement about the *ranking* dynamics and unrelated to where the binding/non-binding
+        line falls. Two jobs, two parameters.
+
+        **The bias is initialised at the logit of the base rate.** With 466 negatives per
+        positive, a head starting at `p = 0.5` spends its first thousands of steps discovering
+        that almost everything is negative, and the cheapest way down is to flatten the scale —
+        which destroys the ordering the other term is building. Starting at the prior is the
+        standard fix for detection-scale imbalance and costs one line. `set_calibration_prior`
+        replaces the default with the training pool's own rate.
+
+        The null anchor's column is dropped: it carries no label, so it has no target.
+        """
+        return self.calibration_scale.exp() * cosine[..., :-1] + self.calibration_bias
+
+    @torch.no_grad()
+    def set_calibration_prior(self, positive_rate: float) -> None:
+        """Move the calibration bias to `logit(positive_rate)` of the *training* pool.
+
+        Called once, before the first step, from `snp2prot.training.Trainer.train`. It reads
+        held-out labels never — the rate comes from the fold's training rows — so it is a
+        property of what the model is allowed to see.
+        """
+        if not 0.0 < positive_rate < 1.0:
+            raise ValueError(f"positive_rate must lie in (0, 1), not {positive_rate}")
+        self.calibration_bias.fill_(_logit(positive_rate))
+
+    def probabilities(self, protein_vectors: torch.Tensor, dna_table: torch.Tensor) -> torch.Tensor:
+        """`(B, K)` calibrated `P(binds)` over the real 8-mers — the decision-rule output."""
+        return torch.sigmoid(self.calibrate(self.cosine(protein_vectors, dna_table)))
 
     def forward(self, protein_vectors: torch.Tensor, tokens: torch.Tensor) -> torch.Tensor:
         return self.score(protein_vectors, self.dna_table(tokens))
@@ -129,5 +196,6 @@ class TwoTower(nn.Module):
             "protein_tower": sum(p.numel() for p in self.protein.parameters() if p.requires_grad),
             "dna_tower": sum(p.numel() for p in self.dna.parameters() if p.requires_grad),
             "null_anchor": self.null.numel(),
+            "calibration": self.calibration_scale.numel() + self.calibration_bias.numel(),
             "total": sum(p.numel() for p in self.parameters() if p.requires_grad),
         }

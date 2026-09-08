@@ -113,6 +113,104 @@ neither the numerator nor the denominator. **A mask, not a filter** — the matr
 rectangular, exactly as `ML_PLAN.md` §3.1 specifies, and different domains masking different
 columns costs nothing.
 
+### 2.5 The calibration term — added 2026-08-28, and why it had to be
+
+**Everything above optimises a ranking, and the deliverable is a call.** `T38` put it plainly:
+every metric in this project is rank-based, so nothing ever required the model to commit, and
+handing a biologist a model that says *these 8-mers score highest* rather than *these 8-mers
+bind* is not the same product. Worse, the capability that matters most — noticing that a
+variant has lost binding **entirely**, which is what flags a pathogenic mutation — is a
+statement about a protein, and no per-protein ranking can express it. A protein that binds
+nothing still has a first-ranked 8-mer.
+
+**The diagnosis is one line, and it is structural.** §2.2's loss is a softmax over one row, so
+`L_p` depends only on `logC_p − s(p, k⁺)` — differences *within* a row. **Add a constant to every
+entry of a row and the loss does not change by a float.** The objective is exactly invariant to a
+per-protein offset, so it never says where a row should sit, only how it should be ordered.
+
+Three consequences, and the third is the one that closes off the easy fixes:
+
+- the null anchor could not have become a threshold, whatever the arithmetic of §3.3 — there is
+  no force in the objective that would place it between the classes rather than anywhere else;
+- a *global* Platt scaling fitted on the validation slice cannot work either, and measured, it
+  did not: one cut at precision ≥ 0.5 called between 56 and 408 8-mers per domain for proteins
+  whose true counts ran 10 to 206;
+- **no post-hoc step can recover an offset the training signal never constrained.** The fix has
+  to be in the loss.
+
+**The fix.** A second term that is *not* shift-invariant, and the cheapest one is binary
+cross-entropy:
+
+```
+L  =  L_infonce  +  λ · L_bce
+```
+
+with `L_bce` the masked, **unweighted** BCE over the same cells the InfoNCE term uses, read
+through a two-scalar calibration head — `p(p,k) = σ(α · cos(p,k) + β)`. `snp2prot.models.loss`
+holds both terms and `hybrid_loss` combines them.
+
+Four choices inside that, each with a reason:
+
+**(a) Its own `α` and `β`, not the temperature.** Reusing `logit_scale` looks economical and is
+wrong twice: it is clamped at `max_logit_scale` and reaches that ceiling by about step 4,000, so
+from there it is a constant and could not move to fit a probability; and its job is how peaked
+the softmax is, which is a statement about ranking dynamics and unrelated to where the
+binding/non-binding line falls. Two jobs, two parameters. Neither is weight-decayed —
+`calibration_bias` starts at the logit of the base rate, about −6.2, and decaying it toward 0 is
+decaying it toward `p = 0.5`.
+
+**(b) Unweighted, deliberately.** At 466:1 the reflex is to class-weight or reach for focal loss.
+Both re-bias the output away from the empirical rate, which is exactly the thing being asked for
+— a weighted BCE is calibrated to a class balance that does not exist. The ranking is already
+supplied by the InfoNCE term; this term's only job is to be honest about the base rate.
+
+**(c) `β` is initialised at the *training pool's* positive rate.** With 466 negatives per
+positive a head starting at `p = 0.5` spends thousands of steps discovering that almost
+everything is negative, and the cheapest way down is to flatten `α`, which destroys the ordering
+the other term is building. Starting at the prior is the standard fix for detection-scale
+imbalance. It is read off the fold's **training** rows, never the test ones.
+
+**(d) Per-domain mean, then mean over domains** — the same normalisation as §2.3(c), so every
+protein counts once in both terms and in the reported metric alike.
+
+**`λ = 0` is §2.2's objective exactly.** The calibration head takes no gradient, and
+`hybrid_loss` returns the InfoNCE value itself — verified on the last bit, on the CPU, by
+`tests/test_loss.py::test_lambda_zero_is_the_pure_ranking_loss_to_the_last_bit`. That is what
+makes this one knob rather than a redesign.
+
+**It does not follow that a `λ = 0` run reproduces an old run's numbers, and it does not.**
+Measured 2026-08-28: two processes running identical code with identical seeds diverge at the
+first evaluation — losses `8.96644592285` and `8.96644687653` at step 50 — and the gap compounds.
+That is CUDA's own non-determinism (the DNA tower's `Conv1d` backward accumulates with atomics)
+and it predates this work entirely; end to end on `A1`/`S1/fold-2` it is worth about **0.003
+AUPR**, and the sweep's three seeds put the within-cell spread at **0.005 (max 0.012)** — larger
+than several deltas this project has reported. `configs/experiment.yaml`'s "two identical runs
+agree to 4e-6" held within one process and not across invocations; it is corrected there.
+**This is the reason the λ sweep carries its own `λ = 0` control on every fold** rather than
+comparing against `reports/training.md`.
+
+**The scale of `λ` is not 1, and the grid has to be logarithmic.** Measured at initialisation on
+`A1`/`P3/all`: the InfoNCE term is **10.44** and the BCE term **0.0166** — the entropy of a
+0.0021 Bernoulli — a ratio of **631**. And the ratio does not hold still: InfoNCE falls to ~0.005
+by step 6,000 while the BCE term plateaus, so a `λ` that is negligible at step 1 can dominate by
+step 10,000. `scripts/run_lambda_sweep.py` sweeps `λ ∈ {0, 1, 3, 10, 30, 100, 300, 1000, 3000,
+10000}` for that reason, and `reports/calibration.md` is what it writes.
+
+**What the term buys, and how it is measured.** `snp2prot.evaluation.calibration`:
+
+| question | metric |
+|---|---|
+| is the probability honest | `expected_calibration_error`, quantile-binned |
+| is the call good | `score_calls` — precision / recall / F1 / Jaccard of the named set |
+| how many should we name | `expected_count_rule` — keep the top `round(Σ p)`, no free parameter |
+| **did the interaction survive** | `interaction_power` = `Σ p`, and `detection_auroc` over it |
+| the paired form of the last | `power_ratio` — the variant's `Σ p` over its wild type's |
+
+The fourth row is the one `T38` was raised to obtain, and the nearest-neighbour baseline now
+carries all of them too (`reports/nn_baseline.md`, "As a decision, not a ranking") — `k = 1`
+emits a *set* natively, so this is the first comparison in the project where the baseline and
+the model are scored on the same kind of output.
+
 ---
 
 ## 3. The null anchor
@@ -173,6 +271,11 @@ fold.** The anchor loses 1,318 to 2, and settles where that arithmetic puts it.
 **Nothing may read `s(p,k) > s(p,ν)` as a binding call.** The metric for the domains that needed a
 threshold is `snp2prot.evaluation.metrics.suppression`, which compares a dead variant with its own
 wild type down the protein axis and needs no threshold at all.
+
+**And the arithmetic above was not the whole reason.** §2.5 records the deeper one, found
+2026-08-28: the loss is *exactly invariant to a per-protein offset*, so even an anchor that won
+the 1,318-to-2 vote would have had no defined place to settle. The threshold now comes from a
+second term rather than from `ν`, and `ν` keeps only its first job.
 
 ### 3.4 The honest statement: on PBM today it is nearly inert
 

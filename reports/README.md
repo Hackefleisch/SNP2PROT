@@ -12,6 +12,9 @@ how the dataset changed.
 | `overlap.md` | 2026-08-17 | the 47 domains stored by two sources, and how far their labels agree — the label noise floor |
 | `clusters.md` | 2026-08-17 | corpus-wide cluster inventory from `build_clusters.py` |
 | `validation_<source>.md` | Phase 1-4 | schema validator output |
+| `nn_baseline.md` | Phase 7 | the bar: nearest-neighbour lookup per fold, as a ranking **and** as a decision |
+| `training.md` | Phase 7 | the 19-fold x 2-arm grid, against that bar |
+| `calibration.md` | 2026-08-28 | the `λ` sweep on `L = L_infonce + λ · L_bce` — does the model have a decision rule (`T38`) |
 | `archive/` | — | superseded hand-maintained files, frozen; see `TODO.md` for what replaced them |
 
 Regenerate, never hand-edit. Open tasks and decisions live in [`TODO.md`](../TODO.md) at

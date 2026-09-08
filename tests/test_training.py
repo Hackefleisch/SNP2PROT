@@ -60,7 +60,7 @@ def _corpus(seed: int = 0):
     return frame, matrix, vectors, dist
 
 
-def _config(steps: int = 20, **training_overrides):
+def _config(steps: int = 20, bce_weight: float = 0.0, **training_overrides):
     cfg = {
         "model": {
             "width": 8,
@@ -70,6 +70,7 @@ def _config(steps: int = 20, **training_overrides):
             "learn_temperature": True,
             "max_logit_scale": 100.0,
             "seed": 11,
+            "bce_weight": 0.0,
         },
         "training": {
             "steps": steps,
@@ -85,9 +86,16 @@ def _config(steps: int = 20, **training_overrides):
             "s2_min_identity": 0.5,
             "validation": {"fraction": 0.25, "grouping": "random"},
         },
-        "metrics": {"precision_at": [2], "recall_at_precision": 0.5, "null_repeats": 5},
+        "metrics": {
+            "precision_at": [2],
+            "recall_at_precision": 0.5,
+            "null_repeats": 5,
+            "calibration_bins": 4,
+            "call_threshold": 0.5,
+        },
     }
     cfg["training"].update(training_overrides)
+    cfg["model"]["bce_weight"] = bce_weight
     return cfg
 
 
@@ -210,7 +218,7 @@ def fold_inputs(tmp_path, monkeypatch):
     monkeypatch.setattr(
         training,
         "checkpoint_file",
-        lambda arm, regime, name, seed: tmp_path / f"{arm}_{regime}_{name}_s{seed}.pt",
+        lambda arm, regime, name, seed, tag="": tmp_path / f"{arm}_{regime}_{name}_s{seed}{tag}.pt",
     )
     return _corpus()
 

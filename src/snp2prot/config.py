@@ -107,15 +107,31 @@ def embedding_table(arm: str) -> Path:
     return EMBEDDING_DIR / f"{arm}.npz"
 
 
-def checkpoint_file(arm: str, regime: str, fold: str, seed: int) -> Path:
+def checkpoint_file(arm: str, regime: str, fold: str, seed: int, tag: str = "") -> Path:
     """Trained weights for one (arm, fold, seed), e.g. `("A1", "P3", "half:draw-0", 20260819)`.
 
     The seed is in the name because `run_grid.py --seeds N` trains the same fold more than once
     and the files must not overwrite each other. `:` is legal in a fold name and awkward in a
     filename, so it becomes `-`; the fold's real name is stored inside the checkpoint, which is
     what a reader should trust.
+
+    `tag` is the same guard one level up: `scripts/run_lambda_sweep.py` trains one (arm, fold,
+    seed) at several values of `model.bce_weight`, and without a distinguishing component each
+    would silently overwrite the last — leaving a directory of checkpoints whose names say
+    nothing about which objective produced them.
     """
-    return CHECKPOINT_DIR / f"{arm}_{regime}_{fold.replace(':', '-')}_seed{seed}.pt"
+    suffix = f"_{tag}" if tag else ""
+    return CHECKPOINT_DIR / f"{arm}_{regime}_{fold.replace(':', '-')}_seed{seed}{suffix}.pt"
+
+
+def weight_tag(bce_weight: float) -> str:
+    """A filename-safe stamp for a `bce_weight`: `lam0`, `lam30`, `lam1000`, `lam0p3`.
+
+    Its only job is to keep two runs of the same fold apart, so it is short and exact rather
+    than pretty — the value itself is stored inside the checkpoint and in every report row.
+    """
+    text = f"{float(bce_weight):g}".replace(".", "p").replace("-", "m")
+    return f"lam{text}"
 
 
 def raw_dir(source: str, create: bool = False) -> Path:

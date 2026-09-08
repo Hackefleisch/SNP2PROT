@@ -248,6 +248,43 @@ secondary, slightly stronger bar.
 | P3 | `quarter:draw-1` | 0.6291 | 0.8893 | +0.2602 |
 | P3 | `quarter:draw-2` | 0.6674 | 0.8309 | +0.1635 |
 
+## As a decision, not a ranking
+
+**The baseline always had a decision rule and the model did not**, and that asymmetry is
+why its AUPR was never a like-for-like number (`T38`). `k = 1` emits a *set* — the 8-mers
+its nearest training relative binds — so scoring it as a set costs nothing and puts the
+two on the same footing at last. The rule is the one the model is scored under,
+`calibration.expected_count_rule`: keep the top `round(Σ p)`, which for a 0/1 profile is
+exactly the neighbour's own calls.
+
+`dead` is the protein-level AUROC for spotting a variant that binds nothing from the
+predicted set size alone. **Near 0.5 is the expected value and the informative one**:
+under `P3/all` the nearest relative of a held-out variant *is* its wild type, so this
+column is the literal null hypothesis — the mutation does nothing — and any model that
+cannot beat it has not learned to see a lost interaction.
+
+| regime | fold | called | true | spread | precision | recall | F1 | dead | n |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| S1 | `fold-0` | 28 | 48 | 195 | 0.759 | 0.549 | 0.526 | **0.968** | 3 |
+| S1 | `fold-1` | 33 | 48 | 210 | 0.766 | 0.569 | 0.565 | **0.684** | 3 |
+| S1 | `fold-2` | 30 | 48 | 205 | 0.734 | 0.541 | 0.540 | **0.308** | 4 |
+| S1 | `fold-3` | 30 | 47 | 191 | 0.766 | 0.568 | 0.564 | **0.434** | 6 |
+| S1 | `fold-4` | 30 | 55 | 193 | 0.703 | 0.529 | 0.500 | **0.630** | 4 |
+| S2 | `fold-0` | 55 | 122 | 200 | 0.453 | 0.220 | 0.222 | **0.322** | 10 |
+| S2 | `fold-1` | 43 | 40 | 193 | 0.270 | 0.168 | 0.167 | **0.240** | 7 |
+| S2 | `fold-2` | 30 | 48 | 187 | 0.311 | 0.222 | 0.204 | **n/a** | 0 |
+| S2 | `fold-3` | 24 | 39 | 190 | 0.360 | 0.244 | 0.221 | **0.709** | 3 |
+| S2 | `fold-4` | 30 | 32 | 207 | 0.198 | 0.143 | 0.127 | **n/a** | 0 |
+| P1 | `Homeodomain` | 26 | 96 | 208 | 0.031 | 0.009 | 0.010 | **0.545** | 10 |
+| P2 | `non-Homeodomain` | 17 | 35 | 190 | 0.848 | 0.594 | 0.617 | **0.502** | 10 |
+| P3 | `all` | 45 | 61 | 205 | 0.800 | 0.718 | 0.659 | **0.492** | 18 |
+| P3 | `half:draw-0` | 44 | 60 | 202 | 0.776 | 0.715 | 0.653 | **0.528** | 10 |
+| P3 | `half:draw-1` | 34 | 60 | 205 | 0.789 | 0.657 | 0.615 | **0.530** | 10 |
+| P3 | `half:draw-2` | 43 | 46 | 199 | 0.764 | 0.705 | 0.633 | **0.592** | 12 |
+| P3 | `quarter:draw-0` | 36 | 29 | 191 | 0.733 | 0.656 | 0.569 | **0.600** | 5 |
+| P3 | `quarter:draw-1` | 44 | 48 | 195 | 0.759 | 0.713 | 0.602 | **0.550** | 7 |
+| P3 | `quarter:draw-2` | 76 | 84 | 169 | 0.854 | 0.691 | 0.685 | **0.591** | 2 |
+
 ## Reproducing this
 
 ```bash
@@ -299,4 +336,4 @@ name and a seed do not pin down which domains were held out once the corpus chan
 | P3 | `quarter:draw-1` | 7 | 0.0839 |
 | P3 | `quarter:draw-2` | 2 | 0.0000 |
 
-Produced from `38b7aa1` (tree dirty).
+Produced from `a107def` (tree dirty).

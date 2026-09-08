@@ -32,11 +32,11 @@ import pandas as pd
 import torch
 
 from snp2prot import corpus, label_health, splits, tracking
-from snp2prot.config import PROJECT_ROOT, checkpoint_file
+from snp2prot.config import PROJECT_ROOT, checkpoint_file, weight_tag
 from snp2prot.data.matrix import KmerMatrix
 from snp2prot.embeddings import DomainEmbeddings
-from snp2prot.evaluation import metrics
-from snp2prot.models import TwoTower, multi_positive_infonce, tokenise
+from snp2prot.evaluation import calibration, metrics
+from snp2prot.models import TwoTower, hybrid_loss, tokenise
 
 
 @dataclass
@@ -108,13 +108,20 @@ class Trainer:
             learn_temperature=bool(model_cfg["learn_temperature"]),
             max_logit_scale=float(model_cfg["max_logit_scale"]),
         ).to(self.device)
+        # lambda on the calibration term. 0.0 leaves the head untouched by any gradient, so the
+        # run is bit-for-bit the pure-ranking model (`snp2prot.models.loss.hybrid_loss`).
+        self.bce_weight = float(model_cfg.get("bce_weight", 0.0))
 
     #: Parameters weight decay must not touch. `logit_scale` is a temperature and `null` is a
     #: direction on the unit sphere — neither is a weight, and decaying them pulls each toward a
     #: value that means something specific rather than toward "smaller". CLIP excludes the first
     #: for the same reason; the second is normalised in `dna_table`, so its magnitude only ever
     #: rescales its own gradient.
-    NOT_WEIGHTS = ("logit_scale", "null")
+    #: `calibration_bias` joins them for a sharper reason than either: it is initialised at the
+    #: logit of the base rate, about -6.2, and decaying it toward 0 is decaying it toward
+    #: `p = 0.5` — a 466:1 prior pulled steadily toward a balanced one. `calibration_scale` is a
+    #: temperature by another name and is excluded for the same reason `logit_scale` is.
+    NOT_WEIGHTS = ("logit_scale", "null", "calibration_scale", "calibration_bias")
 
     def _parameter_groups(self, weight_decay: float) -> list[dict]:
         """Two AdamW groups, so decay applies to the weights and nothing else."""
@@ -126,8 +133,15 @@ class Trainer:
         ]
 
     def loss_for(self, rows: torch.Tensor, dna_table: torch.Tensor) -> tuple:
-        logits = self.model.score(self.proteins[rows], dna_table)
-        return multi_positive_infonce(logits, self.labels[rows])
+        """`(total, parts)` for one batch of domains — the hybrid objective.
+
+        The cosine is computed once and both heads read it, so adding the calibration term costs
+        one elementwise pass over a matrix the step already materialised, not a second matmul.
+        """
+        cosine = self.model.cosine(self.proteins[rows], dna_table)
+        logits = cosine * self.model.logit_scale.exp()
+        calibrated = self.model.calibrate(cosine)
+        return hybrid_loss(logits, calibrated, self.labels[rows], self.bce_weight)
 
     @torch.no_grad()
     def predict(self, rows: np.ndarray, chunk: int = 256) -> np.ndarray:
@@ -144,6 +158,27 @@ class Trainer:
             block = index[start : start + chunk]
             logits = self.model.score(self.proteins[block], table)[:, :-1]
             out[start : start + chunk] = logits.float().cpu().numpy()
+        self.model.train()
+        return out
+
+    @torch.no_grad()
+    def predict_probabilities(self, rows: np.ndarray, chunk: int = 256) -> np.ndarray:
+        """`(n, K)` calibrated `P(binds)` — the same shape as `predict`, on the probability scale.
+
+        **Only meaningful when the run had `bce_weight > 0`.** At `λ = 0` the calibration head
+        never took a gradient, so this returns `sigmoid` of its initialisation: a monotone
+        function of the cosine, fine as a ranking and worthless as a probability. Callers gate on
+        `self.bce_weight` rather than trusting the numbers, and the reports say which runs they
+        came from.
+        """
+        self.model.eval()
+        table = self.model.dna_table(self.tokens)
+        out = np.empty((len(rows), self.labels.shape[1]), dtype=np.float32)
+        index = torch.from_numpy(np.asarray(rows, dtype=np.int64)).to(self.device)
+        for start in range(0, len(rows), chunk):
+            block = index[start : start + chunk]
+            probabilities = self.model.probabilities(self.proteins[block], table)
+            out[start : start + chunk] = probabilities.float().cpu().numpy()
         self.model.train()
         return out
 
@@ -208,6 +243,12 @@ class Trainer:
         patience = int(cfg["patience"])
         warmup = int(cfg["warmup_steps"])
 
+        # The calibration head starts at the TRAINING pool's own base rate, never the corpus's
+        # and never the fold's test rate: it is a prior the model is entitled to, and reading it
+        # off held-out labels would be a leak of exactly the quantity being predicted.
+        if self.bce_weight:
+            self.model.set_calibration_prior(self._training_positive_rate(train_rows))
+
         optimiser = torch.optim.AdamW(
             self._parameter_groups(float(cfg["weight_decay"])),
             lr=float(cfg["learning_rate"]),
@@ -230,7 +271,7 @@ class Trainer:
             picked = pool[order[:batch]]
             # Recomputed every step: the DNA tower's weights move, so the table does too.
             table = self.model.dna_table(self.tokens)
-            loss, _ = self.loss_for(picked, table)
+            loss, parts = self.loss_for(picked, table)
 
             optimiser.zero_grad(set_to_none=True)
             loss.backward()
@@ -244,9 +285,16 @@ class Trainer:
                 entry = {
                     "step": step,
                     "loss": float(loss.detach()),
+                    # Both terms, separately: the total alone cannot say which of them a run was
+                    # actually minimising, and at the top of the useful lambda range the BCE
+                    # term contributes most of the number.
+                    "loss_infonce": float(parts["infonce"]),
+                    "loss_bce": float(parts["bce"]),
                     "validation_aupr": score,
                     "temperature": self.model.temperature,
                     "temperature_clamped": float(self.model.temperature_is_clamped),
+                    "calibration_scale": float(self.model.calibration_scale.detach().exp()),
+                    "calibration_bias": float(self.model.calibration_bias.detach()),
                 }
                 result.history.append(entry)
                 if on_eval is not None:
@@ -282,6 +330,20 @@ class Trainer:
         result.seconds = time.time() - started
         return result
 
+    def _training_positive_rate(self, rows: np.ndarray) -> float:
+        """The fraction of scored cells that bind, over the training rows only.
+
+        Clamped away from 0 and 1 because `set_calibration_prior` takes a logit and a fold whose
+        training pool happened to contain no positive at all would otherwise be a crash rather
+        than a degenerate prior. It cannot happen on this corpus; the guard costs a line.
+        """
+        block = self.labels[torch.from_numpy(np.asarray(rows, dtype=np.int64)).to(self.device)]
+        scored = (block != -1).sum()
+        positive = (block == 1).sum()
+        if not int(scored):
+            return 0.002
+        return float(min(max(float(positive) / float(scored), 1e-6), 1 - 1e-6))
+
     def _cpu_state(self) -> dict:
         """The model's weights, detached on the CPU, so a checkpoint loads anywhere."""
         return {k: v.detach().cpu().clone() for k, v in self.model.state_dict().items()}
@@ -289,6 +351,12 @@ class Trainer:
     def load_state(self, state: dict) -> None:
         """Put one of `TrainingResult`'s two state dicts back into the model, for scoring."""
         self.model.load_state_dict({k: v.to(self.device) for k, v in state.items()})
+
+
+def _nanmean(values) -> float:
+    """`np.nanmean` without the all-NaN warning: an empty mean is `nan`, not a RuntimeWarning."""
+    array = np.asarray(values, dtype=np.float64)
+    return float(np.nanmean(array)) if np.isfinite(array).any() else float("nan")
 
 
 def _repo_relative(path: Path) -> str:
@@ -388,6 +456,7 @@ def run_fold(
     # property of one run of it. `--seeds N` varies only the second.
     seed = int(split_cfg["seed"])
     model_seed = int(config["model"]["seed"]) if model_seed is None else int(model_seed)
+    bce_weight = float(config["model"].get("bce_weight", 0.0))
 
     pool = fold.train[trainable[fold.train]]
     inner = splits.Fold(fold.regime, fold.name, fold.test, pool, fold.held_out)
@@ -428,7 +497,10 @@ def run_fold(
 
     trainer = Trainer(matrix, embeddings, config, device=device, seed=model_seed)
     with tracking.start_run(
-        f"{arm}/{fold.label}/seed{model_seed}", params=params, digests=digests, enabled=track
+        f"{arm}/{fold.label}/seed{model_seed}/{weight_tag(bce_weight)}",
+        params=params,
+        digests=digests,
+        enabled=track,
     ) as run:
         result = trainer.train(
             train_rows,
@@ -451,6 +523,80 @@ def run_fold(
         # holding — it copies some other domain instead of the wild type.
         dead &= ~np.isin(reference_of, fold.test)
         needed = np.unique(reference_of[fold.test][dead[fold.test]])
+
+        # Which held-out domains the decision rule is scored on. `no_evidence` is excluded for
+        # the reason it always is — a silent record with no control cannot be told from a failed
+        # assay — so among what is left, "binds nothing" and "is a dead variant" coincide.
+        verdicts = domains.verdict.to_numpy()
+        judgeable = verdicts[fold.test] != label_health.NO_EVIDENCE
+        binds_nothing = (matrix.label[fold.test] == 1).sum(axis=1) == 0
+        calibration_bins = int(
+            config["metrics"].get("calibration_bins", calibration.CALIBRATION_BINS)
+        )
+        call_threshold = float(
+            config["metrics"].get("call_threshold", calibration.DEFAULT_CALL_THRESHOLD)
+        )
+        calibrated = trainer.bce_weight > 0
+
+        def score_calibration(probabilities, reference_prob, at) -> tuple[dict, list[dict]]:
+            """Per-domain decision-rule scores, and the fold-level summary over them.
+
+            Empty when the run had `λ = 0`: the calibration head never took a gradient, so its
+            output is `sigmoid` of an initialisation and reporting a "calibration error" for it
+            would dress a constant up as a measurement (`T38`).
+            """
+            rows: list[dict] = []
+            for i, row in enumerate(fold.test):
+                probs = probabilities[i]
+                scored = matrix.label[row] != -1
+                truth = matrix.label[row][scored]
+                # The parameter-free rule — keep the top round(sum p) — and the naive fixed cut
+                # beside it, so the report can show what choosing a threshold costs.
+                by_count = calibration.score_calls(
+                    truth, probs[scored], calibration.expected_count_rule(probs[scored])
+                )
+                fixed = calibration.score_calls(truth, probs[scored], call_threshold)
+                power = calibration.interaction_power(probs[scored])
+                reference = reference_of[row]
+                entry = {
+                    "domain": str(matrix.domains[row]),
+                    "ece": calibration.expected_calibration_error(
+                        (truth == 1).astype(np.float64), probs[scored], calibration_bins
+                    ),
+                    "power": power,
+                    "power_max": float(probs[scored].max()) if scored.any() else float("nan"),
+                    "power_ratio": (
+                        calibration.power_ratio(
+                            power,
+                            calibration.interaction_power(
+                                reference_prob[at[reference]][matrix.label[reference] != -1]
+                            ),
+                        )
+                        if dead[row] and reference in at
+                        else float("nan")
+                    ),
+                    "call_f1_fixed": fixed.f1,
+                    "n_called_fixed": float(fixed.n_called),
+                    **by_count.as_dict(),
+                }
+                rows.append(entry)
+
+            frame = pd.DataFrame(rows)
+            out = {f"cal_{k}": _nanmean(frame[k]) for k in frame.columns if k != "domain"}
+            out["cal_n_called_median"] = float(np.nanmedian(frame.n_called))
+            out["cal_n_called_min"] = float(np.nanmin(frame.n_called))
+            out["cal_n_called_max"] = float(np.nanmax(frame.n_called))
+            out["cal_n_true_median"] = float(np.nanmedian(frame.n_true))
+            # The T38 question in one number: does the model's own call count track the truth,
+            # or does one rule call 56 8-mers for one protein and 408 for another whose true
+            # counts are comparable. A spread that mirrors the truth's is the good outcome.
+            out["cal_count_spread"] = out["cal_n_called_max"] - out["cal_n_called_min"]
+            out["cal_dead_auroc"] = calibration.detection_auroc(
+                binds_nothing[judgeable], frame.power.to_numpy()[judgeable]
+            )
+            out["cal_n_dead"] = float(binds_nothing[judgeable].sum())
+            out["cal_n_judgeable"] = float(judgeable.sum())
+            return out, rows
 
         def score_with(state: dict) -> tuple[dict, list]:
             trainer.load_state(state)
@@ -486,13 +632,22 @@ def run_fold(
                 float(np.nanmean(values)) if np.isfinite(values).any() else float("nan")
             )
             summary["n_scored_suppression"] = float(np.isfinite(values).sum())
-            return summary, rows, values
+
+            calibration_rows: list[dict] = []
+            if calibrated:
+                probabilities = trainer.predict_probabilities(fold.test)
+                reference_prob = (
+                    trainer.predict_probabilities(needed) if len(needed) else np.empty((0, 0))
+                )
+                summary_cal, calibration_rows = score_calibration(probabilities, reference_prob, at)
+                summary |= summary_cal
+            return summary, rows, values, calibration_rows
 
         # Both models the run produced. The validation-selected one supplies the headline
         # numbers; the model at the step budget is scored beside it so the selection loss is
         # measured per fold rather than assumed — on `S2/fold-3` it was worth 0.016.
-        final_summary, _, _ = score_with(result.final_state)
-        summary, scored, suppressed = score_with(result.best_state)
+        final_summary, _, _, _ = score_with(result.final_state)
+        summary, scored, suppressed, calibration_rows = score_with(result.best_state)
         summary["aupr_final"] = final_summary["aupr"]
         summary["aupr_final_median"] = final_summary["aupr_median"]
         summary["selection_gain"] = summary["aupr"] - final_summary["aupr"]
@@ -510,7 +665,7 @@ def run_fold(
         # Written before the run closes so the artifact lands with its own metrics rather than
         # in whichever run happens to be open next.
         checkpoint = trainer.save(
-            checkpoint_file(arm, fold.regime, fold.name, model_seed),
+            checkpoint_file(arm, fold.regime, fold.name, model_seed, tag=weight_tag(bce_weight)),
             result,
             {
                 "arm": arm,
@@ -535,6 +690,9 @@ def run_fold(
         # Both, so a row says which domains were held out AND which run of that split it was.
         "seed": seed,
         "model_seed": model_seed,
+        # The knob this whole sweep varies. On every row, so a table assembled from several
+        # runs can never be read as one experiment by accident.
+        "bce_weight": bce_weight,
         "n_train": float(len(train_rows)),
         "n_validation": float(len(validation_rows)),
         "steps_run": float(result.steps_run),
@@ -568,4 +726,13 @@ def run_fold(
             "suppression": suppressed,
         }
     )
+    if calibration_rows:
+        # One row per held-out domain in the same order, so a positional concat is safe — but
+        # the domain names are checked rather than assumed, because a silent misalignment here
+        # would attribute one protein's calls to another.
+        extra = pd.DataFrame(calibration_rows)
+        if list(extra.domain) != list(per_domain.domain):
+            raise ValueError("calibration rows are not aligned with the scored domains")
+        per_domain = pd.concat([per_domain, extra.drop(columns="domain")], axis=1)
+    per_domain["bce_weight"] = bce_weight
     return summary, per_domain

@@ -135,3 +135,147 @@ class ProteinTower(nn.Module):
 
     def forward(self, vectors: torch.Tensor) -> torch.Tensor:
         return nn.functional.normalize(self.net(vectors), dim=-1)
+
+
+#: Kernel widths of the genomic DNA tower, in base pairs. Real DBD motifs run roughly 6-20 bp —
+#: E-boxes short, nuclear-receptor dimers and POU sites long — and a single-layer convolution
+#: followed by a global max pool has no composition across layers, so one width caps what a
+#: filter can express (`docs/GHT_PLAN.md` §5). The `w = 8` bank is kept deliberately: it is the
+#: PBM arm's unit, so the option of a bridge exists at zero cost, but it does not set `w` for
+#: the rest.
+GENOMIC_WIDTHS = (8, 12, 16, 20)
+
+
+class GenomicDNAEncoder(nn.Module):
+    """One-hot `(B, 4, L)` over a 301 bp window -> `D`, max-pooled over positions and strands.
+
+    **The PWM baseline, generalised.** A PWM best-hit score is one fixed filter followed by a
+    global maximum over the sequence; this is a bank of *learned* filters at four widths followed
+    by the same maximum, and ArChIPelago is a fixed ensemble of such filters feeding a random
+    forest. Three methods on one conceptual line, which is the argument as much as the model.
+
+    **Global max pooling, and it is the opposite of `DNAEncoder`'s choice — on purpose.** That
+    encoder sees 8 positions where *which base sits at position 3* is the signal, so it flattens
+    and projects. Here the input is 301 positions holding one site among ~293 offsets, the peak is
+    a coverage pile-up whose exact offset is an artefact of random fragmentation
+    (`GHT_PLAN.md` §1), and the question is whether a motif occurs **anywhere** in the window. A
+    max over positions answers that and makes positional overfitting structurally impossible: the
+    encoder cannot learn "position 150 matters" because it cannot see position.
+
+    **Max over both strands, not mean.** `DNAEncoder` mean-pools the strands because it encodes a
+    strand-symmetric *identity* — the array measured both strands together and each stored 8-mer
+    is one arbitrary representative of a pair. Here we are *scanning*, and the semantics wanted is
+    "best hit on either strand", which is what a PWM best-hit computes. So the forward and
+    reverse-complement position axes are concatenated and the maximum taken over both at once.
+    """
+
+    def __init__(
+        self,
+        width: int,
+        widths: tuple[int, ...] = GENOMIC_WIDTHS,
+        channels_per_width: int = 64,
+        dropout: float = 0.0,
+    ):
+        super().__init__()
+        self.widths = tuple(int(w) for w in widths)
+        self.convolutions = nn.ModuleList(
+            [nn.Conv1d(len(BASES), channels_per_width, w) for w in self.widths]
+        )
+        pooled = channels_per_width * len(self.widths)
+        self.dropout = nn.Dropout(dropout)
+        self.project = nn.Linear(pooled, width)
+
+    @staticmethod
+    def one_hot(tokens: torch.Tensor) -> torch.Tensor:
+        """`(B, L)` int64 base indices -> `(B, 4, L)` float."""
+        return nn.functional.one_hot(tokens.long(), len(BASES)).float().transpose(1, 2)
+
+    def pooled(self, tokens: torch.Tensor) -> torch.Tensor:
+        """`(B, L)` tokens -> `(B, sum(channels))` best hit per filter, over both strands."""
+        forward = self.one_hot(tokens)
+        # `reverse_complement` works on token indices, which is why it is applied before the
+        # one-hot rather than by flipping channels afterwards — same result, one fewer copy.
+        reverse = self.one_hot(reverse_complement(tokens))
+        parts = []
+        for conv in self.convolutions:
+            both = torch.cat([conv(forward), conv(reverse)], dim=-1)
+            parts.append(nn.functional.gelu(both).amax(dim=-1))
+        return torch.cat(parts, dim=-1)
+
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+        """`(B, L)` token indices -> `(B, D)`, L2-normalised."""
+        return nn.functional.normalize(self.project(self.dropout(self.pooled(tokens))), dim=-1)
+
+
+#: Kernel widths of the per-residue protein tower, in residues. A DBD holds local patterns of
+#: varying length at positions not comparable across families — the homeodomain's `WFQNRR` in
+#: helix 3, the bZIP basic region before its leucine heptad, the Cys/His spacing of `zf-C4`, the
+#: ELK signature in Ets — running roughly 3 to 15 residues (`GHT_PLAN.md` §6.1).
+RESIDUE_WIDTHS = (3, 7, 15)
+
+
+class ResidueProteinTower(nn.Module):
+    """Per-residue protein-LM vectors -> `D`, max-pooled over residues. **Off by default.**
+
+    `GHT_PLAN.md` §6.2, and the reason it defaults off is capacity rather than evidence. The naive
+    form is `Conv1d(1280, 64, 16)` = 1.31 M parameters in a single bank; against 33 training
+    proteins that is ~40,000 parameters per protein where `docs/TRAINING.md` §5 calls the PBM
+    arm's **245 per protein** the central engineering constraint. The pointwise reduction below
+    brings it to ~158 k, which is still ~4.8 k per protein — an order of magnitude better and
+    still an order of magnitude worse than the linear tower. So it is a deliberate experiment with
+    weight decay and dropout, run against the pooled default as the control, and both towers'
+    parameter counts are reported either way.
+
+    ```
+    LayerNorm(1280)              per residue
+    Linear(1280 -> d_r)          pointwise, shared across positions
+    Conv1d(d_r, c, k)            k in RESIDUE_WIDTHS
+    amax over residues           mask-aware
+    Linear(sum(c) -> D)
+    ```
+
+    **Masking is not optional.** Domains run 59-219 aa in this panel, so a batch is padded, and a
+    maximum taken over a pad position silently invents a motif. Padded positions are set to
+    `-inf` before the pool, which is why the mask is a required argument rather than an option.
+
+    **Max over residues means "is this motif present anywhere".** That mirrors the DNA tower and
+    is the motif-detection semantics wanted. It discards *where*, which matters for variant
+    effects — attention pooling is the natural second experiment, not the first.
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        width: int,
+        reduced: int = 64,
+        widths: tuple[int, ...] = RESIDUE_WIDTHS,
+        channels_per_width: int = 32,
+        dropout: float = 0.0,
+    ):
+        super().__init__()
+        self.widths = tuple(int(k) for k in widths)
+        self.norm = nn.LayerNorm(in_features)
+        self.reduce = nn.Linear(in_features, reduced)
+        self.convolutions = nn.ModuleList(
+            # `padding=k // 2` so a domain shorter than the widest kernel still produces output;
+            # the mask then removes whatever the padding invented at the ends.
+            [nn.Conv1d(reduced, channels_per_width, k, padding=k // 2) for k in self.widths]
+        )
+        self.dropout = nn.Dropout(dropout)
+        self.project = nn.Linear(channels_per_width * len(self.widths), width)
+
+    def forward(self, residues: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        """`(B, L, 1280)` per-residue vectors and a `(B, L)` bool mask -> `(B, D)`, normalised.
+
+        `mask` is True at real residues. Pad positions are zeroed before the convolution and
+        `-inf` after it, so neither the kernel's input nor the maximum ever sees one.
+        """
+        hidden = self.reduce(self.norm(residues)) * mask.unsqueeze(-1)
+        hidden = hidden.transpose(1, 2)  # (B, reduced, L)
+        parts = []
+        for conv in self.convolutions:
+            activated = nn.functional.gelu(conv(hidden))[..., : mask.shape[1]]
+            blocked = activated.masked_fill(~mask.unsqueeze(1), float("-inf"))
+            parts.append(blocked.amax(dim=-1))
+        pooled = torch.cat(parts, dim=-1)
+        return nn.functional.normalize(self.project(self.dropout(pooled)), dim=-1)

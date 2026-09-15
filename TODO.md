@@ -208,6 +208,55 @@ were already parsed and one fails condition 2 outright. See
 
 ## Open tasks
 
+### T42 — The per-residue protein tower beat the pooled one on every Setting 2 fold
+Measured 2026-09-15 on the GHT arm (`docs/GHT_RESULTS.md` §6b). `GHT_PLAN.md` §6 defaulted it
+**off** on capacity grounds; the capacity arithmetic was inverted — at 33 proteins the pooled
+tower is 330,496 parameters (~10k each) and the conv tower is **160,672**. It wins on **10 of 10**
+held-out-protein folds, by +0.001 to +0.067 auPRC (+0.029 on both `G1` and `G2`), and is identical
+where every protein is in training, which is the shape a real effect should have.
+
+**Two seeds against the pooled tower's three**, so the size is provisional and the sign is not.
+Two things to do: more seeds on `ght.model.protein.tower: residue`, and — the reason this matters
+beyond the GHT arm — **try it on the PBM arm for `T36`.** That task asks for a protein tower that
+can resolve a point mutation, and pooling is what destroys the signal (`ML_RESULTS.md` §9.3).
+This is the first evidence in the project that an un-pooled tower helps a *task* rather than
+merely preserving a correlation.
+
+### T41 — `FAMILY_ALIASES` is applied after the family filter, so most of it is dead code
+Found 2026-09-15 while building the GHT panel. `snp2prot.domains.call_domain` selects hits with
+`h.family in dbd_families()` **and then** renames the survivors with `canonical_family`. So an
+alias only ever fires for a family that is already on the list — `bZIP_1` and `bZIP_2` are, and
+work; `Homeobox_KN`, `SOXp` and `zf-H2C2_2` are not, and never fire.
+
+Cost, measured on the GHT panel: `MKX` is rejected as `no_domain` although its only hit is
+`Homeobox_KN`, which the alias table already says is a homeodomain. Cost on the PBM corpus:
+**unmeasured**, and that is the reason this is a task and not a fix — the family list is shared,
+and admitting three more names re-decides 1,338 domains, every cluster, every split and every
+report. Measure first: rerun `scripts/build_dbd_family_list.py` with the three aliased names
+added and diff the admitted set before changing anything.
+
+### T40 — The GHT panel is 33 and could cheaply be ~43
+`GHT_PLAN.md` §4 measured 10 clean non-C2H2 GHT-approved TFs outside the benchmark (12 minus
+`TIGD4` and `ZBED5`, withdrawn for mislabelled samples). Taking them means building positives,
+three negative sets and chromosome splits ourselves, which is the work `D2` avoids and makes
+those 10 non-comparable to every published baseline. `T41` would add a few more from inside the
+existing 139 at no such cost.
+
+Both are worth doing only if Setting 2's per-fold variance turns out to be what limits the claim
+— `reports/ght_results.md` reports it per fold precisely so that this is decidable rather than
+guessed.
+
+### T39 — Three Codebook raw files have no source URL
+`PROVENANCE.md` now carries rows for `GHT_SELEX_Metadata_web_2025_09_22.xlsx`,
+`Peaks_MAGIX_McGill.tar.gz` and `TF_and_Plasmid_Metadata_web_2025_06_06.xlsx`, each with size,
+sha256 and timestamp — and `**not captured**` in the URL column, because the download logs are
+empty and rule 1 forbids guessing one. The owner downloaded them from the Codebook portal and is
+the only one who can supply the exact URLs. **Needed before publication**, since two of the three
+are what the GHT panel's `dbd_seq` is derived from.
+
+hg38 needed no such row: its md5 matches UCSC's own `bigZips/md5sum.txt` entry exactly, which
+identifies the URL by evidence rather than by assumption.
+
 ### T38 — the model now has a decision rule; it still cannot see a lost interaction
 **Raised by the owner on 2026-08-28, measured 2026-08-30. HALF ANSWERED, and the unanswered half
 moved to `T36`.** The objective gained a calibration term and the 312-run λ sweep it called for

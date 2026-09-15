@@ -26,6 +26,13 @@ GSE53348). Acquisition closed on 2026-08-18 when Kock et al. 2024 was screened a
 ([reports/kock2024_excluded.md](reports/kock2024_excluded.md)); the next step is phase 5,
 merge. See [TODO.md](TODO.md).**
 
+**There is now a second arm.** [docs/GHT_PLAN.md](docs/GHT_PLAN.md) is the plan of record for
+**human Codebook GHT-SELEX** on the MEX-ArChIPelago benchmark — 33 TFs, 9.2 M 301 bp genomic
+windows, the benchmark's own positives, negatives and chromosome splits. It is a separate corpus
+with a separate loss and **nothing in it merges into `data/processed/training.parquet`**; the two
+arms share the *protein tower*, which is the scientific point. [docs/GHT_RESULTS.md](docs/GHT_RESULTS.md)
+is what it measured. Code lives under `src/snp2prot/ght/`.
+
 **Read [docs/METHODS.md](docs/METHODS.md) first** — it records how the dataset was built and
 why, in enough detail to reimplement. [docs/DOMAIN_POLICY.md](docs/DOMAIN_POLICY.md) states
 the admission rules; [TODO.md](TODO.md) holds open tasks and decisions, [docs/DECISIONS.md](docs/DECISIONS.md) the resolved ones.
@@ -125,6 +132,8 @@ docs/DOMAIN_POLICY.md       what dbd_seq is, the padding, and what gets excluded
 docs/METHODS.md             publication-quality account of how the dataset was built
 docs/ML_PLAN.md             the modelling plan for the talk; §10 is a review, not the plan
 docs/ML_RESULTS.md          what phase 7 measured and what it rules out  <- READ WITH ML_PLAN
+docs/GHT_PLAN.md            the GHT-SELEX arm: plan of record  <- READ BEFORE src/snp2prot/ght/
+docs/GHT_RESULTS.md         what the GHT arm measured, and what it does not show
 docs/TRAINING.md            how the two-tower model is trained: loss, null anchor, batch shape,
                             and section 2.5 the calibration term that gives it a decision rule
                             <- READ BEFORE TOUCHING src/snp2prot/models/ OR training.py
@@ -170,6 +179,17 @@ src/snp2prot/
                   ceilings.py — rank_ceiling only; the ridge and RBF probes were deleted (D10)
                   c1.py — the C1 evaluation set: variants the wild-type copy fails on (D6)
   data/matrix.py  the merged table as a dense domain x 8-mer array pair, for modelling
+  ght/            THE SECOND ARM -- human Codebook GHT-SELEX on the MEX-ArChIPelago benchmark.
+                  Separate corpus, separate loss, separate everything except the PROTEIN TOWER,
+                  which is the point. Nothing here merges into data/processed/training.parquet.
+                  <- docs/GHT_PLAN.md is the plan, docs/GHT_RESULTS.md the reading
+    panel.py      139 benchmark TFs -> 33, through the SAME admission policy as every source
+    windows.py    the benchmark's BEDs -> 301 bp base tokens cut out of hg38
+    data.py       the window corpus as resident arrays, and the protein-side ABLATIONS
+    model.py      GenomicTwoTower: cosine -> calibrate -> BCE, no null anchor (GHT_PLAN 7)
+    splits.py     C1 (chromosomes), G1/G2 (TFs) -- two holdout axes, both in the digest
+    training.py   the loop, the per-fold driver, and the PBM protein-tower transfer
+    baselines.py  PWM best-hit / sum-occupancy, and motif transfer by DBD identity
 
 data/raw/<source>/       append-only, never edited          (git-ignored)
 data/interim/<source>/   per-source parsed Parquet          (git-ignored)
@@ -178,6 +198,10 @@ data/interim/clusters/   one row per cluster: size, family, variants  <- read vi
 data/interim/label_health/ one row per (domain, source): verdict, label counts, best E-score
 data/external/pfam/      Pfam HMMs for boundary annotation
 data/external/uniprot/   cached canonical sequences
+data/interim/ght/         the GHT arm: panel.parquet (33 TFs) and windows/<tf>.npz (9.2M
+                         301 bp windows, ~3.3 GB)                       (git-ignored)
+data/processed/ght/      the GHT arm's embeddings, checkpoints, fold/TF tables and baselines
+data/external/genomes/   hg38.fa.gz, verified against UCSC's own md5   (git-ignored)
 data/processed/checkpoints/ trained weights, one file per (arm, fold, seed), both the
                          validation-selected model and the model at the step budget
 data/processed/          merged training table: 1,338 domains x 32,896 8-mers  (git-ignored)
@@ -316,6 +340,22 @@ uv venv --python 3.11 .venv && uv pip install --python .venv -e ".[dev]"
 .venv/bin/python scripts/record_provenance.py data/raw/<source>/<file> --url ... --desc ...
 ```
 
+### The GHT-SELEX arm (`docs/GHT_PLAN.md`) — a separate corpus, a separate pipeline
+
+```bash
+.venv/bin/python scripts/build_ght_panel.py                # 139 benchmark TFs -> 33 admitted, ~40 s
+.venv/bin/python scripts/build_ght_windows.py              # 9.2M 301 bp windows out of hg38, ~5 min
+.venv/bin/python scripts/build_ght_embeddings.py --arm A1  # 33 domains through ESM-2, ~10 s
+.venv/bin/python scripts/check_ght_cobinding.py            # what `aliens` actually asks, ~2 min
+.venv/bin/python scripts/check_ght_filters.py              # are the learned filters motifs, ~20 s
+.venv/bin/python scripts/preflight_ght.py --steps 20000 --eval-every 250   # THE STEP BUDGET, ~25 min
+.venv/bin/python scripts/run_ght_baselines.py              # PWM + motif transfer, ~7 min
+.venv/bin/python scripts/run_ght_grid.py --seeds 3 --resume                # the grid, ~2.5 h
+.venv/bin/python scripts/run_ght_grid.py --seeds 1 --protein-mode constant --resume   # the control
+.venv/bin/python scripts/make_ght_report.py && .venv/bin/python scripts/make_ght_figures.py
+.venv/bin/python scripts/make_ght_story.py                 # the talk page -> results/ght_story.html
+```
+
 Note: system Python 3.10 has no `ensurepip`, so `python -m venv` produces a venv without pip.
 Use `uv` (already installed at `~/.local/bin/uv`).
 
@@ -332,6 +372,7 @@ Use `uv` (already installed at `~/.local/bin/uv`).
 | — | **extend PBM coverage beyond UniPROBE** | **CLOSED 2026-08-18** — CIS-BP landed as `weirauch2014`; Kock 2024 screened and excluded (`reports/kock2024_excluded.md`). The corpus is UniPROBE + CIS-BP and grows no further |
 | 6 | ~~Tier 4 test sets, in `data/testsets/`~~ | **DROPPED 2026-08-17** — the owner no longer wants the bHLH dimer sets. `data/testsets/` stays as empty scaffolding for any future held-out set |
 | 7 | **modelling** — contrastive two-tower over Codebook SELEX + PBM | **the sequence arms are finished, 2026-08-30.** [docs/TRAINING.md](docs/TRAINING.md) is the design; [docs/ML_RESULTS.md](docs/ML_RESULTS.md) is what they measured and **§9 is the last word: the model beats `k = 5` by +0.035 AUPR, loses to `k = 1` by 0.006 call F1, and cannot detect a lost interaction.** The 312-run λ sweep closed the decision-rule question (`T38`) and relocated the open one to the protein representation (`T36`). What remains on this arm is incremental; the structure arms (`A2`/`A3`) are the next real step and are blocked on `T31`. Steps 0 and the sequence arms done 2026-08-19 ([reports/nn_baseline.md](reports/nn_baseline.md), [reports/pooling_check.md](reports/pooling_check.md)). Plan: [docs/ML_PLAN.md](docs/ML_PLAN.md). Build order is PBM + sequence embeddings first (no collaborator dependency); SELEX and structure ensembles are blocked on others. `S2` holds out **connected components at >= 0.5 identity**, not clusters (`T27`, then `D5` on 2026-08-19 — `docs/DECISIONS.md` §2) |
+| 8 | **the GHT-SELEX arm** — protein-conditioned binding on human genomic windows | **built and measured 2026-09-15.** [docs/GHT_PLAN.md](docs/GHT_PLAN.md) is the plan, [docs/GHT_RESULTS.md](docs/GHT_RESULTS.md) the reading. Two settings: held-out chromosomes (`C1`, where a per-TF PWM competes) and held-out TF (`G1`/`G2`, where it cannot run at all). Every number is reported beside a **protein-blind control**, because 38% of a TF's peaks are co-bound by another panel TF and a model with no protein input scores well on those. `docs/DECISIONS.md` §14 |
 
 ## Deferred to the owner — flag, do not resolve
 
@@ -343,6 +384,11 @@ experiment against weak negatives (`T29`), whether the 20 `dead_variant` records
 point-mutation evaluation set (`T30`), and the structure-ensemble spec (`T31`).
 **Both of the older two are now live** — Phase 7 *is* the embedding and structure work.
 If parsing turns up evidence bearing on either, add it to that file rather than acting on it.
+
+Phase 8 adds three: three Codebook raw files have **no source URL** and the owner is the only one
+who can supply them (`T39`), whether to widen the 33-TF GHT panel (`T40`), and the
+`FAMILY_ALIASES` defect — the alias is applied *after* the family filter, so `Homeobox_KN`,
+`SOXp` and `zf-H2C2_2` never fire and the fix re-decides all 1,338 PBM domains (`T41`).
 
 Anything decided or finished moves to [docs/DECISIONS.md](docs/DECISIONS.md) — read it before
 reopening a question, since several obvious-looking ones have already been settled with

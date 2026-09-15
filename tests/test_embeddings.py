@@ -17,7 +17,7 @@ from snp2prot import embeddings
 def test_pooling_drops_the_bos_and_eos_tokens():
     """They carry sequence-level summary information every domain has equally, so averaging
     them in dilutes exactly the per-residue signal the pooling exists to capture."""
-    from scripts.build_embeddings import pool
+    from snp2prot.embeddings import _pool as pool
 
     torch = pytest.importorskip("torch")
     # One sequence of 3 residues: [BOS, r1, r2, r3, EOS], each token a distinct constant.
@@ -26,7 +26,7 @@ def test_pooling_drops_the_bos_and_eos_tokens():
 
 
 def test_batches_cover_every_sequence_exactly_once():
-    from scripts.build_embeddings import batches
+    from snp2prot.embeddings import batches
 
     sequences = ["A" * n for n in (10, 300, 45, 45, 200, 7)]
     seen = [i for batch in batches(sequences, batch_tokens=600) for i in batch]
@@ -36,7 +36,7 @@ def test_batches_cover_every_sequence_exactly_once():
 def test_a_batch_stays_within_its_token_budget_once_padded():
     """Padding is to the longest member, so the cost of a batch is longest x count — which is
     what has to be bounded, not the sum of the lengths."""
-    from scripts.build_embeddings import batches
+    from snp2prot.embeddings import batches
 
     sequences = ["A" * n for n in (400, 380, 100, 90, 80, 20)]
     for batch in batches(sequences, batch_tokens=800):

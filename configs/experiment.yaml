@@ -271,3 +271,111 @@ metrics:
   # depends only on the held-out labels, so it is sampled directly rather than by shuffling a
   # prediction (snp2prot.evaluation.metrics.null_aupr). Seeded from splits.seed.
   null_repeats: 200
+
+# ------------------------------------------------------------------------------------------
+# The GHT-SELEX arm (docs/GHT_PLAN.md). Read via `snp2prot.experiment.section("ght")`.
+#
+# A BLOCK, NOT A SECOND FILE. The split above is between the DATASET config (thresholds.yaml)
+# and the MODELLING config (this file), and both arms are modelling: changing a GHT step budget
+# invalidates no stored table, no report of the PBM dataset and no provenance row. What it does
+# invalidate is this arm's own results, which is exactly what the `model:` / `training:` blocks
+# above already carry for the other arm.
+#
+# Nothing here is read by the PBM path. The two arms share `splits.seed` and `model.seed` by
+# copy rather than by reference, so a change to one cannot silently move the other.
+# ------------------------------------------------------------------------------------------
+ght:
+  splits:
+    # The benchmark's chromosome split is taken unchanged (GHT_PLAN.md D5) and is not
+    # configurable: it is read off the BEDs, which is the only thing that keeps our numbers
+    # comparable to theirs by construction.
+    n_folds: 5
+    seed: 20260915
+
+    # G2 groups the panel into connected components at this identity, within a family -- the
+    # same grouping and the same floor as the PBM arm's S2 (configs above, D5 2026-08-19). At
+    # 33 proteins over 16 families most components are singletons, so G2 is close to G1 with
+    # the near-duplicate pairs forced apart, which is what it is for.
+    s2_min_identity: 0.5
+
+    # Carved from the TRAINING side and never from a test chromosome. C1 carves whole
+    # chromosomes, which mirrors its test task exactly; the TF regimes carve whole TFs, which
+    # mirrors theirs. 0.15 as in the PBM arm.
+    validation_fraction: 0.15
+
+  model:
+    # D, the shared space. 256, equal to the PBM arm by ML_PLAN.md section 4.2 -- what stops a
+    # between-arm comparison from being a comparison of widths.
+    #
+    # NOTE THE CAPACITY ARITHMETIC, which is worse here than GHT_PLAN.md section 6.2 assumed.
+    # The plan worried that a per-residue conv tower is ~3.4k parameters per training protein
+    # against the PBM linear tower's 245. At n = 33 proteins the LINEAR tower is already
+    # 1280 x 256 + 256 = 330k, i.e. ~10k per protein. The panel size dominates the tower
+    # architecture, so weight decay and dropout are load-bearing in both configurations and
+    # both parameter counts are reported with every run.
+    width: 256
+
+    dna:
+      # Multi-width, because a single-layer conv followed by a global max pool has no
+      # composition across layers and one width caps what a filter can express. 8/12/16/20 bp
+      # spans the real motif range; the w = 8 bank keeps a PBM bridge available at zero cost
+      # without letting the 8-mer set the scale (GHT_PLAN.md section 5).
+      widths: [8, 12, 16, 20]
+      channels_per_width: 64
+      dropout: 0.0
+
+    protein:
+      # 0 = a bare linear projection, the control. T36's non-linear tower is `hidden > 0` and
+      # is cheap to try here; the per-residue conv tower of GHT_PLAN.md section 6 is a
+      # different experiment again and is selected by `protein.tower: residue`.
+      hidden: 0
+      dropout: 0.0
+
+    # mu in `L = L_bce + mu * L_infonce_per_protein`. 0.0 is EXACTLY plain BCE -- the
+    # contrastive term is not computed at all -- and 0.0 is the headline (GHT_PLAN.md section
+    # 7): the two-tower claim is architectural and does not need a contrastive loss to be true.
+    contrastive_weight: 0.0
+
+    # CLIP convention, used only by the contrastive term. At mu = 0 it takes no gradient.
+    temperature: 0.07
+    learn_temperature: true
+    max_logit_scale: 100.0
+
+    seed: 20260915
+
+  training:
+    # MEASURED, not inherited (GHT_PLAN.md section 8.1, reports/ght_preflight_C1-all.md). Do not
+    # copy the PBM arm's 15,000: that budget came from its own curve, on a different objective
+    # over a different corpus. Read off the HELD-OUT TEST curve, never the training loss -- the
+    # PBM arm got that backwards first and it cost +0.018 to +0.028 AUPR.
+    #
+    # 5,000, from a 20,000-step C1/all pre-flight with patience off, logging test at every
+    # evaluation. The curve reaches 0.9233 by step 2,000, 0.9276 by 3,000, peaks at 0.9299
+    # around 4,250, and then DECLINES slowly -- 0.9256 at 14,250 -- while the training loss
+    # keeps falling from 0.19 to 0.09. So this arm behaves the opposite way round from the PBM
+    # arm: there, held-out AUPR kept climbing long after the training loss flattened; here the
+    # training loss keeps falling long after held-out AUPR has peaked. The two results are the
+    # same lesson, which is that neither curve predicts the other and only the held-out one is
+    # evidence.
+    #
+    # 5,000 rather than 4,250 because validation, not this number, selects the checkpoint: the
+    # budget only has to be past the peak, and a round number past it costs 15 seconds a fold.
+    steps: 5000
+    # A batch is balanced ACROSS PROTEINS: `batch_proteins` TFs and `windows_per_protein`
+    # windows under each. Unlike the PBM arm, which shuffles the protein axis and keeps the DNA
+    # axis complete -- there is no complete DNA axis here, windows are per-TF and disjoint.
+    # Without the balance KDM2A's 72k training windows would supply 12% of every step.
+    batch_proteins: 16
+    windows_per_protein: 64
+    learning_rate: 0.001
+    weight_decay: 0.01
+    warmup_steps: 100
+    eval_every: 100
+    # Off. Selection by validation, termination by budget -- the PBM arm's setting and for the
+    # same reason: patience against a signal that swings between adjacent evaluations cuts runs
+    # off rather than protecting them.
+    patience: 0
+
+  metrics:
+    # Sampled random-ranking band per fold, as everywhere else in this project.
+    null_repeats: 200

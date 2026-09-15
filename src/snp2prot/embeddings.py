@@ -186,3 +186,128 @@ def pairwise_cosine_distance(vectors: np.ndarray) -> np.ndarray:
     norms = np.linalg.norm(normalised, axis=1, keepdims=True)
     normalised = normalised / np.where(norms > 0, norms, np.nan)
     return 1.0 - normalised @ normalised.T
+
+
+# --- Running the language model -------------------------------------------------------------
+#
+# Lifted out of `scripts/build_embeddings.py` on 2026-09-15 so the GHT arm can embed its own
+# 33-domain panel with the same code rather than a copy of it. The PBM script is unchanged in
+# behaviour: it now calls `encode` instead of holding these four functions itself.
+
+
+def load_model(arm: str, device: str):
+    """The checkpoint for one arm, in eval mode on `device`, with its alphabet.
+
+    Both sequence arms are the **same architecture** — ESM-2 650M, 33 layers, 1280-d — and
+    differ only in the weights, which is what makes the `A1` -> `A4` delta isolate the
+    pretraining corpus and nothing else (`ML_PLAN.md` §4.2). ESM-DBP publishes a bare
+    `state_dict` rather than a loader, and it matches that architecture exactly, so `A4` is
+    `A1`'s architecture with the published weights loaded into it and any future mismatch is an
+    error rather than a `strict=False` shrug.
+    """
+    import esm
+    import torch
+
+    from snp2prot.config import ESM_DBP_CHECKPOINT, MODEL_DIR
+
+    if arm not in ARMS:
+        raise ValueError(f"unknown arm {arm!r}; have {sorted(ARMS)}")
+
+    # fair-esm downloads through torch.hub; point that at the project rather than ~/.cache.
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    torch.hub.set_dir(str(MODEL_DIR))
+    model, alphabet = esm.pretrained.esm2_t33_650M_UR50D()
+
+    if arm == "A4":
+        if not ESM_DBP_CHECKPOINT.exists():
+            raise FileNotFoundError(
+                f"no ESM-DBP checkpoint at {ESM_DBP_CHECKPOINT}\nsee data/external/models/README.md"
+            )
+        state = torch.load(ESM_DBP_CHECKPOINT, map_location="cpu", weights_only=False)
+        # Saved from a DataParallel wrapper, so every key carries a `module.` prefix.
+        prefix = "module."
+        model.load_state_dict(
+            {(k[len(prefix) :] if k.startswith(prefix) else k): v for k, v in state.items()},
+            strict=True,
+        )
+    return model.eval().to(device), alphabet, model.num_layers
+
+
+def _pool(representation, lengths) -> np.ndarray:
+    """Mean over each sequence's residues, dropping the BOS and EOS tokens."""
+    out = np.empty((representation.shape[0], representation.shape[2]), dtype=np.float32)
+    for i, length in enumerate(lengths):
+        out[i] = representation[i, 1 : length + 1].mean(0).float().cpu().numpy()
+    return out
+
+
+def _residues_of(representation, lengths) -> list[np.ndarray]:
+    """Every residue's vector, dropping BOS and EOS — `_pool` without the mean."""
+    return [
+        representation[i, 1 : length + 1].float().cpu().numpy().astype(np.float32)
+        for i, length in enumerate(lengths)
+    ]
+
+
+def batches(sequences: list[str], batch_tokens: int):
+    """Group sequences so that each batch is about `batch_tokens` residues, longest first.
+
+    Longest-first keeps the padding waste in one place: a batch of similar lengths pads very
+    little, and the largest batch is the one that decides peak memory, so it is met first rather
+    than after an hour of work.
+    """
+    order = sorted(range(len(sequences)), key=lambda i: -len(sequences[i]))
+    batch: list[int] = []
+    for i in order:
+        longest = max([len(sequences[j]) for j in batch] + [len(sequences[i])])
+        if batch and longest * (len(batch) + 1) > batch_tokens:
+            yield batch
+            batch = []
+        batch.append(i)
+    if batch:
+        yield batch
+
+
+def encode(
+    sequences: list[str],
+    arm: str = "A1",
+    device: str | None = None,
+    batch_tokens: int = 8192,
+    per_residue: bool = False,
+    progress=None,
+):
+    """Run one arm's language model over `sequences`, in the given order.
+
+    Returns `(n, width)` pooled vectors, or a list of `(length_i, width)` per-residue blocks when
+    `per_residue`. The same forward pass either way — pooling is a mean taken afterwards, which
+    is what makes `ResidueEmbeddings.pooled()` reproduce `DomainEmbeddings.vectors` exactly.
+    """
+    import torch
+
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    model, alphabet, layer = load_model(arm, device)
+    converter = alphabet.get_batch_converter()
+
+    pooled = np.empty((len(sequences), model.embed_dim), dtype=np.float32)
+    # Batches come out longest-first, so blocks are collected into a slot per sequence and
+    # reassembled in input order rather than appended as they arrive.
+    blocks: list[np.ndarray | None] = [None] * len(sequences)
+    done = 0
+    with torch.no_grad():
+        for group in batches(sequences, batch_tokens):
+            _, _, tokens = converter([(str(i), sequences[i]) for i in group])
+            out = model(tokens.to(device), repr_layers=[layer])["representations"][layer]
+            lengths = [len(sequences[i]) for i in group]
+            if per_residue:
+                for i, block in zip(group, _residues_of(out, lengths), strict=True):
+                    blocks[i] = block
+            else:
+                pooled[group] = _pool(out, lengths)
+            done += len(group)
+            if progress is not None:
+                progress(done, len(sequences))
+    if not per_residue:
+        return pooled
+    if any(b is None for b in blocks):
+        raise RuntimeError("some sequences produced no representation")
+    return blocks

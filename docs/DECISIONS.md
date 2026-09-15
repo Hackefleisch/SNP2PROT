@@ -1691,3 +1691,115 @@ approach can be called usable, and each has a way of failing:
    than spreading over an order of magnitude;
 3. **the dead-variant detection has to beat 0.492.** This rests on **18 variants**, so a result
    here is a direction and not a result; `T30` is the decision that would enlarge the set.
+
+---
+
+## 14. The GHT-SELEX arm — 2026-09-15
+
+The second arm, built to [`GHT_PLAN.md`](GHT_PLAN.md) in one session. What was **decided or
+settled** is here; what it **measured** is [`GHT_RESULTS.md`](GHT_RESULTS.md).
+
+### 14.1 The panel is 33, and the plan's 47 was a family-label count
+
+`GHT_PLAN.md` §4 arrived at 47 usable TFs by subtracting the 92 labelled `C2H2 ZF` from the
+benchmark's 139. §11 then warned against exactly that method — *do not string-match family
+labels; that produced a wrong panel count once already* — and running every construct through
+`snp2prot.domains` gives **39 admitted, 33 after `D10`**.
+
+The difference is not zinc fingers. 85 constructs are rejected as `repeat_array` by the policy's
+own test, 2 as `mixed_families` (`MGA` T-box + HLH, `PAX7` PAX + homeodomain), 6 by `D10`, and
+**13 as `no_domain`, 11 of which have Pfam hits that are simply not on
+`data/external/pfam/dbd_families.txt`** (`FAM200B` and `ZNF518B` have none at all). That list was generated from what UniPROBE and CIS-BP
+curate, which is mouse- and yeast-heavy; the human Codebook panel reaches `FLYWCH`,
+`Myb_DNA-bind_4/5`, `CGGBP1_N`, `ZNF704_C` and `DUF4772`, which they do not.
+[`reports/ght_panel.md`](../reports/ght_panel.md) lists all 13 with their hits.
+
+**Defect found, flagged, not fixed.** `MKX`'s only hit is `Homeobox_KN`, which
+`snp2prot.domains.FAMILY_ALIASES` maps to `Homeodomain` — but `call_domain` filters on the family
+list **before** applying the alias, so an alias can only ever fire for a family that is already
+admitted, and `Homeobox_KN`, `SOXp` and `zf-H2C2_2` are not. The alias table is therefore partly
+dead code. Not fixed here because the family list is shared with the PBM corpus and editing it
+re-decides 1,338 domains; it belongs in `TODO.md` as its own task.
+
+### 14.2 `aliens` is kept, and it is the sharpest control in the set
+
+`GHT_PLAN.md` §3 names three negative sets and singles out `shades` (primary) and `random`
+(secondary). `aliens` — regions sampled from *other TFs'* peaks — is kept as well, because for a
+**protein-conditioned** model it asks a question no other set asks: the DNA is demonstrably
+bindable, so nothing but the protein can separate it from a positive. A per-TF method is not even
+asked it.
+
+Measured ([`reports/ght_cobinding.md`](../reports/ght_cobinding.md)): **49% of a TF's alien
+windows are a peak of another TF in our own 33-TF panel** — loci the model was shown in training
+as positives, for a different protein. And **a median 38% of a TF's own positives are bound by
+another panel TF too**, which is the size of the protein-blind shortcut on the positive side.
+
+### 14.3 `random` and `aliens` are subsampled to 10:1, and auROC is the cross-set number
+
+The released sets are 100:1, which is 40 million windows and 12 GB of tokens for two controls.
+Subsampled to 10:1, seeded, ratio recorded on every window file. **This changes the auPRC scale**
+— chance goes from 0.0099 to 0.091 — so auPRC on those two sets is not comparable to the
+published 100:1 numbers and every cross-set comparison is read on auROC, which is invariant to
+the imbalance. That is what the control is for in the first place.
+
+### 14.4 Both holdout axes are held out in Setting 2
+
+A `G1`/`G2` fold tests held-out TFs on the benchmark's **test** chromosomes, never on the training
+chromosomes the other TFs were trained on, and `GHTFold.digest` hashes both sets. Holding out only
+the protein would leave a held-out TF's evaluation window at a locus some training TF was trained
+on, and §14.2's co-binding number says how often that would happen.
+
+### 14.5 The nearest-neighbour baseline transfers a motif, not peaks
+
+The PBM arm's `nn_lookup` copies a neighbour's binary calls over a **shared** 8-mer vocabulary.
+Here the DNA axis is genomic loci and the chromosome split means a training TF has *no
+measurement at any test locus*, so a peak-copying lookup is undefined rather than weak. The
+baseline therefore scores a held-out TF's windows with the nearest training TF's **selected PWM**
+— which is also the honest analogue, because it is what CIS-BP does and what Weirauch et al. 2014
+set the per-family identity thresholds for.
+
+### 14.6 The step budget is 5,000 and the PBM arm's lesson reappears with its sign flipped
+
+Measured over a 20,000-step `C1/all` pre-flight with patience off, test logged at every evaluation
+([`reports/ght_preflight_C1-all.md`](../reports/ght_preflight_C1-all.md)). Held-out auPRC peaks at
+**0.9296 at step 4,250** and drifts down from there, while the training loss keeps falling from
+0.19 to 0.09. In the PBM arm the training loss flattened at 6,000 and held-out AUPR kept climbing
+for another 9,000 steps. Two opposite shapes, one conclusion: **neither curve predicts the other,
+and only the held-out one is evidence.**
+
+### 14.7 The capacity worry of `GHT_PLAN.md` §6.2 is real and mis-located
+
+§6.2 worried that a per-residue conv protein tower would be ~3.4k parameters per training protein
+against the PBM arm's linear tower at 245. At **33** training proteins the *linear* tower is
+330,496 parameters, i.e. **~10,000 per protein**. The panel size, not the tower architecture,
+sets the capacity risk here — which is why the protein-blind and protein-shuffled controls are run
+alongside every configuration rather than as an afterthought.
+
+### 14.8 Four results the plan did not predict
+
+Recorded here because each contradicts something [`GHT_PLAN.md`](GHT_PLAN.md) assumed, and the
+contradiction is the useful part. The measurements are [`GHT_RESULTS.md`](GHT_RESULTS.md).
+
+**Setting 1 cannot tell a protein representation from a protein index.** Deranging the panel's
+protein vectors — same axis, same distribution, wrong protein — costs *nothing* under `C1`: 0.931
+auPRC against the real model's 0.929, and 0.947 against 0.947 on `aliens`. A derangement is a
+bijection and every TF is in training, so the model simply learns the permuted assignment. Under a
+held-out TF the ordering inverts: shuffled 0.542 < blind 0.580 < real 0.650 on `G1`. **No Setting 1
+number can support this project's central claim**, which is what Setting 2 is for.
+
+**The protein-blind control is close to the model under the hardest holdout.** `G2` gains only
++0.012 auPRC over a model handed no protein at all. The +0.047 margin over motif transfer is real
+and so is this. On `aliens` the picture is better — +0.050 auROC, on all five folds — which is why
+that negative set was kept (§14.2).
+
+**The PBM arm's protein tower transfers, frozen, and on the hardest test it is better.** §6 of
+`GHT_RESULTS.md`. It has zero trainable protein parameters against 330,496, and a Setting 2 fold
+has ~22 training proteins; a frozen representation cannot overfit the panel and the one replacing
+it was fitted on 1,338 proteins. The 8 panel domains that appear verbatim in the PBM corpus do not
+explain it — the transfer holds on the other 25 as well.
+
+**The per-residue conv tower should not have been defaulted off.** `GHT_PLAN.md` §6.2 reasoned
+from ~158k parameters against 47 proteins. The panel is 33, which makes the *pooled* tower ~10k
+per protein, and the conv tower is **smaller** — 160,672 against 330,496 — because it reduces
+1,280 dimensions to 64 before convolving. It wins on 10 of 10 Setting 2 folds (+0.029 auPRC on both
+`G1` and `G2`) and ties under `C1`. Two seeds against the pooled tower's three; `TODO.md` `T42`.

@@ -9,6 +9,10 @@ canonical domains, mean-pooled to one vector per domain and written to
 `data/processed/embeddings/<arm>.npz`. The language model never runs again — the training loop
 reads this file (`ML_PLAN.md` §3.1).
 
+**The inference itself lives in `snp2prot.embeddings.encode`**, not here, since 2026-09-15: the
+GHT arm embeds its own 33-domain panel with the same model and the same pooling, and a copy of
+the loader in a second script is how two arms quietly stop being comparable.
+
 **Weights are cached under `data/external/models/`**, not in the user's home directory, so that
 a downloaded artifact the build depends on sits with the Pfam HMMs and the UniProt cache and can
 carry a `PROVENANCE.md` row like everything else.
@@ -34,94 +38,7 @@ from pathlib import Path
 import numpy as np
 
 from snp2prot import corpus, embeddings
-from snp2prot.config import (
-    ESM_DBP_CHECKPOINT,
-    MODEL_DIR,
-    embedding_table,
-    residue_embedding_table,
-)
-
-
-def load_model(arm: str, device: str):
-    """The checkpoint for one arm, in eval mode on `device`, with its alphabet.
-
-    Both sequence arms are the **same architecture** — ESM-2 650M, 33 layers, 1280-d — and
-    differ only in the weights, which is what makes the `A1` -> `A4` delta isolate the
-    pretraining corpus and nothing else (`ML_PLAN.md` §4.2). ESM-DBP publishes a bare
-    `state_dict` rather than a loader, and it matches that architecture exactly: 572 tensors,
-    none missing, none extra, no shape disagreement. So `A4` is `A1`'s architecture with the
-    published weights loaded into it, and any future mismatch is an error rather than a
-    `strict=False` shrug.
-    """
-    import esm
-    import torch
-
-    if arm not in embeddings.ARMS:
-        raise SystemExit(f"unknown arm {arm!r}; have {sorted(embeddings.ARMS)}")
-
-    # fair-esm downloads through torch.hub; point that at the project rather than ~/.cache.
-    MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    torch.hub.set_dir(str(MODEL_DIR))
-    model, alphabet = esm.pretrained.esm2_t33_650M_UR50D()
-
-    if arm == "A4":
-        if not ESM_DBP_CHECKPOINT.exists():
-            raise SystemExit(
-                f"no ESM-DBP checkpoint at {ESM_DBP_CHECKPOINT}\nsee data/external/models/README.md"
-            )
-        state = torch.load(ESM_DBP_CHECKPOINT, map_location="cpu", weights_only=False)
-        # Saved from a DataParallel wrapper, so every key carries a `module.` prefix.
-        model.load_state_dict({strip_prefix(k): v for k, v in state.items()}, strict=True)
-
-    return model.eval().to(device), alphabet, model.num_layers
-
-
-def strip_prefix(key: str, prefix: str = "module.") -> str:
-    return key[len(prefix) :] if key.startswith(prefix) else key
-
-
-def pool(representation, lengths) -> np.ndarray:
-    """Mean over each sequence's residues, dropping the BOS and EOS tokens.
-
-    Those two carry sequence-level summary information of a kind every domain has equally, and
-    averaging them in would dilute the per-residue signal pooling exists to capture
-    (`snp2prot.embeddings`).
-    """
-    out = np.empty((representation.shape[0], representation.shape[2]), dtype=np.float32)
-    for i, length in enumerate(lengths):
-        out[i] = representation[i, 1 : length + 1].mean(0).float().cpu().numpy()
-    return out
-
-
-def residues_of(representation, lengths) -> list[np.ndarray]:
-    """Every residue's vector, dropping BOS and EOS — `pool` without the mean.
-
-    The same slice `pool` takes, so the two are the same numbers and
-    `ResidueEmbeddings.pooled()` reproduces `DomainEmbeddings.vectors` exactly.
-    """
-    return [
-        representation[i, 1 : length + 1].float().cpu().numpy().astype(np.float32)
-        for i, length in enumerate(lengths)
-    ]
-
-
-def batches(sequences: list[str], batch_tokens: int):
-    """Group sequences so that each batch is about `batch_tokens` residues, longest first.
-
-    Longest-first keeps the padding waste in one place: a batch of similar lengths pads very
-    little, and the largest batch is the one that decides peak memory, so it is met first
-    rather than after an hour of work.
-    """
-    order = sorted(range(len(sequences)), key=lambda i: -len(sequences[i]))
-    batch: list[int] = []
-    for i in order:
-        longest = max([len(sequences[j]) for j in batch] + [len(sequences[i])])
-        if batch and longest * (len(batch) + 1) > batch_tokens:
-            yield batch
-            batch = []
-        batch.append(i)
-    if batch:
-        yield batch
+from snp2prot.config import embedding_table, residue_embedding_table
 
 
 def main() -> None:
@@ -137,64 +54,47 @@ def main() -> None:
     )
     args = ap.parse_args()
 
-    import torch
-
-    device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
     domains = corpus.domains()
     sequences = [str(s) for s in domains.dbd_seq]
     print(f"{len(sequences)} domains, {min(map(len, sequences))}-{max(map(len, sequences))} aa")
-    print(f"model {embeddings.ARMS[args.arm]} on {device}")
-
-    model, alphabet, layer = load_model(args.arm, device)
-    converter = alphabet.get_batch_converter()
-
-    vectors = np.empty((len(sequences), model.embed_dim), dtype=np.float32)
-    # Batches come out longest-first, so the per-residue blocks are collected into a slot per
-    # domain and concatenated in corpus order at the end rather than appended as they arrive.
-    per_residue: list[np.ndarray | None] = [None] * len(sequences)
+    print(f"model {embeddings.ARMS[args.arm]}")
     started = time.time()
-    done = 0
-    with torch.no_grad():
-        for group in batches(sequences, args.batch_tokens):
-            _, _, tokens = converter([(str(i), sequences[i]) for i in group])
-            out = model(tokens.to(device), repr_layers=[layer])["representations"][layer]
-            lengths = [len(sequences[i]) for i in group]
-            if args.per_residue:
-                for i, block in zip(group, residues_of(out, lengths), strict=True):
-                    per_residue[i] = block
-            else:
-                vectors[group] = pool(out, lengths)
-            done += len(group)
-            if done % 200 < len(group):
-                print(f"  {done}/{len(sequences)}  ({time.time() - started:.0f}s)", flush=True)
+
+    def progress(done: int, total: int) -> None:
+        if done % 200 < 32:
+            print(f"  {done}/{total}  ({time.time() - started:.0f}s)", flush=True)
+
+    result = embeddings.encode(
+        sequences,
+        arm=args.arm,
+        device=args.device,
+        batch_tokens=args.batch_tokens,
+        per_residue=args.per_residue,
+        progress=progress,
+    )
 
     if args.per_residue:
-        blocks = [b for b in per_residue if b is not None]
-        if len(blocks) != len(sequences):
-            raise SystemExit("some domains produced no representation; refusing to write")
-        offsets = np.zeros(len(blocks) + 1, dtype=np.int64)
-        np.cumsum([len(b) for b in blocks], out=offsets[1:])
+        offsets = np.zeros(len(result) + 1, dtype=np.int64)
+        np.cumsum([len(b) for b in result], out=offsets[1:])
         table = embeddings.ResidueEmbeddings(
             arm=args.arm,
             model=embeddings.ARMS[args.arm],
             domains=np.asarray(sequences, dtype=np.str_),
             offsets=offsets,
-            vectors=np.concatenate(blocks, axis=0),
+            vectors=np.concatenate(result, axis=0),
         )
         path = table.save(args.out or residue_embedding_table(args.arm))
-        print(f"{table.width}-d over {offsets[-1]:,} residues in {len(blocks)} domains")
-        print(f"wrote {path} ({path.stat().st_size / 1e6:.0f} MB) in {time.time() - started:.0f}s")
-        return
-
-    table = embeddings.DomainEmbeddings(
-        arm=args.arm,
-        model=embeddings.ARMS[args.arm],
-        domains=np.asarray(sequences, dtype=np.str_),
-        vectors=vectors,
-    )
-    path = table.save(args.out or embedding_table(args.arm))
-    norms = np.linalg.norm(vectors, axis=1)
-    print(f"{table.width}-d, norms {norms.min():.2f}-{norms.max():.2f}")
+        print(f"{table.width}-d over {offsets[-1]:,} residues in {len(result)} domains")
+    else:
+        table = embeddings.DomainEmbeddings(
+            arm=args.arm,
+            model=embeddings.ARMS[args.arm],
+            domains=np.asarray(sequences, dtype=np.str_),
+            vectors=result,
+        )
+        path = table.save(args.out or embedding_table(args.arm))
+        norms = np.linalg.norm(result, axis=1)
+        print(f"{table.width}-d, norms {norms.min():.2f}-{norms.max():.2f}")
     print(f"wrote {path} ({path.stat().st_size / 1e6:.0f} MB) in {time.time() - started:.0f}s")
 
 

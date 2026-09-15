@@ -44,3 +44,27 @@ def good_frame() -> pd.DataFrame:
     # dna_len and pair_id are deliberately omitted: coerce() derives them, and the
     # fixture exercising that path is how we notice if the derivation regresses.
     return schema.coerce(pd.DataFrame(rows))
+
+
+# `scripts/` is not a package, and one of its modules carries logic worth testing directly:
+# the co-binding overlap search. It is imported under `scripts_<name>` rather than moved into
+# `snp2prot`, because it is a one-off analysis whose home is the script — what is pinned here is
+# its arithmetic, not an API. (The filter/motif comparison DID move, to `snp2prot.ght.baselines`,
+# once a second caller needed it.)
+def _load_script(name: str):
+    import importlib.util
+    import sys
+
+    from snp2prot.config import PROJECT_ROOT
+
+    key = f"scripts_{name}"
+    if key in sys.modules:
+        return sys.modules[key]
+    spec = importlib.util.spec_from_file_location(key, PROJECT_ROOT / "scripts" / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[key] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_load_script("check_ght_cobinding")
